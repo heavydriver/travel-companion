@@ -1,0 +1,22 @@
+{
+  "name": "travel-companion",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "turbo dev --no-daemon",
+    "build": "turbo build",
+    "lint": "pnpx @biomejs/biome lint",
+    "lint:fix": "pnpx @biomejs/biome lint --write",
+    "format": "pnpx @biomejs/biome format --write",
+    "typecheck": "turbo typecheck"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.2",
+  "devDependencies": {
+    "@biomejs/biome": "2.4.4",
+    "turbo": "^2.8.11"
+  }
+}
