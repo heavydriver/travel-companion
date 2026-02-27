@@ -17,11 +17,13 @@ Travel Companion is a mobile application that centralizes everything a traveler 
   - Add the following lines to `settings.json`
 
     ```json
-    "editor.defaultFormatter": "biomejs.biome",
-    "editor.formatOnSave": true,
-    "editor.codeActionsOnSave": {
-        "source.fixAll.biome": "explicit",
-        "source.organizeImports.biome": "explicit"
+    {
+      "editor.defaultFormatter": "biomejs.biome",
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+          "source.fixAll.biome": "explicit",
+          "source.organizeImports.biome": "explicit"
+      }
     }
     ```
 
