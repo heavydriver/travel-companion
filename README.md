@@ -11,6 +11,7 @@ Travel Companion is a mobile application that centralizes everything a traveler 
 - Install Biome extension
   - VS Code: <https://marketplace.visualstudio.com/items?itemName=biomejs.biome>
   - Cursor, etc: <https://open-vsx.org/extension/biomejs/biome>
+- Install Prisma extension
 - Setup Biome
   - Create a .vscode or .cursor folder in the root directory
   - In that folder create a file called `settings.json`
@@ -34,14 +35,24 @@ Travel Companion is a mobile application that centralizes everything a traveler 
   - `git clone https://github.com/heavydriver/travel-companion.git`
   - `cd travel-companion`
   - `pnpm i`
+- Create a `.env`files in project root and the `apps/api` folder
+  - Copy the variables from `.example.env` and fill the values
 
 ## Project Organization
 
 - `./apps/api` - contains backend code
 - `./apps/mobile` - contains react native code
 - `./packages` - contains packages that are used by both api and mobile
+- `./packages/db/generated/prisma` - contains models/types from schema
+- `./packages/db/generated/prismabox` - contains Typebox (ElysiaJS) types
 
 ## Running the Project
+
+### Start both backend and frontend
+
+- Open a new terminal in the travel-companion (project root) folder
+- Enter the following command:
+  - `pnpm run dev`
 
 ### Start backend
 

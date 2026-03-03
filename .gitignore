@@ -5,3 +5,5 @@ dist
 .turbo
 .vscode
 .env
+
+packages/db/generated

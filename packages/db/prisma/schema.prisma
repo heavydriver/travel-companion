@@ -1,0 +1,423 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+generator prismabox {
+  provider                    = "prismabox"
+  typeboxImportDependencyName = "elysia"
+  typeboxImportVariableName   = "t"
+  inputModel                  = true
+  output                      = "../generated/prismabox"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =======================
+// USER SYSTEM
+// =======================
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  passwordHash String?
+  name         String
+  username     String  @unique
+  avatarUrl    String?
+  bio          String? @db.VarChar(300)
+
+  homeCountry         String? // ISO country code
+  preferredLanguageId String?
+  socialOptIn         Boolean @default(false)
+
+  isVerified Boolean @default(false)
+  isActive   Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  preferredLanguage Language? @relation(fields: [preferredLanguageId], references: [id])
+
+  oauthAccounts    OAuthAccount[]
+  trips            Trip[]         @relation("TripOwner")
+  tripMemberships  TripMember[]
+  chatMessages     ChatMessage[]
+  sentMessages     Message[]      @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
+
+  connections         Connection[] @relation("ConnectionRequester")
+  receivedConnections Connection[] @relation("ConnectionReceiver")
+
+  blocksInitiated Block[] @relation("UserBlocks")
+  blocksReceived  Block[] @relation("UserBlockedBy")
+
+  location UserLocation?
+}
+
+model OAuthAccount {
+  id             String        @id @default(cuid())
+  userId         String
+  provider       OAuthProvider
+  providerUserId String
+  createdAt      DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+enum OAuthProvider {
+  GOOGLE
+  APPLE
+}
+
+// =======================
+// LANGUAGE SYSTEM
+// =======================
+
+model Language {
+  id         String @id @default(cuid())
+  name       String
+  isoCode    String @unique // ISO 639-1 (en, fr, ja)
+  nativeName String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  destinations DestinationLanguage[]
+  phrases      Phrase[]
+  users        User[]
+}
+
+// =======================
+// DESTINATION SYSTEM
+// =======================
+
+model Destination {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  country     String
+  countryCode String
+  region      String?
+  description String? @db.VarChar(2000)
+
+  latitude     Float
+  longitude    Float
+  timezone     String
+  currencyCode String
+
+  bestTimeToVisit String? @db.VarChar(500)
+  emergencyNumber String?
+
+  packVersion Int     @default(0)
+  isFeatured  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trips     Trip[]
+  places    Place[]
+  phrases   Phrase[]
+  languages DestinationLanguage[]
+
+  @@index([countryCode])
+  @@index([isFeatured])
+}
+
+model DestinationLanguage {
+  id            String  @id @default(cuid())
+  destinationId String
+  languageId    String
+  isPrimary     Boolean @default(false)
+
+  destination Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  language    Language    @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([destinationId, languageId])
+}
+
+// =======================
+// PLACE SYSTEM
+// =======================
+
+model Place {
+  id            String @id @default(cuid())
+  destinationId String
+
+  name        String
+  slug        String
+  category    PlaceCategory
+  description String?       @db.VarChar(2000)
+
+  latitude  Float
+  longitude Float
+  address   String?
+  city      String?
+
+  imageUrl    String?
+  websiteUrl  String?
+  phoneNumber String?
+
+  priceLevel  Int? // 1–4
+  rating      Float?
+  reviewCount Int?
+
+  openingHours Json?
+  isCurated    Boolean @default(false)
+  isFeatured   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  destination    Destination     @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  itineraryItems ItineraryItem[]
+
+  @@unique([destinationId, slug])
+  @@index([destinationId, category])
+  @@index([destinationId, latitude, longitude])
+}
+
+enum PlaceCategory {
+  ATTRACTION
+  RESTAURANT
+  CAFE
+  HOTEL
+  TRANSPORT
+  SHOPPING
+  NATURE
+  NIGHTLIFE
+  OTHER
+}
+
+// =======================
+// TRIP SYSTEM
+// =======================
+
+model Trip {
+  id            String @id @default(cuid())
+  ownerId       String
+  destinationId String
+
+  title       String
+  description String? @db.VarChar(1000)
+
+  startDate     DateTime
+  endDate       DateTime
+  coverImageUrl String?
+
+  budget       Float?
+  currencyCode String?
+
+  isPublic   Boolean @default(false)
+  isArchived Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  owner          User            @relation("TripOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  destination    Destination     @relation(fields: [destinationId], references: [id])
+  itineraryItems ItineraryItem[]
+  chatMessages   ChatMessage[]
+  members        TripMember[]
+
+  @@index([ownerId, startDate])
+  @@index([destinationId])
+}
+
+model TripMember {
+  id       String   @id @default(cuid())
+  tripId   String
+  userId   String
+  role     TripRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, userId])
+}
+
+enum TripRole {
+  OWNER
+  MEMBER
+}
+
+// =======================
+// ITINERARY
+// =======================
+
+model ItineraryItem {
+  id      String  @id @default(cuid())
+  tripId  String
+  placeId String?
+
+  title String
+  notes String? @db.VarChar(500)
+
+  date      DateTime
+  startTime String?
+  endTime   String?
+  order     Int
+  isDone    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  place Place? @relation(fields: [placeId], references: [id])
+
+  @@index([tripId, date])
+}
+
+// =======================
+// PHRASES (MULTI-LANGUAGE SUPPORT)
+// =======================
+
+model Phrase {
+  id            String @id @default(cuid())
+  destinationId String
+  languageId    String
+
+  category PhraseCategory
+
+  originalText  String // native script
+  latinSpelling String? // romanization
+  syllables     String? // phonetic breakdown
+  englishText   String
+
+  audioUrl    String?
+  isEssential Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  destination Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  language    Language    @relation(fields: [languageId], references: [id])
+
+  @@index([destinationId, category])
+  @@index([languageId])
+}
+
+enum PhraseCategory {
+  GREETINGS
+  DIRECTIONS
+  FOOD_AND_DRINK
+  EMERGENCIES
+  SHOPPING
+  NUMBERS
+  TRANSPORT
+  ACCOMMODATION
+  GENERAL
+}
+
+// =======================
+// AI CHAT SYSTEM
+// =======================
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  userId     String
+  tripId     String?
+  role       ChatRole
+  content    String   @db.VarChar(4000)
+  tokenCount Int?
+
+  createdAt DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip? @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+// =======================
+// SOCIAL SYSTEM
+// =======================
+
+model Connection {
+  id          String           @id @default(cuid())
+  requesterId String
+  receiverId  String
+  status      ConnectionStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requester User @relation("ConnectionRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("ConnectionReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+  @@index([receiverId])
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+// =======================
+// DIRECT MESSAGES
+// =======================
+
+model Message {
+  id         String    @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String    @db.VarChar(2000)
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId])
+  @@index([createdAt])
+}
+
+// =======================
+// BLOCK SYSTEM
+// =======================
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("UserBlocks", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("UserBlockedBy", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+}
+
+// =======================
+// LIVE LOCATION
+// =======================
+
+model UserLocation {
+  userId    String   @id
+  latitude  Float
+  longitude Float
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
