@@ -1,51 +1,55 @@
-import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
 import { PrismaClient } from "../generated/prisma/client";
-import { PhraseCategory, PlaceCategory } from "../generated/prisma/enums";
 
-const connectionString = `${process.env.DATABASE_URL}`;
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const english = await prisma.language.upsert({
-    where: { isoCode: "en" },
+  // Languages
+  const japanese = await prisma.language.upsert({
+    where: { isoCode: "ja" },
     update: {},
-    create: {
-      name: "English",
-      nativeName: "English",
-      isoCode: "en",
-    },
+    create: { name: "Japanese", isoCode: "ja", nativeName: "日本語" },
   });
-
   const french = await prisma.language.upsert({
     where: { isoCode: "fr" },
     update: {},
-    create: {
-      name: "French",
-      nativeName: "Français",
-      isoCode: "fr",
-    },
+    create: { name: "French", isoCode: "fr", nativeName: "Français" },
+  });
+  const thai = await prisma.language.upsert({
+    where: { isoCode: "th" },
+    update: {},
+    create: { name: "Thai", isoCode: "th", nativeName: "ไทย" },
+  });
+  const italian = await prisma.language.upsert({
+    where: { isoCode: "it" },
+    update: {},
+    create: { name: "Italian", isoCode: "it", nativeName: "Italiano" },
+  });
+  const spanish = await prisma.language.upsert({
+    where: { isoCode: "es" },
+    update: {},
+    create: { name: "Spanish", isoCode: "es", nativeName: "Español" },
   });
 
-  const london = await prisma.destination.upsert({
-    where: { slug: "london" },
+  // Destinations
+  const tokyo = await prisma.destination.upsert({
+    where: { slug: "tokyo" },
     update: {},
     create: {
-      name: "London",
-      slug: "london",
-      country: "United Kingdom",
-      countryCode: "GB",
-      latitude: 51.5074,
-      longitude: -0.1278,
-      timezone: "Europe/London",
-      currencyCode: "GBP",
+      name: "Tokyo",
+      slug: "tokyo",
+      country: "Japan",
+      countryCode: "JP",
+      latitude: 35.6762,
+      longitude: 139.6503,
+      timezone: "Asia/Tokyo",
+      currencyCode: "JPY",
+      description:
+        "Japan's bustling capital blends ultramodern with traditional, from neon-lit skyscrapers to historic temples.",
       isFeatured: true,
     },
   });
-
   const paris = await prisma.destination.upsert({
     where: { slug: "paris" },
     update: {},
@@ -58,243 +62,441 @@ async function main() {
       longitude: 2.3522,
       timezone: "Europe/Paris",
       currencyCode: "EUR",
+      description:
+        "The City of Light, known for its art, gastronomy, and culture, anchored by the Eiffel Tower.",
       isFeatured: true,
     },
   });
-
-  const newYork = await prisma.destination.upsert({
-    where: { slug: "new-york" },
+  const bangkok = await prisma.destination.upsert({
+    where: { slug: "bangkok" },
     update: {},
     create: {
-      name: "New York",
-      slug: "new-york",
-      country: "United States",
-      countryCode: "US",
-      latitude: 40.7128,
-      longitude: -74.006,
-      timezone: "America/New_York",
-      currencyCode: "USD",
+      name: "Bangkok",
+      slug: "bangkok",
+      country: "Thailand",
+      countryCode: "TH",
+      latitude: 13.7563,
+      longitude: 100.5018,
+      timezone: "Asia/Bangkok",
+      currencyCode: "THB",
+      description:
+        "Thailand's capital is a large city known for ornate shrines and vibrant street life.",
+      isFeatured: true,
+    },
+  });
+  const rome = await prisma.destination.upsert({
+    where: { slug: "rome" },
+    update: {},
+    create: {
+      name: "Rome",
+      slug: "rome",
+      country: "Italy",
+      countryCode: "IT",
+      latitude: 41.9028,
+      longitude: 12.4964,
+      timezone: "Europe/Rome",
+      currencyCode: "EUR",
+      description:
+        "The Eternal City, rich with nearly 3,000 years of globally influential art, architecture, and culture.",
+      isFeatured: true,
+    },
+  });
+  const mexicoCity = await prisma.destination.upsert({
+    where: { slug: "mexico-city" },
+    update: {},
+    create: {
+      name: "Mexico City",
+      slug: "mexico-city",
+      country: "Mexico",
+      countryCode: "MX",
+      latitude: 19.4326,
+      longitude: -99.1332,
+      timezone: "America/Mexico_City",
+      currencyCode: "MXN",
+      description:
+        "Mexico's sprawling capital, known for Aztec ruins, world-class museums, and incredible food.",
       isFeatured: true,
     },
   });
 
-  await prisma.destinationLanguage.createMany({
-    data: [
-      { destinationId: london.id, languageId: english.id, isPrimary: true },
-      { destinationId: paris.id, languageId: french.id, isPrimary: true },
-      { destinationId: paris.id, languageId: english.id },
-      { destinationId: newYork.id, languageId: english.id, isPrimary: true },
-    ],
-    skipDuplicates: true,
-  });
+  // Destination-Language links
+  const destLangs = [
+    { destId: tokyo.id, langId: japanese.id, isPrimary: true },
+    { destId: paris.id, langId: french.id, isPrimary: true },
+    { destId: bangkok.id, langId: thai.id, isPrimary: true },
+    { destId: rome.id, langId: italian.id, isPrimary: true },
+    { destId: mexicoCity.id, langId: spanish.id, isPrimary: true },
+  ];
+  for (const dl of destLangs) {
+    await prisma.destinationLanguage.upsert({
+      where: {
+        destinationId_languageId: {
+          destinationId: dl.destId,
+          languageId: dl.langId,
+        },
+      },
+      update: {},
+      create: {
+        destinationId: dl.destId,
+        languageId: dl.langId,
+        isPrimary: dl.isPrimary,
+      },
+    });
+  }
 
-  // LONDON
-  await prisma.place.createMany({
-    data: [
-      {
-        destinationId: london.id,
-        name: "Big Ben",
-        slug: "big-ben",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 51.5007,
-        longitude: -0.1246,
-      },
-      {
-        destinationId: london.id,
-        name: "Tower Bridge",
-        slug: "tower-bridge",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 51.5055,
-        longitude: -0.0754,
-      },
-      {
-        destinationId: london.id,
-        name: "British Museum",
-        slug: "british-museum",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 51.5194,
-        longitude: -0.127,
-      },
-      {
-        destinationId: london.id,
-        name: "Buckingham Palace",
-        slug: "buckingham-palace",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 51.5014,
-        longitude: -0.1419,
-      },
-      {
-        destinationId: london.id,
-        name: "Hyde Park",
-        slug: "hyde-park",
-        category: PlaceCategory.NATURE,
-        latitude: 51.5073,
-        longitude: -0.1657,
-      },
-    ],
-  });
+  // Places — 3 per destination
+  const places = [
+    // Tokyo
+    {
+      destId: tokyo.id,
+      name: "Senso-ji Temple",
+      slug: "sensoji-temple",
+      category: "ATTRACTION" as const,
+      lat: 35.7148,
+      lng: 139.7967,
+      description:
+        "Tokyo's oldest temple, located in Asakusa. The iconic Kaminarimon gate is a must-see.",
+      isCurated: true,
+      rating: 4.7,
+    },
+    {
+      destId: tokyo.id,
+      name: "Tsukiji Outer Market",
+      slug: "tsukiji-outer-market",
+      category: "RESTAURANT" as const,
+      lat: 35.6654,
+      lng: 139.7707,
+      description: "Famous marketplace with fresh sushi, street food stalls, and kitchen supplies.",
+      isCurated: true,
+      rating: 4.5,
+    },
+    {
+      destId: tokyo.id,
+      name: "Shinjuku Gyoen",
+      slug: "shinjuku-gyoen",
+      category: "NATURE" as const,
+      lat: 35.6852,
+      lng: 139.71,
+      description:
+        "One of Tokyo's largest and most beautiful parks, blending Japanese, English, and French gardens.",
+      isCurated: true,
+      rating: 4.6,
+    },
+    // Paris
+    {
+      destId: paris.id,
+      name: "Eiffel Tower",
+      slug: "eiffel-tower",
+      category: "ATTRACTION" as const,
+      lat: 48.8584,
+      lng: 2.2945,
+      description: "Iconic iron lattice tower on the Champ de Mars, symbol of Paris.",
+      isCurated: true,
+      rating: 4.8,
+    },
+    {
+      destId: paris.id,
+      name: "Le Marais",
+      slug: "le-marais",
+      category: "SHOPPING" as const,
+      lat: 48.8566,
+      lng: 2.3622,
+      description: "Historic district packed with trendy boutiques, galleries, and cafés.",
+      isCurated: true,
+      rating: 4.4,
+    },
+    {
+      destId: paris.id,
+      name: "Café de Flore",
+      slug: "cafe-de-flore",
+      category: "CAFE" as const,
+      lat: 48.854,
+      lng: 2.3325,
+      description: "One of the oldest and most prestigious coffeehouses in Paris.",
+      isCurated: true,
+      rating: 4.3,
+    },
+    // Bangkok
+    {
+      destId: bangkok.id,
+      name: "Grand Palace",
+      slug: "grand-palace",
+      category: "ATTRACTION" as const,
+      lat: 13.75,
+      lng: 100.4914,
+      description: "Former royal residence and home to the sacred Temple of the Emerald Buddha.",
+      isCurated: true,
+      rating: 4.6,
+    },
+    {
+      destId: bangkok.id,
+      name: "Chatuchak Weekend Market",
+      slug: "chatuchak-market",
+      category: "SHOPPING" as const,
+      lat: 13.7999,
+      lng: 100.5504,
+      description: "One of the world's largest weekend markets with over 15,000 stalls.",
+      isCurated: true,
+      rating: 4.5,
+    },
+    {
+      destId: bangkok.id,
+      name: "Khao San Road",
+      slug: "khao-san-road",
+      category: "NIGHTLIFE" as const,
+      lat: 13.7589,
+      lng: 100.497,
+      description: "Famous backpacker street with bars, street food, and budget accommodation.",
+      isCurated: true,
+      rating: 4.1,
+    },
+    // Rome
+    {
+      destId: rome.id,
+      name: "Colosseum",
+      slug: "colosseum",
+      category: "ATTRACTION" as const,
+      lat: 41.8902,
+      lng: 12.4922,
+      description: "Ancient amphitheatre, one of the most iconic landmarks of the Roman Empire.",
+      isCurated: true,
+      rating: 4.8,
+    },
+    {
+      destId: rome.id,
+      name: "Trastevere",
+      slug: "trastevere",
+      category: "RESTAURANT" as const,
+      lat: 41.8867,
+      lng: 12.47,
+      description: "Charming neighborhood known for authentic Roman cuisine and lively nightlife.",
+      isCurated: true,
+      rating: 4.5,
+    },
+    {
+      destId: rome.id,
+      name: "Vatican Museums",
+      slug: "vatican-museums",
+      category: "ATTRACTION" as const,
+      lat: 41.9065,
+      lng: 12.4536,
+      description: "World-renowned museum complex including the Sistine Chapel.",
+      isCurated: true,
+      rating: 4.7,
+    },
+    // Mexico City
+    {
+      destId: mexicoCity.id,
+      name: "Chapultepec Castle",
+      slug: "chapultepec-castle",
+      category: "ATTRACTION" as const,
+      lat: 19.4204,
+      lng: -99.1818,
+      description: "Historic castle and museum set in the hilltop of Chapultepec Park.",
+      isCurated: true,
+      rating: 4.7,
+    },
+    {
+      destId: mexicoCity.id,
+      name: "Mercado de San Juan",
+      slug: "mercado-san-juan",
+      category: "RESTAURANT" as const,
+      lat: 19.4296,
+      lng: -99.1429,
+      description: "Gourmet market famous for exotic meats, fresh seafood, and artisanal products.",
+      isCurated: true,
+      rating: 4.4,
+    },
+    {
+      destId: mexicoCity.id,
+      name: "Xochimilco",
+      slug: "xochimilco",
+      category: "NATURE" as const,
+      lat: 19.2573,
+      lng: -99.1038,
+      description:
+        "UNESCO site with colorful trajinera boats floating through ancient Aztec canals.",
+      isCurated: true,
+      rating: 4.5,
+    },
+  ];
 
-  // PARIS
-  await prisma.place.createMany({
-    data: [
-      {
-        destinationId: paris.id,
-        name: "Eiffel Tower",
-        slug: "eiffel-tower",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 48.8584,
-        longitude: 2.2945,
+  for (const p of places) {
+    await prisma.place.upsert({
+      where: { destinationId_slug: { destinationId: p.destId, slug: p.slug } },
+      update: {},
+      create: {
+        destinationId: p.destId,
+        name: p.name,
+        slug: p.slug,
+        category: p.category,
+        latitude: p.lat,
+        longitude: p.lng,
+        description: p.description,
+        isCurated: p.isCurated,
+        rating: p.rating,
       },
-      {
-        destinationId: paris.id,
-        name: "Louvre Museum",
-        slug: "louvre",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 48.8606,
-        longitude: 2.3376,
-      },
-      {
-        destinationId: paris.id,
-        name: "Notre Dame Cathedral",
-        slug: "notre-dame",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 48.853,
-        longitude: 2.3499,
-      },
-      {
-        destinationId: paris.id,
-        name: "Montmartre",
-        slug: "montmartre",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 48.8867,
-        longitude: 2.3431,
-      },
-      {
-        destinationId: paris.id,
-        name: "Luxembourg Gardens",
-        slug: "luxembourg-gardens",
-        category: PlaceCategory.NATURE,
-        latitude: 48.8462,
-        longitude: 2.3371,
-      },
-    ],
-  });
+    });
+  }
 
-  // NEW YORK
-  await prisma.place.createMany({
-    data: [
-      {
-        destinationId: newYork.id,
-        name: "Statue of Liberty",
-        slug: "statue-of-liberty",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 40.6892,
-        longitude: -74.0445,
-      },
-      {
-        destinationId: newYork.id,
-        name: "Central Park",
-        slug: "central-park",
-        category: PlaceCategory.NATURE,
-        latitude: 40.7851,
-        longitude: -73.9683,
-      },
-      {
-        destinationId: newYork.id,
-        name: "Times Square",
-        slug: "times-square",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 40.758,
-        longitude: -73.9855,
-      },
-      {
-        destinationId: newYork.id,
-        name: "Brooklyn Bridge",
-        slug: "brooklyn-bridge",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 40.7061,
-        longitude: -73.9969,
-      },
-      {
-        destinationId: newYork.id,
-        name: "Empire State Building",
-        slug: "empire-state",
-        category: PlaceCategory.ATTRACTION,
-        latitude: 40.7484,
-        longitude: -73.9857,
-      },
-    ],
-  });
+  // Phrases — 3 per destination
+  const phrases = [
+    // Tokyo / Japanese
+    {
+      destId: tokyo.id,
+      langId: japanese.id,
+      category: "GREETINGS" as const,
+      original: "こんにちは",
+      latin: "Konnichiwa",
+      english: "Hello",
+    },
+    {
+      destId: tokyo.id,
+      langId: japanese.id,
+      category: "FOOD_AND_DRINK" as const,
+      original: "お会計お願いします",
+      latin: "Okaikei onegaishimasu",
+      english: "Check, please",
+    },
+    {
+      destId: tokyo.id,
+      langId: japanese.id,
+      category: "DIRECTIONS" as const,
+      original: "駅はどこですか？",
+      latin: "Eki wa doko desu ka?",
+      english: "Where is the station?",
+    },
+    // Paris / French
+    {
+      destId: paris.id,
+      langId: french.id,
+      category: "GREETINGS" as const,
+      original: "Bonjour",
+      latin: null,
+      english: "Hello / Good morning",
+    },
+    {
+      destId: paris.id,
+      langId: french.id,
+      category: "FOOD_AND_DRINK" as const,
+      original: "L'addition, s'il vous plaît",
+      latin: null,
+      english: "The bill, please",
+    },
+    {
+      destId: paris.id,
+      langId: french.id,
+      category: "DIRECTIONS" as const,
+      original: "Où est la station de métro ?",
+      latin: null,
+      english: "Where is the metro station?",
+    },
+    // Bangkok / Thai
+    {
+      destId: bangkok.id,
+      langId: thai.id,
+      category: "GREETINGS" as const,
+      original: "สวัสดี",
+      latin: "Sawasdee",
+      english: "Hello",
+    },
+    {
+      destId: bangkok.id,
+      langId: thai.id,
+      category: "FOOD_AND_DRINK" as const,
+      original: "เก็บเงินด้วย",
+      latin: "Gep ngern duay",
+      english: "Check, please",
+    },
+    {
+      destId: bangkok.id,
+      langId: thai.id,
+      category: "TRANSPORT" as const,
+      original: "ไปที่นี่ได้ไหม",
+      latin: "Bpai tee nee dai mai",
+      english: "Can you go here?",
+    },
+    // Rome / Italian
+    {
+      destId: rome.id,
+      langId: italian.id,
+      category: "GREETINGS" as const,
+      original: "Buongiorno",
+      latin: null,
+      english: "Good morning",
+    },
+    {
+      destId: rome.id,
+      langId: italian.id,
+      category: "FOOD_AND_DRINK" as const,
+      original: "Il conto, per favore",
+      latin: null,
+      english: "The bill, please",
+    },
+    {
+      destId: rome.id,
+      langId: italian.id,
+      category: "DIRECTIONS" as const,
+      original: "Dov'è la fermata della metro?",
+      latin: null,
+      english: "Where is the metro stop?",
+    },
+    // Mexico City / Spanish
+    {
+      destId: mexicoCity.id,
+      langId: spanish.id,
+      category: "GREETINGS" as const,
+      original: "¡Hola!",
+      latin: null,
+      english: "Hello!",
+    },
+    {
+      destId: mexicoCity.id,
+      langId: spanish.id,
+      category: "FOOD_AND_DRINK" as const,
+      original: "La cuenta, por favor",
+      latin: null,
+      english: "The bill, please",
+    },
+    {
+      destId: mexicoCity.id,
+      langId: spanish.id,
+      category: "EMERGENCIES" as const,
+      original: "¡Ayuda!",
+      latin: null,
+      english: "Help!",
+    },
+  ];
 
-  await prisma.phrase.createMany({
-    data: [
-      {
-        destinationId: paris.id,
-        languageId: french.id,
-        category: PhraseCategory.GREETINGS,
-        originalText: "Bonjour",
-        latinSpelling: "bon-zhoor",
-        syllables: "bon-jour",
-        englishText: "Hello",
-        isEssential: true,
+  for (const ph of phrases) {
+    const existing = await prisma.phrase.findFirst({
+      where: {
+        destinationId: ph.destId,
+        languageId: ph.langId,
+        originalText: ph.original,
       },
-      {
-        destinationId: paris.id,
-        languageId: french.id,
-        category: PhraseCategory.GREETINGS,
-        originalText: "Bonsoir",
-        latinSpelling: "bon-swahr",
-        syllables: "bon-soir",
-        englishText: "Good evening",
-      },
-      {
-        destinationId: paris.id,
-        languageId: french.id,
-        category: PhraseCategory.GENERAL,
-        originalText: "Merci",
-        latinSpelling: "mehr-see",
-        syllables: "mer-ci",
-        englishText: "Thank you",
-        isEssential: true,
-      },
-      {
-        destinationId: paris.id,
-        languageId: french.id,
-        category: PhraseCategory.DIRECTIONS,
-        originalText: "Où est la gare ?",
-        latinSpelling: "oo eh la gar",
-        syllables: "où-est-la-gare",
-        englishText: "Where is the train station?",
-      },
-      {
-        destinationId: paris.id,
-        languageId: french.id,
-        category: PhraseCategory.FOOD_AND_DRINK,
-        originalText: "Je voudrais un café",
-        latinSpelling: "zhuh voo-dray uhn ka-fay",
-        syllables: "je-vou-drais-un-ca-fé",
-        englishText: "I would like a coffee",
-      },
-      {
-        destinationId: paris.id,
-        languageId: french.id,
-        category: PhraseCategory.EMERGENCIES,
-        originalText: "Appelez la police",
-        latinSpelling: "ah-play lah po-lees",
-        syllables: "ap-pe-lez-la-po-lice",
-        englishText: "Call the police",
-      },
-    ],
-  });
+    });
+    if (!existing) {
+      await prisma.phrase.create({
+        data: {
+          destinationId: ph.destId,
+          languageId: ph.langId,
+          category: ph.category,
+          originalText: ph.original,
+          latinSpelling: ph.latin,
+          englishText: ph.english,
+          isEssential: true,
+        },
+      });
+    }
+  }
+
+  console.log("Seed completed successfully.");
 }
 
 main()
-  .then(() => {
-    console.log("Database seeded");
-  })
   .catch((e) => {
-    console.error(e);
+    console.error("Seed failed:", e);
+    process.exit(1);
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(() => prisma.$disconnect());

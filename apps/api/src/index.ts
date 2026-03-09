@@ -1,5 +1,9 @@
-import { Elysia } from "elysia";
+import { app } from "./app";
+import { config } from "./utils/config";
+import { logger } from "./utils/logger";
 
-const app = new Elysia().get("/", () => "API running").listen(3000);
+app.listen(config.port);
 
-console.log(`Server running at ${app.server?.hostname}:${app.server?.port}`);
+logger.info(`Server running on port ${config.port}`, {
+  env: config.nodeEnv,
+});
