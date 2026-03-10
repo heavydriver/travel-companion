@@ -1,16 +1,16 @@
-import Elysia from "elysia";
 import cors from "@elysiajs/cors";
-import { config } from "./utils/config";
+import Elysia from "elysia";
 import { errorHandler } from "./middleware/errorHandler";
 import { authModule } from "./modules/auth";
-import { tripModule } from "./modules/trip";
 import { destinationModule } from "./modules/destination";
 import { itineraryModule } from "./modules/itinerary";
-import { placeModule } from "./modules/place";
 import { offlineModule } from "./modules/offline";
+import { placeModule } from "./modules/place";
+import { tripModule } from "./modules/trip";
+import { config } from "./utils/config";
 
 export const app = new Elysia({ prefix: "/api/v1" })
-  .use(cors({ origin: config.frontendUrl, credentials: true }))
+  // .use(cors({ origin: config.frontendUrl, credentials: true }))
   .use(errorHandler)
   .get("/health", () => ({ status: "ok" }))
   .use(authModule)
