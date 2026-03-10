@@ -1,0 +1,32 @@
+[
+  {
+    "id": "explore",
+    "title": "Explore new places",
+    "subtitle": "Discover must-see spots, hidden gems, and local favorites in every destination",
+    "image": "https://placehold.co/600x400/png?text=Explore+New+Places"
+  },
+  {
+    "id": "plan",
+    "title": "Plan your trips",
+    "subtitle": "Build day-by-day itineraries, keep tickets together, and stay on top of your schedule",
+    "image": "https://placehold.co/600x400/png?text=Plan+Your+Trips"
+  },
+  {
+    "id": "offline",
+    "title": "Offline first",
+    "subtitle": "Download city packs so your maps, plans, and recommendations work without internet",
+    "image": "https://placehold.co/600x400/png?text=Offline+First"
+  },
+  {
+    "id": "ai",
+    "title": "AI travel assistant",
+    "subtitle": "Ask on-device AI for advice about your trip, even when you are completely offline",
+    "image": "https://placehold.co/600x400/png?text=AI+Travel+Assistant"
+  },
+  {
+    "id": "social",
+    "title": "Connect with travelers",
+    "subtitle": "Meet nearby travelers, share plans, and explore together when you choose to opt in",
+    "image": "https://placehold.co/600x400/png?text=Connect+With+Travelers"
+  }
+]

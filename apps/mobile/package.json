@@ -9,19 +9,24 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "jest"
   },
   "dependencies": {
+    "@elysiajs/eden": "^1.4.8",
     "@expo/metro-runtime": "^55.0.6",
     "@hookform/resolvers": "^5.2.2",
+    "@react-native-async-storage/async-storage": "^3.0.1",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/bottom-tabs": "^7.7.3",
     "@react-navigation/elements": "^2.8.1",
     "@react-navigation/native": "^7.1.28",
     "@repo/types": "workspace:*",
     "@rn-primitives/portal": "^1.3.0",
+    "@tanstack/react-query": "^5.90.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "eden-tanstack-react-query": "^0.1.9",
     "expo": "~55.0.4",
     "expo-apple-authentication": "^55.0.8",
     "expo-constants": "~55.0.7",
@@ -52,7 +57,8 @@
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.25.76",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.11",
+    "@repo/api": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
