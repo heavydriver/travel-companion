@@ -36,7 +36,7 @@ Travel Companion is a mobile application that centralizes everything a traveler 
   - `cd travel-companion`
   - `pnpm i`
 - Create a `.env`files in project root and the `apps/api` folder
-  - Copy the variables from `.example.env` and fill the values
+  - Copy the variables from `.env.example` and fill the values
 
 ## Project Organization
 

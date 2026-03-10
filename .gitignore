@@ -4,6 +4,8 @@ dist
 
 .turbo
 .vscode
+.cursor
 .env
+.agents
 
 packages/db/generated
