@@ -38,6 +38,33 @@ Travel Companion is a mobile application that centralizes everything a traveler 
 - Create a `.env`files in project root and the `apps/api` folder
   - Copy the variables from `.env.example` and fill the values
 
+## React Native Async Storage Setup
+
+- Open a new terminal in the travel-companion folder
+- Enter the following commands:
+  - `cd apps/mobile`
+  - `pnpx expo prebuild`
+- If using android emulator:
+  - Open `mobile/android/build.gradle`
+  - Add this to it:
+
+  ```groovy
+  allprojects {
+    repositories {
+        // ... others like google(), mavenCentral()
+
+        maven {
+            url = uri(project(":react-native-async-storage_async-storage").file("local_repo"))
+            // or uri("path/to/node_modules/@react-native-async-storage/async-storage/android/local_repo")
+        }
+    }
+  }
+  ```
+
+- If using iOS
+  - `cd ios`
+  - `pod install`
+
 ## Project Organization
 
 - `./apps/api` - contains backend code
