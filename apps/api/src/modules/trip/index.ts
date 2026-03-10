@@ -2,10 +2,10 @@ import Elysia, { t } from "elysia";
 import { authGuard } from "../../middleware/auth";
 import {
   CreateTripBody,
-  UpdateTripBody,
+  MessageResponse,
   TripListResponse,
   TripResponse,
-  MessageResponse,
+  UpdateTripBody,
 } from "./model";
 import { tripService } from "./service";
 
@@ -17,7 +17,7 @@ export const tripModule = new Elysia({ prefix: "/trips" })
       const trips = await tripService.list(userId);
       return { trips };
     },
-    { response: TripListResponse }
+    { response: TripListResponse },
   )
   .post(
     "/",
@@ -26,39 +26,39 @@ export const tripModule = new Elysia({ prefix: "/trips" })
       set.status = 201;
       return { trip };
     },
-    { body: CreateTripBody, response: { 201: TripResponse } }
+    { body: CreateTripBody, response: { 201: TripResponse } },
   )
   .get(
-    "/:id",
+    "/:tripId",
     async ({ userId, params }) => {
-      const trip = await tripService.getById(params.id, userId);
+      const trip = await tripService.getById(params.tripId, userId);
       return { trip };
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: t.Object({ tripId: t.String() }),
       response: TripResponse,
-    }
+    },
   )
   .patch(
-    "/:id",
+    "/:tripId",
     async ({ userId, params, body }) => {
-      const trip = await tripService.update(params.id, userId, body);
+      const trip = await tripService.update(params.tripId, userId, body);
       return { trip };
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: t.Object({ tripId: t.String() }),
       body: UpdateTripBody,
       response: TripResponse,
-    }
+    },
   )
   .delete(
-    "/:id",
+    "/:tripId",
     async ({ userId, params }) => {
-      await tripService.remove(params.id, userId);
+      await tripService.remove(params.tripId, userId);
       return { message: "Trip deleted" };
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: t.Object({ tripId: t.String() }),
       response: MessageResponse,
-    }
+    },
   );
