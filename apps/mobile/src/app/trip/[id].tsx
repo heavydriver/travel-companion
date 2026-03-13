@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { eachDayOfInterval, format, parseISO } from "date-fns";
 import { CheckCircle2, Pencil, Trash2 } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
@@ -166,6 +165,31 @@ type EditDraft = {
   notes: string;
 };
 
+function safeParseIsoDate(value: string): Date | null {
+  const date = new Date(value);
+  const isValid = !Number.isNaN(date.getTime());
+  return isValid ? date : null;
+}
+
+function dateKey(date: Date): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function dayLabel(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function monthDayLabel(date: Date): string {
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -237,11 +261,50 @@ export default function TripDetailScreen() {
   const trip = tripQuery.data;
   const items = itemsQuery.data ?? [];
 
+  const tripDateLabels = useMemo(() => {
+    if (!trip) return { startLabel: "—", endLabel: "—" };
+    const startParsed = safeParseIsoDate(trip.startDate);
+    const endParsed = safeParseIsoDate(trip.endDate);
+    return {
+      startLabel: startParsed ? monthDayLabel(startParsed) : "—",
+      endLabel: endParsed ? monthDayLabel(endParsed) : "—",
+    };
+  }, [trip]);
+
   const days = useMemo(() => {
     if (!trip) return [];
-    const start = parseISO(trip.startDate);
-    const end = parseISO(trip.endDate);
-    return eachDayOfInterval({ start, end });
+    const start = safeParseIsoDate(trip.startDate);
+    const end = safeParseIsoDate(trip.endDate);
+    if (!start || !end) return [];
+
+    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    const results: Date[] = [];
+    for (let d = startDay; d <= endDay; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+      results.push(d);
+    }
+    // #region agent log
+    fetch("http://127.0.0.1:7547/ingest/d07dcf33-150b-44fc-8a56-3e872fc4f822", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "0a344d" },
+      body: JSON.stringify({
+        sessionId: "0a344d",
+        runId: "pre-fix",
+        hypothesisId: "H1",
+        location: "apps/mobile/src/app/trip/[id].tsx:days-useMemo",
+        message: "Generated day keys (local) vs trip ISO slices",
+        data: {
+          tzOffsetMin: new Date().getTimezoneOffset(),
+          startIso10: trip.startDate?.slice(0, 10) ?? null,
+          endIso10: trip.endDate?.slice(0, 10) ?? null,
+          firstDayKey: results[0] ? dateKey(results[0]) : null,
+          lastDayKey: results.length ? dateKey(results[results.length - 1]) : null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    return results;
   }, [trip]);
 
   const itemsByDay = useMemo(() => {
@@ -252,6 +315,25 @@ export default function TripDetailScreen() {
       list.push(item);
       map.set(dateKey, list.sort((a, b) => a.order - b.order));
     }
+    // #region agent log
+    fetch("http://127.0.0.1:7547/ingest/d07dcf33-150b-44fc-8a56-3e872fc4f822", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "0a344d" },
+      body: JSON.stringify({
+        sessionId: "0a344d",
+        runId: "pre-fix",
+        hypothesisId: "H2",
+        location: "apps/mobile/src/app/trip/[id].tsx:itemsByDay-useMemo",
+        message: "Item date grouping keys (ISO slice)",
+        data: {
+          itemCount: items.length,
+          uniqueKeysSample: Array.from(map.keys()).slice(0, 5),
+          firstItemIso10: items[0]?.date?.slice(0, 10) ?? null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     return map;
   }, [items]);
 
@@ -328,8 +410,7 @@ export default function TripDetailScreen() {
                   {trip.destination?.name} · {trip.destination?.countryCode}
                 </Text>
                 <Text className="mt-0.5 text-xs text-muted-foreground">
-                  {format(parseISO(trip.startDate), "MMM d")} –{" "}
-                  {format(parseISO(trip.endDate), "MMM d")}
+                  {tripDateLabels.startLabel} – {tripDateLabels.endLabel}
                 </Text>
               </View>
               <View className="items-end gap-2">
@@ -342,7 +423,7 @@ export default function TripDetailScreen() {
               </View>
             </View>
           </View>
-        ) : null>
+        ) : null}
 
         <View className="gap-3">
           <Text className="text-base font-semibold text-foreground">
@@ -354,20 +435,20 @@ export default function TripDetailScreen() {
             </Text>
           ) : (
             <View className="gap-4">
-              {days.map((day) => {
-                const dateKey = format(day, "yyyy-MM-dd");
-                const dayItems = itemsByDay.get(dateKey) ?? [];
+              {days.map((day: Date) => {
+                const key = dateKey(day);
+                const dayItems = itemsByDay.get(key) ?? [];
                 const itemCount = dayItems.length;
 
                 return (
                   <View
-                    key={dateKey}
+                    key={key}
                     className="overflow-hidden rounded-2xl border border-border bg-card"
                   >
                     <View className="flex-row items-center justify-between px-4 py-3">
                       <View>
                         <Text className="text-sm font-semibold text-foreground">
-                          {format(day, "EEEE, MMM d")}
+                          {dayLabel(day)}
                         </Text>
                         <Text className="text-xs text-muted-foreground">
                           {itemCount === 0
