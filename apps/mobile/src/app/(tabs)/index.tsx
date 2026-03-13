@@ -1,4 +1,5 @@
 import { Image } from "expo-image";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
   ArrowRight,
@@ -17,7 +18,21 @@ import {
 import { useUnstableNativeVariable } from "nativewind";
 import { Pressable, Text, View } from "react-native";
 import { Screen } from "@/components/shared/Screen";
+import { Button } from "@/components/shared/Button";
+import { apiBaseUrl } from "@/api/client";
 import { useAuthStore } from "@/store/authStore";
+
+type TripCard = {
+  id: string;
+  destinationId: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  destination?: {
+    name: string;
+    countryCode: string;
+  };
+};
 
 const QUICK_TOOLS = [
   { label: "Tickets", icon: Ticket },
@@ -31,12 +46,33 @@ const QUICK_TOOLS = [
 export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
+  const accessToken = useAuthStore((state) => state.accessToken);
   const foreground = useUnstableNativeVariable("--foreground");
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : undefined;
 
   const displayName = user?.name?.split(" ")[0] ?? "there";
+
+  const { data: trips } = useQuery({
+    queryKey: ["trips"],
+    enabled: Boolean(accessToken),
+    queryFn: async (): Promise<TripCard[]> => {
+      if (!accessToken) {
+        throw new Error("Not authenticated");
+      }
+      const response = await fetch(`${apiBaseUrl}/api/v1/trips`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error("Failed to load trips");
+      }
+      const json = (await response.json()) as { trips: TripCard[] };
+      return json.trips;
+    },
+  });
 
   return (
     <Screen scrollable contentClassName="pb-2">
@@ -68,40 +104,74 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Current Trip Card */}
-        <View className="overflow-hidden rounded-2xl bg-card">
-          <View className="relative h-44 overflow-hidden">
-            <Image
-              source="https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=800"
-              className="h-full w-full"
-              contentFit="cover"
-            />
-            <View className="absolute inset-0 bg-black/50" />
-            <View className="absolute left-0 right-0 top-0 h-1 bg-muted">
-              <View className="h-full rounded-full bg-primary" style={{ width: "25%" }} />
-            </View>
-            <View className="absolute inset-0 p-4" style={{ justifyContent: "space-between" }}>
-              <View className="flex-row items-start justify-between">
-                <View className="rounded-full bg-primary px-2.5 py-1">
-                  <Text className="text-xs font-semibold uppercase tracking-wide text-primary-foreground">
-                    Current Trip
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => router.push("/(tabs)/itinerary" as never)}
-                  className="flex-row items-center gap-1 rounded-lg bg-primary px-3 py-2 active:opacity-90"
-                >
-                  <Text className="text-sm font-semibold text-primary-foreground">Itinerary</Text>
-                  <ArrowRight size={16} color="white" />
-                </Pressable>
-              </View>
-              <View>
-                <Text className="text-2xl font-bold text-white">Tokyo, Japan</Text>
-                <Text className="mt-0.5 text-sm text-white/90">Oct 12 – Oct 20</Text>
-                <Text className="text-xs text-white/80">Day 3 of 8</Text>
-              </View>
-            </View>
+        {/* Trips */}
+        <View className="gap-3">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-base font-semibold text-foreground">Your trips</Text>
+            <Pressable
+              onPress={() => router.push("/trip/new" as never)}
+              className="flex-row items-center gap-1 active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel="Create trip"
+            >
+              <Text className="text-sm font-semibold text-primary">New trip</Text>
+              <ArrowRight size={14} color="#3B82F6" />
+            </Pressable>
           </View>
+
+          {trips && trips.length > 0 ? (
+            <View className="gap-3">
+              {trips.map((trip) => (
+                <Pressable
+                  key={trip.id}
+                  onPress={() => router.push(`/trip/${trip.id}` as never)}
+                  className="overflow-hidden rounded-2xl border border-border bg-card active:opacity-90"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open trip ${trip.title}`}
+                >
+                  <View className="relative h-36 overflow-hidden">
+                    <Image
+                      source="https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=800"
+                      className="h-full w-full"
+                      contentFit="cover"
+                    />
+                    <View className="absolute inset-0 bg-black/45" />
+                    <View className="absolute inset-0 p-4" style={{ justifyContent: "space-between" }}>
+                      <View className="flex-row items-center justify-between">
+                        <View className="rounded-full bg-primary/90 px-2.5 py-1">
+                          <Text className="text-xs font-semibold uppercase tracking-wide text-primary-foreground">
+                            {trip.destination?.name ?? "Destination"}
+                          </Text>
+                        </View>
+                      </View>
+                      <View>
+                        <Text className="text-xl font-bold text-white">{trip.title}</Text>
+                        <Text className="mt-0.5 text-xs text-white/90">
+                          {new Date(trip.startDate).toLocaleDateString()} –{" "}
+                          {new Date(trip.endDate).toLocaleDateString()}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <View className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
+              <Text className="text-sm font-medium text-foreground">
+                No trips yet
+              </Text>
+              <Text className="mt-1 text-xs text-muted-foreground">
+                Create your first trip to start building a day-by-day itinerary.
+              </Text>
+              <Button
+                label="Create a trip"
+                onPress={() => router.push("/trip/new" as never)}
+                className="mt-3"
+                size="md"
+              />
+            </View>
+          )}
         </View>
 
         {/* Local Time & Weather */}
