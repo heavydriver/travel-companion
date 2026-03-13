@@ -7,8 +7,6 @@ import { useUiStore } from "@/store/uiStore";
 export default function Index() {
   const hydrateAuth = useAuthStore((state) => state.hydrateFromStorage);
   const hydrateUi = useUiStore((state) => state.hydrateFromStorage);
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const hasSeenOnboarding = useUiStore((state) => state.hasSeenOnboarding);
   const [isBootstrapped, setIsBootstrapped] = useState(false);
 
   useEffect(() => {
@@ -28,13 +26,8 @@ export default function Index() {
     );
   }
 
-  if (isAuthenticated) {
-    return <Redirect href={"/(tabs)" as never} />;
-  }
-
-  if (hasSeenOnboarding) {
-    return <Redirect href={"/(auth)/login" as never} />;
-  }
-
-  return <Redirect href={"/onboarding" as never} />;
+  // TEMPORARY: Demo-only shortcut.
+  // Always go straight to the main tabs so we can
+  // access Home (trip list) and Itinerary without auth.
+  return <Redirect href={"/(tabs)" as never} />;
 }
