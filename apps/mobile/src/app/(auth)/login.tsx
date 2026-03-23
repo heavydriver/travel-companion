@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Pressable, Text, View } from "react-native";
 import { z } from "zod";
@@ -26,6 +27,8 @@ export default function LoginScreen() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
 
+  const [error, setError] = useState<string | null>(null);
+
   const {
     control,
     handleSubmit,
@@ -41,15 +44,17 @@ export default function LoginScreen() {
   const loginMutation = useMutation({ ...eden.api.v1.auth.login.post.mutationOptions() });
 
   const onSubmit = handleSubmit(async (values) => {
-    const data = await loginMutation.mutateAsync(values);
-
-    console.log(data);
-
-    await login({
-      user: data.user,
-      accessToken: data.accessToken,
-    });
-    router.replace("/(tabs)" as never);
+    setError(null);
+    try {
+      const data = await loginMutation.mutateAsync(values);
+      await login({
+        user: data.user,
+        accessToken: data.accessToken,
+      });
+      router.replace("/(tabs)" as never);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Invalid email or password.");
+    }
   });
 
   return (
@@ -57,7 +62,7 @@ export default function LoginScreen() {
       <View className="flex-1 gap-6">
         <AuthHeader title="Welcome back" subtitle="Sign in to continue planning your trips." />
 
-        <ErrorBanner message={loginMutation.error ? "Invalid email or password." : null} />
+        <ErrorBanner message={error ?? null} />
 
         <View className="gap-4">
           <AuthTextField

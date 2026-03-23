@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Pressable, Text, View } from "react-native";
 import { z } from "zod";
@@ -31,6 +32,8 @@ export default function RegisterScreen() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
 
+  const [error, setError] = useState<string | null>(null);
+
   const {
     control,
     handleSubmit,
@@ -50,12 +53,16 @@ export default function RegisterScreen() {
   });
 
   const onSubmit = handleSubmit(async (values) => {
-    const data = await registerMutation.mutateAsync(values);
-    await login({
-      user: data.user,
-      accessToken: data.accessToken,
-    });
-    router.replace("/(tabs)" as never);
+    try {
+      const data = await registerMutation.mutateAsync(values);
+      await login({
+        user: data.user,
+        accessToken: data.accessToken,
+      });
+      router.replace("/(tabs)" as never);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to register. Please try again.");
+    }
   });
 
   return (
@@ -66,9 +73,7 @@ export default function RegisterScreen() {
           subtitle="Start planning your adventures in one place."
         />
 
-        <ErrorBanner
-          message={registerMutation.error ? "Unable to register. Please try again." : null}
-        />
+        <ErrorBanner message={error ?? null} />
 
         <View className="gap-4">
           <AuthTextField
