@@ -180,7 +180,7 @@ export default function LanguageGuideScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Play phrase"
-              onPress={() => void playPhrase(item)}
+              onPress={() => void playPhrase(item, selectedLanguage?.isoCode)}
               className="h-12 w-12 items-center justify-center rounded-full bg-primary active:opacity-80"
             >
               <Play size={20} color="white" />
