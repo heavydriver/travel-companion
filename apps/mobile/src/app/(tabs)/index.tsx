@@ -141,6 +141,11 @@ export default function HomeScreen() {
             {QUICK_TOOLS.map(({ label, icon: Icon }) => (
               <Pressable
                 key={label}
+                onPress={() => {
+                  if (label === "Translate") {
+                    router.push("/language-guide" as never);
+                  }
+                }}
                 className="h-20 w-[31%] items-center justify-center rounded-2xl border border-border bg-card active:opacity-90"
                 accessibilityRole="button"
                 accessibilityLabel={label}

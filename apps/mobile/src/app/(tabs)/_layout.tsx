@@ -13,6 +13,7 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarHideOnKeyboard: true,
       }}
       tabBar={(props) => <BottomTabBar {...props} />}
     />

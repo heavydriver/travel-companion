@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { client, EdenProvider } from "@/api/client";
 import { NAV_THEME } from "@/lib/theme";
 
@@ -16,11 +17,13 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <EdenProvider client={client} queryClient={queryClient}>
-        <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-          <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-          <Stack screenOptions={{ headerShown: false }} />
-          <PortalHost />
-        </ThemeProvider>
+        <KeyboardProvider>
+          <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+            <Stack screenOptions={{ headerShown: false }} />
+            <PortalHost />
+          </ThemeProvider>
+        </KeyboardProvider>
       </EdenProvider>
     </QueryClientProvider>
   );
