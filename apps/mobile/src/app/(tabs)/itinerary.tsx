@@ -12,11 +12,12 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { useTripStore } from "@/store/tripStore";
+import { formatDate, toDateOnly } from "@/lib/utils";
 
 type ItineraryItem = {
   id: string;
   title: string;
-  date: string;
+  date: string | Date;
   startTime: string | null;
   endTime: string | null;
   notes: string | null;
@@ -24,18 +25,10 @@ type ItineraryItem = {
   order: number;
 };
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function groupByDate(items: ItineraryItem[]) {
   const groups: Record<string, ItineraryItem[]> = {};
   for (const item of items) {
-    const key = item.date.split("T")[0];
+    const key = toDateOnly(item.date);
     if (!groups[key]) groups[key] = [];
     groups[key].push(item);
   }
@@ -48,8 +41,6 @@ export default function ItineraryTabScreen() {
   const trips = useTripStore((s) => s.trips);
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
-  const foreground = useUnstableNativeVariable("--foreground");
-  const iconColor = foreground ? `hsl(${foreground})` : undefined;
 
   const itemsQuery = useQuery({
     queryKey: ["itinerary", activeTrip?.id],
@@ -98,6 +89,7 @@ export default function ItineraryTabScreen() {
   const items = (itemsQuery.data?.items ?? []) as ItineraryItem[];
   const grouped = groupByDate(items);
   const doneCount = items.filter((i) => i.isDone).length;
+  const progress = items.length > 0 ? doneCount / items.length : 0;
 
   return (
     <Screen scrollable contentClassName="pb-6">
@@ -113,12 +105,25 @@ export default function ItineraryTabScreen() {
           <Text className="text-2xl font-bold text-foreground">
             {activeTrip.title}
           </Text>
-          {items.length > 0 && (
-            <Text className="mt-1 text-sm text-muted-foreground">
-              {doneCount}/{items.length} completed
-            </Text>
-          )}
         </View>
+
+        {/* Progress bar */}
+        {items.length > 0 && (
+          <View className="gap-2">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-sm font-medium text-foreground">Progress</Text>
+              <Text className="text-sm text-muted-foreground">
+                {doneCount}/{items.length} completed
+              </Text>
+            </View>
+            <View className="h-2.5 overflow-hidden rounded-full bg-muted">
+              <View
+                className="h-full rounded-full bg-chart-2"
+                style={{ width: `${progress * 100}%` }}
+              />
+            </View>
+          </View>
+        )}
 
         <Button
           label="Open Full Itinerary"
@@ -151,9 +156,10 @@ export default function ItineraryTabScreen() {
               {dayItems.length === 1 ? "item" : "items"}
             </Text>
             {dayItems.map((item) => (
-              <View
+              <Pressable
                 key={item.id}
-                className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
+                onPress={() => router.push(`/trip/${activeTrip.id}` as never)}
+                className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 active:opacity-90"
               >
                 {item.isDone ? (
                   <CheckCircle2 size={20} color="#22C55E" />
@@ -173,7 +179,7 @@ export default function ItineraryTabScreen() {
                     </Text>
                   )}
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         ))}
