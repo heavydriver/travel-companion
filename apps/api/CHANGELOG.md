@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/heavydriver/travel-companion/compare/api-v1.0.0...api-v1.0.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* auth test ([30bf143](https://github.com/heavydriver/travel-companion/commit/30bf143ec515e8b7e47e9e48f79e1c37d87668e0))
+
 # 1.0.0 (2026-03-27)
 
 
