@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Heart, Play, Search } from "lucide-react-native";
+import { ArrowLeft, Heart, Play } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import { Screen } from "@/components/shared/Screen";
 import {
-  type Option,
   Select,
   SelectContent,
   SelectItem,
@@ -72,16 +71,12 @@ export default function LanguageGuideScreen() {
   const selectedLanguageLabel = selectedLanguage
     ? `${selectedLanguage.name} (${selectedLanguage.nativeName})`
     : null;
-  const selectedLanguageOption = useMemo<Option | undefined>(
-    () =>
-      selectedLanguage
-        ? {
-            value: selectedLanguage.id,
-            label: selectedLanguageLabel ?? selectedLanguage.name,
-          }
-        : undefined,
-    [selectedLanguage, selectedLanguageLabel],
-  );
+  const selectedLanguageOption = selectedLanguage
+    ? {
+        value: selectedLanguage.id,
+        label: selectedLanguageLabel ?? selectedLanguage.name,
+      }
+    : undefined;
 
   useEffect(() => {
     if (!languages.length || selectedLanguageId) return;
@@ -123,7 +118,7 @@ export default function LanguageGuideScreen() {
     return allPhrases.filter((phrase) => phrase.category === activeCategory);
   }, [activeCategory, allPhrases, favoriteSet]);
 
-  const onSelectLanguage = (option?: Option) => {
+  const onSelectLanguage = (option?: { value: string }) => {
     if (!option?.value) return;
     setSelectedLanguageId(option.value);
   };
@@ -237,13 +232,7 @@ export default function LanguageGuideScreen() {
                 <ArrowLeft size={20} color={foregroundColor} />
               </Pressable>
               <Text className="text-2xl font-bold text-foreground">Language Guide</Text>
-              <Pressable
-                className="h-10 w-10 items-center justify-center rounded-full bg-card active:opacity-80"
-                accessibilityRole="button"
-                accessibilityLabel="Search"
-              >
-                <Search size={20} color={foregroundColor} />
-              </Pressable>
+              <View className="h-10 w-10" />
             </View>
 
             <Text className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
