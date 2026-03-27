@@ -25,7 +25,7 @@ COPY apps/api apps/api
 COPY packages/db packages/db
 COPY packages/types packages/types
 
-RUN pnpm --filter @repo/api build
+RUN pnpm --filter @repo/db db:generate && pnpm --filter @repo/api build
 
 FROM oven/bun:canary-alpine AS runner
 WORKDIR /app
