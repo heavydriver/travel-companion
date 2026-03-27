@@ -63,6 +63,9 @@ jobs:
       - name: Apply DB migrations for API tests
         run: pnpm --filter @repo/db db:deploy
 
+      - name: Generate DB client
+        run: pnpm --filter @repo/db db:generate
+
       - name: Run API typecheck
         run: pnpm --filter @repo/api typecheck
 
