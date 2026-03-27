@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { ChevronRight, User } from "lucide-react-native";
+import { ChevronRight, MessageCircle, User, Users } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { Alert, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
@@ -45,7 +45,10 @@ export default function SettingsScreen() {
         <Text className="text-2xl font-bold text-foreground">Settings</Text>
 
         {/* Profile section */}
-        <View className="rounded-2xl border border-border bg-card p-4">
+        <Pressable
+          onPress={() => router.push("/profile" as never)}
+          className="rounded-2xl border border-border bg-card p-4 active:opacity-90"
+        >
           <View className="flex-row items-center gap-3">
             <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/20">
               <User size={24} color={resolvedIcon} />
@@ -58,6 +61,30 @@ export default function SettingsScreen() {
             </View>
             <ChevronRight size={20} color={resolvedIcon} />
           </View>
+        </Pressable>
+
+        <View className="rounded-2xl border border-border bg-card p-2">
+          <Pressable
+            onPress={() => router.push("/social-connect" as never)}
+            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
+          >
+            <View className="flex-row items-center gap-2">
+              <Users size={18} color={resolvedIcon} />
+              <Text className="text-base text-foreground">Social Connect</Text>
+            </View>
+            <ChevronRight size={18} color={resolvedIcon} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push("/messages/c-1" as never)}
+            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
+          >
+            <View className="flex-row items-center gap-2">
+              <MessageCircle size={18} color={resolvedIcon} />
+              <Text className="text-base text-foreground">Messaging</Text>
+            </View>
+            <ChevronRight size={18} color={resolvedIcon} />
+          </Pressable>
         </View>
 
         {/* Sign out */}
