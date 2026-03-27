@@ -15,7 +15,7 @@ function makeCredentials(suffix: string) {
   return {
     email: `${runId}_${suffix}@test.local`,
     username: `${runId}_${suffix}`,
-    password: "Password123!",
+    password: "Password456!",
     name: `Test User ${suffix}`,
   };
 }
@@ -43,7 +43,7 @@ describe("authService", () => {
       creds.email,
       creds.password,
       creds.name,
-      creds.username
+      creds.username,
     );
 
     createdUserIds.add(result.user.id);
@@ -60,7 +60,7 @@ describe("authService", () => {
       creds.email,
       creds.password,
       creds.name,
-      creds.username
+      creds.username,
     );
     createdUserIds.add(registered.user.id);
 
@@ -77,7 +77,7 @@ describe("authService", () => {
       creds.email,
       creds.password,
       creds.name,
-      creds.username
+      creds.username,
     );
     createdUserIds.add(registered.user.id);
 
