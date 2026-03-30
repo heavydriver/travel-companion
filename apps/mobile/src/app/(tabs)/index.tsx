@@ -1,46 +1,45 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
+  Calendar,
   MapPin,
   Plus,
   Settings,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useCallback, useEffect } from "react";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
 import { useTripStore, type Trip } from "@/store/tripStore";
+import { cn, daysUntil, formatDateRange } from "@/lib/utils";
 
-function formatDateRange(start: string, end: string) {
-  const s = new Date(start);
-  const e = new Date(end);
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  return `${s.toLocaleDateString("en-US", opts)} – ${e.toLocaleDateString("en-US", opts)}`;
-}
-
-function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
-  const mutedFg = useUnstableNativeVariable("--muted-foreground");
-  const mutedColor = mutedFg ? `hsl(${mutedFg})` : undefined;
-
+function getTripStatus(trip: Trip) {
   const now = new Date();
   const start = new Date(trip.startDate);
   const end = new Date(trip.endDate);
   const isUpcoming = start > now;
   const isActive = start <= now && end >= now;
-  const badge = isActive ? "Active" : isUpcoming ? "Upcoming" : "Past";
-  const badgeClass = isActive
-    ? "bg-chart-2/20"
-    : isUpcoming
-      ? "bg-primary/20"
-      : "bg-muted";
-  const badgeTextClass = isActive
-    ? "text-chart-2"
-    : isUpcoming
-      ? "text-primary"
-      : "text-muted-foreground";
+
+  if (isActive) {
+    const dayNum = Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    return { badge: "Active", badgeClass: "bg-chart-2/20", textClass: "text-chart-2", subtitle: `Day ${dayNum} of ${totalDays}` };
+  }
+  if (isUpcoming) {
+    const days = daysUntil(trip.startDate);
+    const subtitle = days === 0 ? "Starts today!" : days === 1 ? "Starts tomorrow" : `In ${days} days`;
+    return { badge: "Upcoming", badgeClass: "bg-primary/20", textClass: "text-primary", subtitle };
+  }
+  return { badge: "Past", badgeClass: "bg-muted", textClass: "text-muted-foreground", subtitle: "Completed" };
+}
+
+function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
+  const mutedFg = useUnstableNativeVariable("--muted-foreground");
+  const mutedColor = mutedFg ? `hsl(${mutedFg})` : undefined;
+  const status = getTripStatus(trip);
 
   return (
     <Pressable
@@ -58,14 +57,20 @@ function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
             </Text>
           </View>
           <Text className="text-lg font-bold text-foreground">{trip.title}</Text>
-          <Text className="text-sm text-muted-foreground">
-            {formatDateRange(trip.startDate, trip.endDate)}
-          </Text>
+          <View className="flex-row items-center gap-2">
+            <Calendar size={13} color={mutedColor} />
+            <Text className="text-sm text-muted-foreground">
+              {formatDateRange(trip.startDate, trip.endDate)}
+            </Text>
+          </View>
         </View>
-        <View className={`rounded-full px-2.5 py-1 ${badgeClass}`}>
-          <Text className={`text-xs font-semibold ${badgeTextClass}`}>
-            {badge}
-          </Text>
+        <View className="items-end gap-1">
+          <View className={cn("rounded-full px-2.5 py-1", status.badgeClass)}>
+            <Text className={cn("text-xs font-semibold", status.textClass)}>
+              {status.badge}
+            </Text>
+          </View>
+          <Text className="text-xs text-muted-foreground">{status.subtitle}</Text>
         </View>
       </View>
     </Pressable>
@@ -79,6 +84,8 @@ export default function HomeScreen() {
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
   const foreground = useUnstableNativeVariable("--foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
+  const mutedFg = useUnstableNativeVariable("--muted-foreground");
+  const mutedColor = mutedFg ? `hsl(${mutedFg})` : undefined;
   const displayName = user?.name?.split(" ")[0] ?? "there";
 
   const tripsQuery = useQuery({
@@ -98,75 +105,145 @@ export default function HomeScreen() {
 
   const trips = (tripsQuery.data?.trips ?? []) as Trip[];
 
+  const activeTrips = trips.filter((t) => {
+    const now = new Date();
+    return new Date(t.startDate) <= now && new Date(t.endDate) >= now;
+  });
+  const upcomingTrips = trips.filter((t) => new Date(t.startDate) > new Date());
+  const pastTrips = trips.filter((t) => new Date(t.endDate) < new Date());
+
+  const onRefresh = useCallback(() => {
+    tripsQuery.refetch();
+  }, [tripsQuery]);
+
   return (
-    <Screen scrollable contentClassName="pb-6">
-      <View className="gap-6">
-        {/* Header */}
-        <View className="flex-row items-start justify-between">
-          <View>
-            <Text className="text-2xl font-bold text-foreground">
-              Hello, {displayName}!
-            </Text>
-            <Text className="mt-1 text-sm text-muted-foreground">
-              {trips.length} {trips.length === 1 ? "trip" : "trips"} planned
-            </Text>
-          </View>
-          <Pressable
-            onPress={() => router.push("/settings" as never)}
-            className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
-            accessibilityRole="button"
-            accessibilityLabel="Settings"
-          >
-            <Settings size={20} color={iconColor} />
-          </Pressable>
-        </View>
-
-        {/* Create trip button */}
-        <Pressable
-          onPress={() => router.push("/trip/new" as never)}
-          className="flex-row items-center justify-center gap-2 rounded-2xl border border-dashed border-primary/40 bg-primary/10 py-4 active:opacity-90"
-          accessibilityRole="button"
-          accessibilityLabel="Create a new trip"
-        >
-          <Plus size={20} color={iconColor} />
-          <Text className="text-base font-semibold text-primary">
-            Plan a New Trip
-          </Text>
-        </Pressable>
-
-        {/* Trip list */}
-        {tripsQuery.isLoading && (
-          <View className="items-center py-8">
-            <ActivityIndicator />
-            <Text className="mt-2 text-sm text-muted-foreground">
-              Loading your trips...
-            </Text>
-          </View>
-        )}
-
-        {!tripsQuery.isLoading && trips.length === 0 && (
-          <View className="items-center rounded-2xl border border-border bg-card py-10">
-            <MapPin size={40} color={iconColor} />
-            <Text className="mt-3 text-lg font-semibold text-foreground">
-              No trips yet
-            </Text>
-            <Text className="mt-1 text-sm text-muted-foreground">
-              Tap above to plan your first adventure
-            </Text>
-          </View>
-        )}
-
-        {trips.map((trip) => (
-          <TripCard
-            key={trip.id}
-            trip={trip}
-            onPress={() => {
-              setActiveTripId(trip.id);
-              router.push(`/trip/${trip.id}` as never);
-            }}
+    <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-background">
+      <ScrollView
+        contentContainerClassName="flex-grow px-5 pt-6 pb-6"
+        refreshControl={
+          <RefreshControl
+            refreshing={tripsQuery.isRefetching}
+            onRefresh={onRefresh}
           />
-        ))}
-      </View>
-    </Screen>
+        }
+      >
+        <View className="gap-6">
+          {/* Header */}
+          <View className="flex-row items-start justify-between">
+            <View>
+              <Text className="text-2xl font-bold text-foreground">
+                Hello, {displayName}!
+              </Text>
+              <Text className="mt-1 text-sm text-muted-foreground">
+                {trips.length === 0
+                  ? "Ready to plan your first trip?"
+                  : `${trips.length} ${trips.length === 1 ? "trip" : "trips"} planned`}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => router.push("/settings" as never)}
+              className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <Settings size={20} color={iconColor} />
+            </Pressable>
+          </View>
+
+          {/* Create trip button */}
+          <Pressable
+            onPress={() => router.push("/trip/new" as never)}
+            className="flex-row items-center justify-center gap-2 rounded-2xl border border-dashed border-primary/40 bg-primary/10 py-4 active:opacity-90"
+            accessibilityRole="button"
+            accessibilityLabel="Create a new trip"
+          >
+            <Plus size={20} color={iconColor} />
+            <Text className="text-base font-semibold text-primary">
+              Plan a New Trip
+            </Text>
+          </Pressable>
+
+          {/* Loading */}
+          {tripsQuery.isLoading && (
+            <View className="items-center py-8">
+              <ActivityIndicator />
+              <Text className="mt-2 text-sm text-muted-foreground">
+                Loading your trips...
+              </Text>
+            </View>
+          )}
+
+          {/* Empty */}
+          {!tripsQuery.isLoading && trips.length === 0 && (
+            <View className="items-center rounded-2xl border border-border bg-card py-10">
+              <MapPin size={40} color={mutedColor} />
+              <Text className="mt-3 text-lg font-semibold text-foreground">
+                No trips yet
+              </Text>
+              <Text className="mt-1 text-sm text-muted-foreground">
+                Tap above to plan your first adventure
+              </Text>
+            </View>
+          )}
+
+          {/* Active trips */}
+          {activeTrips.length > 0 && (
+            <View className="gap-3">
+              <Text className="text-sm font-semibold text-chart-2">
+                ACTIVE NOW
+              </Text>
+              {activeTrips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  onPress={() => {
+                    setActiveTripId(trip.id);
+                    router.push(`/trip/${trip.id}` as never);
+                  }}
+                />
+              ))}
+            </View>
+          )}
+
+          {/* Upcoming trips */}
+          {upcomingTrips.length > 0 && (
+            <View className="gap-3">
+              <Text className="text-sm font-semibold text-primary">
+                UPCOMING
+              </Text>
+              {upcomingTrips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  onPress={() => {
+                    setActiveTripId(trip.id);
+                    router.push(`/trip/${trip.id}` as never);
+                  }}
+                />
+              ))}
+            </View>
+          )}
+
+          {/* Past trips */}
+          {pastTrips.length > 0 && (
+            <View className="gap-3">
+              <Text className="text-sm font-semibold text-muted-foreground">
+                PAST TRIPS
+              </Text>
+              {pastTrips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  onPress={() => {
+                    setActiveTripId(trip.id);
+                    router.push(`/trip/${trip.id}` as never);
+                  }}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
