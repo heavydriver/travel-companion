@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/heavydriver/travel-companion/compare/api-v1.0.1...api-v1.0.2) (2026-03-30)
+
+
+### Bug Fixes
+
+* trip date handling + date pickers, explore tab, trip editing ([2b26109](https://github.com/heavydriver/travel-companion/commit/2b26109f1b48474af0ba053f8b869300f8485fcd))
+
 ## [1.0.1](https://github.com/heavydriver/travel-companion/compare/api-v1.0.0...api-v1.0.1) (2026-03-27)
 
 
