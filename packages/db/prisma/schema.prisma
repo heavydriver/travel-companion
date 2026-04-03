@@ -117,6 +117,7 @@ model Destination {
   longitude    Float
   timezone     String
   currencyCode String
+  imageUrl     String?
 
   bestTimeToVisit String? @db.VarChar(500)
   emergencyNumber String?
@@ -153,8 +154,9 @@ model DestinationLanguage {
 // =======================
 
 model Place {
-  id            String @id @default(cuid())
+  id            String  @id @default(cuid())
   destinationId String
+  googlePlaceId String?
 
   name        String
   slug        String
@@ -192,12 +194,14 @@ model Place {
 enum PlaceCategory {
   ATTRACTION
   RESTAURANT
+  FAST_FOOD
   CAFE
   HOTEL
   TRANSPORT
   SHOPPING
   NATURE
   NIGHTLIFE
+  CULTURE
   OTHER
 }
 
