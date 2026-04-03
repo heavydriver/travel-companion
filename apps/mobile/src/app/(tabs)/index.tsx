@@ -7,11 +7,10 @@ import {
   Settings,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useCallback, useEffect } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useRef } from "react";
+import { Animated, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
 import { useTripStore, type Trip } from "@/store/tripStore";
 import { cn, daysUntil, formatDateRange } from "@/lib/utils";
@@ -74,6 +73,34 @@ function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
         </View>
       </View>
     </Pressable>
+  );
+}
+
+function SkeletonCard() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [opacity]);
+
+  return (
+    <Animated.View
+      style={{ opacity }}
+      className="rounded-2xl border border-border bg-card p-4"
+    >
+      <View className="gap-2">
+        <View className="h-3 w-32 rounded-full bg-muted" />
+        <View className="h-5 w-48 rounded-full bg-muted" />
+        <View className="h-3 w-36 rounded-full bg-muted" />
+      </View>
+    </Animated.View>
   );
 }
 
@@ -163,13 +190,12 @@ export default function HomeScreen() {
             </Text>
           </Pressable>
 
-          {/* Loading */}
+          {/* Loading skeletons */}
           {tripsQuery.isLoading && (
-            <View className="items-center py-8">
-              <ActivityIndicator />
-              <Text className="mt-2 text-sm text-muted-foreground">
-                Loading your trips...
-              </Text>
+            <View className="gap-4">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
             </View>
           )}
 
