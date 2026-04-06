@@ -2,6 +2,8 @@ import Elysia from "elysia";
 import {
   RegisterBody,
   LoginBody,
+  GoogleBody,
+  AppleBody,
   AuthResponse,
   RefreshResponse,
   MessageResponse,
@@ -12,7 +14,14 @@ import { AppError } from "../../middleware/errorHandler";
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 function setRefreshCookie(
-  cookie: Record<string, any>,
+  cookie: Record<string, { set: (opts: {
+    value: string;
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: "lax";
+    maxAge: number;
+    path: string;
+  }) => void } | undefined>,
   value: string,
   maxAge = REFRESH_MAX_AGE
 ) {
@@ -55,6 +64,29 @@ export const authModule = new Elysia({ prefix: "/auth" })
       return { user, accessToken };
     },
     { body: LoginBody, response: AuthResponse }
+  )
+  .post(
+    "/google",
+    async ({ body, cookie }) => {
+      const { user, accessToken, refreshToken } = await authService.googleLogin(
+        body.idToken
+      );
+      setRefreshCookie(cookie, refreshToken);
+      return { user, accessToken };
+    },
+    { body: GoogleBody, response: AuthResponse }
+  )
+  .post(
+    "/apple",
+    async ({ body, cookie }) => {
+      const { user, accessToken, refreshToken } = await authService.appleLogin(
+        body.identityToken,
+        body.name
+      );
+      setRefreshCookie(cookie, refreshToken);
+      return { user, accessToken };
+    },
+    { body: AppleBody, response: AuthResponse }
   )
   .post(
     "/refresh",
