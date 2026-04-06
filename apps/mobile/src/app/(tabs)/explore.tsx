@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type Destination = {
   id: string;
@@ -172,12 +173,13 @@ export default function ExploreScreen() {
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
   const destQuery = useQuery({
-    queryKey: ["explore-destinations", searchQuery],
+    queryKey: ["explore-destinations", debouncedSearch],
     queryFn: async () => {
       const res = await client.api.v1.destinations.get({
-        query: { q: searchQuery },
+        query: { q: debouncedSearch },
       });
       if (res.error) throw new Error("Failed to load destinations");
       return res.data;
