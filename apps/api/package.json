@@ -8,7 +8,8 @@
     "dev": "bun --watch ./src/index.ts",
     "build": "bun build ./src/index.ts --target bun --outdir dist",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=lcov"
   },
   "keywords": [],
   "author": "",

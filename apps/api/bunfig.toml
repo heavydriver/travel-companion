@@ -1,0 +1,34 @@
+[test]
+coverage = true
+coverageReporter = ["text", "lcov"]
+
+coverageThreshold = 0.7
+
+coveragePathIgnorePatterns = [
+  # Exclude utility files
+  "src/utils/**",
+
+  # Exclude configuration files
+  "*.config.js",
+  "webpack.config.ts",
+  "vite.config.ts",
+
+  # Exclude specific test patterns
+  "**/*.spec.ts",
+  "**/*.e2e.ts",
+
+  # Exclude build artifacts
+  "dist/**",
+  "build/**",
+
+  # Exclude generated files
+  "src/generated/**",
+  "**/*.generated.ts",
+
+  # Exclude vendor/third-party code
+  "vendor/**",
+  "third-party/**",
+
+  # packages
+  "**/packages/db/**"
+]
