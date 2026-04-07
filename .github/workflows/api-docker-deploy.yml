@@ -95,18 +95,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-        with:
-          version: 10.28.2
-          run_install: false
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Semantic Release for apps/api
         id: semantic
@@ -144,19 +136,6 @@ jobs:
           set -euo pipefail
           git fetch origin main
           git checkout origin/main
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-        with:
-          version: 10.28.2
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v4
@@ -206,6 +185,7 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ steps.version.outputs.image_ref }}
