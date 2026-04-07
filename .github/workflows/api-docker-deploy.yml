@@ -71,12 +71,12 @@ jobs:
       - name: Run API tests with Bun (LCOV coverage)
         run: pnpm --filter @repo/api test
 
-      - name: Upload Bun LCOV coverage artifact
-        uses: codecov/codecov-action@v3
+      - name: Upload API coverage report (LCOV)
+        uses: actions/upload-artifact@v4
         with:
           name: api-coverage-lcov
           path: apps/api/coverage/lcov.info
-          fail_ci_if_error: true
+          if-no-files-found: error
 
   release_api:
     name: Semantic Release (API)
