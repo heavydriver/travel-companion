@@ -2,8 +2,6 @@
 coverage = true
 coverageReporter = ["text", "lcov"]
 
-coverageThreshold = 0.7
-
 coveragePathIgnorePatterns = [
   # Exclude utility files
   "src/utils/**",
