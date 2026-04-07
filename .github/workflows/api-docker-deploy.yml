@@ -95,6 +95,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.28.2
+          run_install: false
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -138,6 +144,12 @@ jobs:
           set -euo pipefail
           git fetch origin main
           git checkout origin/main
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.28.2
+          run_install: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
