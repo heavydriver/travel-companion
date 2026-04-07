@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/heavydriver/travel-companion/compare/api-v1.1.0...api-v1.1.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* updated docker compose and Caddyfile ([83a53a8](https://github.com/heavydriver/travel-companion/commit/83a53a88a394e556885995e364771a4eff68329a))
+
 # [1.1.0](https://github.com/heavydriver/travel-companion/compare/api-v1.0.2...api-v1.1.0) (2026-04-06)
 
 
