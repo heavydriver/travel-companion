@@ -56,6 +56,7 @@ export default function NewTripScreen() {
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
 
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
   const [selectedDest, setSelectedDest] = useState<Destination | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [showStartPicker, setShowStartPicker] = useState(false);
@@ -81,15 +82,15 @@ export default function NewTripScreen() {
   const endDate = watch("endDate");
 
   const destQuery = useQuery({
-    queryKey: ["destinations", searchQuery],
+    queryKey: ["destinations", debouncedSearch],
     queryFn: async () => {
       const res = await client.api.v1.destinations.get({
-        query: { q: searchQuery },
+        query: { q: debouncedSearch },
       });
       if (res.error) throw new Error("Failed to search destinations");
       return res.data;
     },
-    enabled: searchQuery.length >= 2,
+    enabled: debouncedSearch.length >= 2,
   });
 
   const createMutation = useMutation({
