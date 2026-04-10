@@ -14,6 +14,17 @@ export type Trip = {
   };
 };
 
+export function getEligibleTripForDestination(trips: Trip[], destinationId: string) {
+  const today = new Date();
+  return trips
+    .filter(
+      (trip) =>
+        trip.destination.id === destinationId &&
+        new Date(trip.endDate) >= today,
+    )
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0];
+}
+
 type TripState = {
   trips: Trip[];
   activeTripId: string | null;
