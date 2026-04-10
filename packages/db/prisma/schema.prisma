@@ -110,7 +110,11 @@ model Destination {
   slug        String  @unique
   country     String
   countryCode String
+  kind        DestinationKind @default(CITY)
   region      String?
+  adminCode   String?
+  m49Code     String?
+  searchAliases Json?
   description String? @db.VarChar(2000)
 
   latitude     Float
@@ -134,7 +138,17 @@ model Destination {
   languages DestinationLanguage[]
 
   @@index([countryCode])
+  @@index([adminCode])
+  @@index([m49Code])
+  @@index([kind])
   @@index([isFeatured])
+}
+
+enum DestinationKind {
+  CITY
+  STATE
+  REGION
+  COUNTRY
 }
 
 model DestinationLanguage {
