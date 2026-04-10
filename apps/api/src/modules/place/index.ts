@@ -1,10 +1,27 @@
 import Elysia, { t } from "elysia";
 import { authGuard } from "../../middleware/auth";
-import { PlaceQueryParams, PlaceListResponse, PlaceDetailResponse } from "./model";
+import {
+  NearbyPlaceListResponse,
+  NearbyPlaceQueryParams,
+  PlaceDetailResponse,
+  PlaceListResponse,
+  PlaceQueryParams,
+} from "./model";
 import { placeService } from "./service";
 
 export const placeModule = new Elysia()
   .use(authGuard)
+  .get(
+    "/places/nearby",
+    async ({ query }) => {
+      const places = await placeService.nearby(query);
+      return { places };
+    },
+    {
+      query: NearbyPlaceQueryParams,
+      response: NearbyPlaceListResponse,
+    }
+  )
   .get(
     "/destinations/:destId/places",
     async ({ params, query }) => {
