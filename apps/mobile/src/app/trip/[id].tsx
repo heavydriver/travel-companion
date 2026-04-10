@@ -7,8 +7,10 @@ import {
   ChevronLeft,
   Circle,
   Clock,
+  Download,
   Edit3,
   MapPin,
+  PackageCheck,
   Plus,
   Trash2,
 } from "lucide-react-native";
@@ -29,6 +31,7 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { formatDate, toDateOnly } from "@/lib/utils";
+import { useOfflineStore } from "@/store/offlineStore";
 
 type ItineraryItem = {
   id: string;
@@ -127,6 +130,37 @@ export default function TripDetailScreen() {
   const doneCount = items.filter((i) => i.isDone).length;
   const progress = items.length > 0 ? doneCount / items.length : 0;
 
+  const destId = trip?.destination?.id;
+  const isPackDownloaded = useOfflineStore((s) => destId ? s.isDownloaded(destId) : false);
+  const packMeta = useOfflineStore((s) => destId ? s.getPackMeta(destId) : undefined);
+  const downloading = useOfflineStore((s) => s.downloading);
+  const savePack = useOfflineStore((s) => s.savePack);
+  const setDownloading = useOfflineStore((s) => s.setDownloading);
+
+  const downloadPack = useMutation({
+    mutationFn: async () => {
+      if (!destId) throw new Error("No destination");
+      setDownloading(destId);
+      const res = await client.api.v1["offline-pack"]({ destinationId: destId }).get();
+      if (res.error) throw new Error("Failed to download pack");
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (!destId || !trip || !data) return;
+      savePack({
+        destinationId: destId,
+        destinationName: trip.destination.name,
+        country: trip.destination.countryCode,
+        countryCode: trip.destination.countryCode,
+        packVersion: (data as any).packVersion ?? 1,
+        downloadedAt: new Date().toISOString(),
+        placesCount: ((data as any).places ?? []).length,
+        phrasesCount: ((data as any).phrases ?? []).length,
+      }, data);
+    },
+    onError: () => setDownloading(null),
+  });
+
   if (tripQuery.isLoading) {
     return (
       <Screen>
@@ -212,6 +246,42 @@ export default function TripDetailScreen() {
                 style={{ width: `${progress * 100}%` }}
               />
             </View>
+          </View>
+        )}
+
+        {/* Offline pack */}
+        {trip && (
+          <View className="rounded-xl border border-border bg-card px-4 py-3">
+            {isPackDownloaded ? (
+              <View className="flex-row items-center gap-3">
+                <PackageCheck size={20} color="#22C55E" />
+                <View className="flex-1">
+                  <Text className="text-sm font-medium text-foreground">
+                    Offline pack downloaded
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {packMeta?.placesCount} places · {packMeta?.phrasesCount} phrases
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => downloadPack.mutate()}
+                disabled={downloading === destId}
+                className="flex-row items-center gap-3 active:opacity-80"
+              >
+                <Download size={20} color={iconColor} />
+                <View className="flex-1">
+                  <Text className="text-sm font-medium text-foreground">
+                    {downloading === destId ? "Downloading..." : "Download Offline Pack"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Save places & phrases for offline use
+                  </Text>
+                </View>
+                {downloading === destId && <ActivityIndicator size="small" />}
+              </Pressable>
+            )}
           </View>
         )}
 

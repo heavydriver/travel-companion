@@ -62,9 +62,13 @@ function CategoryBadge({ category }: { category: string }) {
 function PlaceCard({ place }: { place: Place }) {
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
+  const router = useRouter();
 
   return (
-    <View className="mr-3 w-56 rounded-xl border border-border bg-card p-3">
+    <Pressable
+      onPress={() => router.push(`/place/${place.id}` as never)}
+      className="mr-3 w-56 rounded-xl border border-border bg-card p-3 active:opacity-90"
+    >
       <View className="flex-row items-center justify-between">
         <CategoryBadge category={place.category} />
         {place.rating && (
@@ -89,7 +93,7 @@ function PlaceCard({ place }: { place: Place }) {
           Curated pick
         </Text>
       )}
-    </View>
+    </Pressable>
   );
 }
 
