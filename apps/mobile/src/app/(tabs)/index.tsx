@@ -3,13 +3,12 @@ import { useRouter } from "expo-router";
 import {
   MapPin,
   Plus,
-  Settings,
+  User,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
-import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
 import { useTripStore, type Trip } from "@/store/tripStore";
@@ -77,6 +76,7 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const setTrips = useTripStore((s) => s.setTrips);
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const foreground = useUnstableNativeVariable("--foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
   const displayName = user?.name?.split(" ")[0] ?? "there";
@@ -102,7 +102,7 @@ export default function HomeScreen() {
     <Screen scrollable contentClassName="pb-6">
       <View className="gap-6">
         {/* Header */}
-        <View className="flex-row items-start justify-between">
+        <View className="relative flex-row items-start justify-between">
           <View>
             <Text className="text-2xl font-bold text-foreground">
               Hello, {displayName}!
@@ -112,13 +112,36 @@ export default function HomeScreen() {
             </Text>
           </View>
           <Pressable
-            onPress={() => router.push("/settings" as never)}
+            onPress={() => setIsProfileMenuOpen((prev) => !prev)}
             className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
             accessibilityRole="button"
-            accessibilityLabel="Settings"
+            accessibilityLabel="Profile menu"
           >
-            <Settings size={20} color={iconColor} />
+            <User size={20} color={iconColor} />
           </Pressable>
+
+          {isProfileMenuOpen && (
+            <View className="absolute right-0 top-12 w-48 rounded-xl border border-border bg-card p-1 z-20">
+              <Pressable
+                onPress={() => {
+                  setIsProfileMenuOpen(false);
+                  router.push("/profile" as never);
+                }}
+                className="rounded-lg px-3 py-2 active:opacity-80"
+              >
+                <Text className="text-sm text-foreground">Profile</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setIsProfileMenuOpen(false);
+                  router.push("/settings" as never);
+                }}
+                className="rounded-lg px-3 py-2 active:opacity-80"
+              >
+                <Text className="text-sm text-foreground">Settings</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {/* Create trip button */}
