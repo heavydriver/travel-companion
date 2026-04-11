@@ -5,7 +5,9 @@ dist
 .turbo
 .vscode
 .cursor
+.idea
 .env
 .agents
+.DS_Store
 
 packages/db/generated
