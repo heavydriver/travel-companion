@@ -11,9 +11,11 @@ services:
       - "3000"
     networks:
       - backend_net
+    deploy:
+      replicas: 3
 
   caddy:
-    image: caddy:2.10-alpine
+    image: caddy:alpine
     restart: unless-stopped
     depends_on:
       - api

@@ -14,6 +14,7 @@ const EnvSchema = t.Object({
     ])
   ),
   FRONTEND_URL: t.Optional(t.String()),
+  CDN_BASE_URL: t.Optional(t.String()),
   GOOGLE_CLIENT_ID: t.Optional(t.String()),
   APPLE_CLIENT_ID: t.Optional(t.String()),
   APPLE_TEAM_ID: t.Optional(t.String()),
@@ -28,6 +29,7 @@ function loadConfig() {
     PORT: process.env.PORT,
     NODE_ENV: process.env.NODE_ENV,
     FRONTEND_URL: process.env.FRONTEND_URL,
+    CDN_BASE_URL: process.env.CDN_BASE_URL,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     APPLE_CLIENT_ID: process.env.APPLE_CLIENT_ID,
     APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
@@ -50,6 +52,7 @@ function loadConfig() {
       | "staging"
       | "production",
     frontendUrl: raw.FRONTEND_URL || "http://localhost:8081",
+    cdnBaseUrl: raw.CDN_BASE_URL || "",
     googleClientId: raw.GOOGLE_CLIENT_ID,
     appleClientId: raw.APPLE_CLIENT_ID,
     appleTeamId: raw.APPLE_TEAM_ID,
