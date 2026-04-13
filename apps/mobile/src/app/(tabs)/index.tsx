@@ -4,7 +4,7 @@ import {
   Calendar,
   MapPin,
   Plus,
-  Settings,
+  User,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useCallback, useEffect, useRef } from "react";
@@ -109,6 +109,7 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const setTrips = useTripStore((s) => s.setTrips);
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const foreground = useUnstableNativeVariable("--foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
   const mutedFg = useUnstableNativeVariable("--muted-foreground");

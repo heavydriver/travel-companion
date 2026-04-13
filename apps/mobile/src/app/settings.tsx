@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { ChevronLeft, User } from "lucide-react-native";
+import { ChevronRight, MessageCircle, User, Users } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useState } from "react";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
@@ -80,12 +80,15 @@ export default function SettingsScreen() {
         <ErrorBanner message={updateMutation.error?.message ?? null} />
 
         {/* Profile section */}
-        {isEditing ? (
-          <View className="gap-4 rounded-2xl border border-border bg-card p-4">
-            <View className="flex-row items-center gap-3">
-              <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/20">
-                <User size={24} color={mutedColor} />
-              </View>
+        <Pressable
+          onPress={() => router.push("/profile" as never)}
+          className="rounded-2xl border border-border bg-card p-4 active:opacity-90"
+        >
+          <View className="flex-row items-center gap-3">
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/20">
+              <User size={24} color={resolvedIcon} />
+            </View>
+            <View className="flex-1">
               <Text className="text-base font-semibold text-foreground">
                 Edit Profile
               </Text>
@@ -138,28 +141,31 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
-        ) : (
+        </Pressable>
+
+        <View className="rounded-2xl border border-border bg-card p-2">
           <Pressable
-            onPress={() => setIsEditing(true)}
-            className="rounded-2xl border border-border bg-card p-4 active:opacity-90"
+            onPress={() => router.push("/social-connect" as never)}
+            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
           >
-            <View className="flex-row items-center gap-3">
-              <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/20">
-                <User size={24} color={mutedColor} />
-              </View>
-              <View className="flex-1">
-                <Text className="text-base font-semibold text-foreground">
-                  {user?.name ?? "Traveler"}
-                </Text>
-                <Text className="text-sm text-muted-foreground">{user?.email}</Text>
-                {user?.username && (
-                  <Text className="text-sm text-muted-foreground">@{user.username}</Text>
-                )}
-              </View>
-              <Text className="text-sm text-primary">Edit</Text>
+            <View className="flex-row items-center gap-2">
+              <Users size={18} color={resolvedIcon} />
+              <Text className="text-base text-foreground">Social Connect</Text>
             </View>
+            <ChevronRight size={18} color={resolvedIcon} />
           </Pressable>
-        )}
+
+          <Pressable
+            onPress={() => router.push("/messages/c-1" as never)}
+            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
+          >
+            <View className="flex-row items-center gap-2">
+              <MessageCircle size={18} color={resolvedIcon} />
+              <Text className="text-base text-foreground">Messaging</Text>
+            </View>
+            <ChevronRight size={18} color={resolvedIcon} />
+          </Pressable>
+        </View>
 
         {/* Sign out */}
         <Button
