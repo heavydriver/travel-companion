@@ -1,13 +1,15 @@
 {
   "name": "@repo/api",
-  "version": "1.0.0",
+  "version": "1.1.2",
   "description": "",
   "main": "./src/index.ts",
   "type": "module",
   "scripts": {
     "dev": "bun --watch ./src/index.ts",
-    "build": "bun build ./src/index.ts --outdir dist",
-    "typecheck": "tsc --noEmit"
+    "build": "bun build ./src/index.ts --target bun --outdir dist",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=lcov"
   },
   "keywords": [],
   "author": "",

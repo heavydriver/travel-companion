@@ -110,13 +110,18 @@ model Destination {
   slug        String  @unique
   country     String
   countryCode String
+  kind        DestinationKind @default(CITY)
   region      String?
+  adminCode   String?
+  m49Code     String?
+  searchAliases Json?
   description String? @db.VarChar(2000)
 
   latitude     Float
   longitude    Float
   timezone     String
   currencyCode String
+  imageUrl     String?
 
   bestTimeToVisit String? @db.VarChar(500)
   emergencyNumber String?
@@ -133,7 +138,17 @@ model Destination {
   languages DestinationLanguage[]
 
   @@index([countryCode])
+  @@index([adminCode])
+  @@index([m49Code])
+  @@index([kind])
   @@index([isFeatured])
+}
+
+enum DestinationKind {
+  CITY
+  STATE
+  REGION
+  COUNTRY
 }
 
 model DestinationLanguage {
@@ -153,8 +168,9 @@ model DestinationLanguage {
 // =======================
 
 model Place {
-  id            String @id @default(cuid())
+  id            String  @id @default(cuid())
   destinationId String
+  googlePlaceId String?
 
   name        String
   slug        String
@@ -192,12 +208,14 @@ model Place {
 enum PlaceCategory {
   ATTRACTION
   RESTAURANT
+  FAST_FOOD
   CAFE
   HOTEL
   TRANSPORT
   SHOPPING
   NATURE
   NIGHTLIFE
+  CULTURE
   OTHER
 }
 

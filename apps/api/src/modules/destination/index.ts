@@ -1,6 +1,12 @@
 import Elysia, { t } from "elysia";
 import { authGuard } from "../../middleware/auth";
-import { DestinationListResponse, DestinationSearchQuery, PackVersionResponse } from "./model";
+import {
+  DestinationDetailResponse,
+  DestinationListResponse,
+  DestinationSearchQuery,
+  PackVersionResponse,
+  PopularDestinationsResponse,
+} from "./model";
 import { destinationService } from "./service";
 
 export const destinationModule = new Elysia({ prefix: "/destinations" })
@@ -8,10 +14,28 @@ export const destinationModule = new Elysia({ prefix: "/destinations" })
   .get(
     "/",
     async ({ query }) => {
-      const destinations = await destinationService.search(query.q);
+      const destinations = await destinationService.search(query);
       return { destinations };
     },
     { query: DestinationSearchQuery, response: DestinationListResponse },
+  )
+  .get(
+    "/popular",
+    async () => {
+      const destinations = await destinationService.getPopular();
+      return { destinations };
+    },
+    { response: PopularDestinationsResponse },
+  )
+  .get(
+    "/:destId",
+    async ({ params }) => {
+      return destinationService.getById(params.destId);
+    },
+    {
+      params: t.Object({ destId: t.String() }),
+      response: DestinationDetailResponse,
+    },
   )
   .get(
     "/:destId/pack-version",

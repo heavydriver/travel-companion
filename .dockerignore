@@ -1,0 +1,31 @@
+# Start from excluding everything to keep context small.
+**
+
+# Required manifests/workspace metadata.
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!turbo.json
+
+# Required source for API runtime and local workspace deps.
+!apps/api/**
+!packages/db/**
+!packages/types/**
+
+# Never send local secrets or generated local env files.
+apps/api/.env
+apps/api/.env.*
+packages/db/.env
+packages/db/.env.*
+
+# Ignore local dependency/build artifacts.
+**/node_modules
+**/dist
+**/.turbo
+**/.cache
+
+# Ignore VCS/editor noise.
+.git
+.gitignore
+.cursor
+.vscode

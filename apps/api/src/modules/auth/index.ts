@@ -8,6 +8,7 @@ import {
 } from "./model";
 import { authService } from "./service";
 import { AppError } from "../../middleware/errorHandler";
+import { rateLimiter } from "../../middleware/rateLimit";
 
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
@@ -27,6 +28,7 @@ function setRefreshCookie(
 }
 
 export const authModule = new Elysia({ prefix: "/auth" })
+  .use(rateLimiter)
   .post(
     "/register",
     async ({ body, cookie, set }) => {

@@ -2,65 +2,42 @@ import { prisma } from "@repo/db";
 import { AppError } from "../../middleware/errorHandler";
 
 export const userService = {
-  async patchMe(
-    userId: string,
-    data: {
-      socialOptIn?: boolean;
-      name?: string;
-      bio?: string | null;
-      avatarUrl?: string | null;
-    },
-  ) {
-    const patch: Record<string, unknown> = {};
-    if (data.socialOptIn !== undefined) patch.socialOptIn = data.socialOptIn;
-    if (data.name !== undefined) patch.name = data.name;
-    if (data.bio !== undefined) patch.bio = data.bio;
-    if (data.avatarUrl !== undefined) patch.avatarUrl = data.avatarUrl;
-
-    const select = {
-      id: true,
-      email: true,
-      name: true,
-      username: true,
-      avatarUrl: true,
-      bio: true,
-      socialOptIn: true,
-    } as const;
-
-    if (Object.keys(patch).length === 0) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select,
-      });
-      if (!user) {
-        throw new AppError(404, "NOT_FOUND", "User not found");
-      }
-      return user;
-    }
-
-    const user = await prisma.user.update({
+  async getProfile(userId: string) {
+    const user = await prisma.user.findUnique({
       where: { id: userId },
-      data: patch,
-      select,
+      select: { id: true, email: true, name: true, username: true },
     });
+
+    if (!user) {
+      throw new AppError(404, "NOT_FOUND", "User not found");
+    }
 
     return user;
   },
 
-  async getPublicProfile(userId: string) {
-    const user = await prisma.user.findFirst({
-      where: { id: userId, deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        avatarUrl: true,
-        bio: true,
-      },
-    });
-    if (!user) {
-      throw new AppError(404, "NOT_FOUND", "User not found");
+  async updateProfile(
+    userId: string,
+    data: { name?: string; username?: string }
+  ) {
+    if (data.username) {
+      const existing = await prisma.user.findUnique({
+        where: { username: data.username },
+        select: { id: true },
+      });
+      if (existing && existing.id !== userId) {
+        throw new AppError(409, "CONFLICT", "Username already taken");
+      }
     }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.username !== undefined && { username: data.username }),
+      },
+      select: { id: true, email: true, name: true, username: true },
+    });
+
     return user;
   },
 };
