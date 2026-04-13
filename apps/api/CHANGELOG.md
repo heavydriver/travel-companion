@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/heavydriver/travel-companion/compare/api-v1.1.1...api-v1.1.2) (2026-04-10)
+
+
+### Bug Fixes
+
+* updated destination and place routes ([8a9077d](https://github.com/heavydriver/travel-companion/commit/8a9077db6d04d6aa91d9737413e2f18cb10a7675))
+
 ## [1.1.1](https://github.com/heavydriver/travel-companion/compare/api-v1.1.0...api-v1.1.1) (2026-04-07)
 
 

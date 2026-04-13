@@ -1,10 +1,10 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Calendar, ChevronLeft, MapPin, Search, X } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import {
   ActivityIndicator,
@@ -19,8 +19,7 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
 import { Screen } from "@/components/shared/Screen";
-import { useDebounce } from "@/hooks/useDebounce";
-import { formatDate, toDateOnly } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 
 const tripSchema = z
   .object({
@@ -44,6 +43,11 @@ type Destination = {
 };
 
 export default function NewTripScreen() {
+  const params = useLocalSearchParams<{
+    destinationId?: string;
+    destinationName?: string;
+    destinationCountry?: string;
+  }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
@@ -120,6 +124,24 @@ export default function NewTripScreen() {
     setValue("destinationId", "");
     setSearchQuery("");
   };
+
+  useEffect(() => {
+    if (!params.destinationId || !params.destinationName) return;
+    const prefetchedDestination: Destination = {
+      id: params.destinationId,
+      name: params.destinationName,
+      country: params.destinationCountry ?? "",
+      countryCode: "",
+    };
+    setSelectedDest(prefetchedDestination);
+    setValue("destinationId", prefetchedDestination.id);
+    setSearchQuery(
+      prefetchedDestination.country
+        ? `${prefetchedDestination.name}, ${prefetchedDestination.country}`
+        : prefetchedDestination.name,
+    );
+    setShowResults(false);
+  }, [params.destinationCountry, params.destinationId, params.destinationName, setValue]);
 
   return (
     <Screen scrollable>
