@@ -18,6 +18,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@react-native-async-storage/async-storage": "^3.0.1",
     "@react-native-community/datetimepicker": "8.6.0",
+    "@react-native-community/netinfo": "11.5.2",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/bottom-tabs": "^7.7.3",
     "@react-navigation/elements": "^2.8.1",
