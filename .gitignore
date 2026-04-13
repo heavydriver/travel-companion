@@ -7,5 +7,6 @@ dist
 .cursor
 .env
 .agents
+.DS_Store
 
 packages/db/generated
