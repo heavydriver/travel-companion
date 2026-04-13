@@ -65,6 +65,9 @@ jobs:
       - name: Generate DB client
         run: pnpm --filter @repo/db db:generate
 
+      - name: Seed DB
+        run: pnpm --filter @repo/db db:seed
+
       - name: Run API typecheck
         run: pnpm --filter @repo/api typecheck
 
