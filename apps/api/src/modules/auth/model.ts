@@ -12,6 +12,15 @@ export const LoginBody = t.Object({
   password: t.String({ minLength: 1 }),
 });
 
+export const GoogleBody = t.Object({
+  idToken: t.String({ minLength: 1 }),
+});
+
+export const AppleBody = t.Object({
+  identityToken: t.String({ minLength: 1 }),
+  name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+});
+
 export const AuthResponse = t.Object({
   user: t.Object({
     id: t.String(),
