@@ -1,3 +1,11 @@
+# [1.2.0](https://github.com/heavydriver/travel-companion/compare/api-v1.1.2...api-v1.2.0) (2026-04-13)
+
+
+### Features
+
+* add google and apple OAuth endpoints to auth module ([8e7bee3](https://github.com/heavydriver/travel-companion/commit/8e7bee3e59b29fb35defbea3128fe135c816d31d))
+* offline pack download, network status, pack version check, backend tests, place detail screen ([d96492f](https://github.com/heavydriver/travel-companion/commit/d96492fbfcef5ec2e9ef7feac53a22f9751845e6))
+
 ## [1.1.2](https://github.com/heavydriver/travel-companion/compare/api-v1.1.1...api-v1.1.2) (2026-04-10)
 
 
