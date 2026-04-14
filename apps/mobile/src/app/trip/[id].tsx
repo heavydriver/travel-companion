@@ -83,9 +83,7 @@ export default function TripDetailScreen() {
   const itemsQuery = useQuery({
     queryKey: ["itinerary", id],
     queryFn: async () => {
-      const res = await client.api.v1
-        .trips({ tripId: id! })
-        ["itinerary-items"].get();
+      const res = await client.api.v1.trips({ tripId: id! })["itinerary-items"].get();
       if (res.error) throw new Error("Failed to load itinerary");
       return res.data;
     },
@@ -131,8 +129,8 @@ export default function TripDetailScreen() {
   const progress = items.length > 0 ? doneCount / items.length : 0;
 
   const destId = trip?.destination?.id;
-  const isPackDownloaded = useOfflineStore((s) => destId ? s.isDownloaded(destId) : false);
-  const packMeta = useOfflineStore((s) => destId ? s.getPackMeta(destId) : undefined);
+  const isPackDownloaded = useOfflineStore((s) => (destId ? s.isDownloaded(destId) : false));
+  const packMeta = useOfflineStore((s) => (destId ? s.getPackMeta(destId) : undefined));
   const downloading = useOfflineStore((s) => s.downloading);
   const savePack = useOfflineStore((s) => s.savePack);
   const setDownloading = useOfflineStore((s) => s.setDownloading);
@@ -147,16 +145,19 @@ export default function TripDetailScreen() {
     },
     onSuccess: (data) => {
       if (!destId || !trip || !data) return;
-      savePack({
-        destinationId: destId,
-        destinationName: trip.destination.name,
-        country: trip.destination.countryCode,
-        countryCode: trip.destination.countryCode,
-        packVersion: (data as any).packVersion ?? 1,
-        downloadedAt: new Date().toISOString(),
-        placesCount: ((data as any).places ?? []).length,
-        phrasesCount: ((data as any).phrases ?? []).length,
-      }, data);
+      savePack(
+        {
+          destinationId: destId,
+          destinationName: trip.destination.name,
+          country: trip.destination.countryCode,
+          countryCode: trip.destination.countryCode,
+          packVersion: (data as any).packVersion ?? 1,
+          downloadedAt: new Date().toISOString(),
+          placesCount: ((data as any).places ?? []).length,
+          phrasesCount: ((data as any).phrases ?? []).length,
+        },
+        data,
+      );
     },
     onError: () => setDownloading(null),
   });
@@ -210,9 +211,7 @@ export default function TripDetailScreen() {
               </Text>
             </View>
             <View className="flex-row items-center justify-between">
-              <Text className="flex-1 text-2xl font-bold text-foreground">
-                {trip.title}
-              </Text>
+              <Text className="flex-1 text-2xl font-bold text-foreground">{trip.title}</Text>
               <Pressable
                 onPress={() => setShowEditModal(true)}
                 className="ml-2 rounded-lg border border-border bg-card p-2 active:opacity-80"
@@ -233,9 +232,7 @@ export default function TripDetailScreen() {
         {items.length > 0 && (
           <View className="gap-2">
             <View className="flex-row items-center justify-between">
-              <Text className="text-sm font-medium text-foreground">
-                Progress
-              </Text>
+              <Text className="text-sm font-medium text-foreground">Progress</Text>
               <Text className="text-sm text-muted-foreground">
                 {doneCount}/{items.length} completed
               </Text>
@@ -309,9 +306,7 @@ export default function TripDetailScreen() {
         {!itemsQuery.isLoading && items.length === 0 && (
           <View className="items-center rounded-2xl border border-border bg-card py-8">
             <Calendar size={32} color={mutedColor} />
-            <Text className="mt-2 text-base font-medium text-foreground">
-              No items yet
-            </Text>
+            <Text className="mt-2 text-base font-medium text-foreground">No items yet</Text>
             <Text className="mt-1 text-sm text-muted-foreground">
               Tap Add to start building your itinerary
             </Text>
@@ -324,8 +319,7 @@ export default function TripDetailScreen() {
             <View key={date} className="gap-2">
               <View className="flex-row items-center justify-between">
                 <Text className="text-sm font-semibold text-muted-foreground">
-                  {formatDate(date)} · {dayItems.length}{" "}
-                  {dayItems.length === 1 ? "item" : "items"}
+                  {formatDate(date)} · {dayItems.length} {dayItems.length === 1 ? "item" : "items"}
                 </Text>
                 {dayItems.length > 0 && (
                   <Text className="text-xs text-muted-foreground">
@@ -374,7 +368,8 @@ export default function TripDetailScreen() {
                         )}
                         {item.notes && (
                           <Text className="text-sm text-muted-foreground" numberOfLines={1}>
-                            {item.startTime ? " · " : ""}{item.notes}
+                            {item.startTime ? " · " : ""}
+                            {item.notes}
                           </Text>
                         )}
                       </View>
@@ -488,15 +483,13 @@ function AddItemModal({
   const addMutation = useMutation({
     mutationFn: async (values: { title: string; notes: string }) => {
       const dateStr = toDateOnly(selectedDate);
-      const res = await client.api.v1
-        .trips({ tripId })
-        ["itinerary-items"].post({
-          title: values.title,
-          date: new Date(dateStr).toISOString(),
-          ...(startTimeDate && { startTime: formatTime(startTimeDate) }),
-          ...(endTimeDate && { endTime: formatTime(endTimeDate) }),
-          ...(values.notes && { notes: values.notes }),
-        });
+      const res = await client.api.v1.trips({ tripId })["itinerary-items"].post({
+        title: values.title,
+        date: new Date(dateStr).toISOString(),
+        ...(startTimeDate && { startTime: formatTime(startTimeDate) }),
+        ...(endTimeDate && { endTime: formatTime(endTimeDate) }),
+        ...(values.notes && { notes: values.notes }),
+      });
       if (res.error) throw new Error("Failed to add item");
       return res.data;
     },
@@ -552,9 +545,7 @@ function AddItemModal({
                 className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
               >
                 <Calendar size={16} color={mutedColor} />
-                <Text className="text-base text-foreground">
-                  {formatDate(selectedDate)}
-                </Text>
+                <Text className="text-base text-foreground">{formatDate(selectedDate)}</Text>
               </Pressable>
               {showDatePicker && (
                 <DateTimePicker
@@ -580,7 +571,9 @@ function AddItemModal({
                   className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
                 >
                   <Clock size={16} color={mutedColor} />
-                  <Text className={`text-base ${startTimeDate ? "text-foreground" : "text-muted-foreground"}`}>
+                  <Text
+                    className={`text-base ${startTimeDate ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {startTimeDate ? formatTime(startTimeDate) : "Optional"}
                   </Text>
                 </Pressable>
@@ -604,7 +597,9 @@ function AddItemModal({
                   className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
                 >
                   <Clock size={16} color={mutedColor} />
-                  <Text className={`text-base ${endTimeDate ? "text-foreground" : "text-muted-foreground"}`}>
+                  <Text
+                    className={`text-base ${endTimeDate ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {endTimeDate ? formatTime(endTimeDate) : "Optional"}
                   </Text>
                 </Pressable>
@@ -730,9 +725,7 @@ function EditTripModal({
                   className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
                 >
                   <Calendar size={16} color={mutedColor} />
-                  <Text className="text-base text-foreground">
-                    {formatDate(startDate)}
-                  </Text>
+                  <Text className="text-base text-foreground">{formatDate(startDate)}</Text>
                 </Pressable>
                 {showStartPicker && (
                   <DateTimePicker
@@ -756,9 +749,7 @@ function EditTripModal({
                   className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
                 >
                   <Calendar size={16} color={mutedColor} />
-                  <Text className="text-base text-foreground">
-                    {formatDate(endDate)}
-                  </Text>
+                  <Text className="text-base text-foreground">{formatDate(endDate)}</Text>
                 </Pressable>
                 {showEndPicker && (
                   <DateTimePicker
@@ -877,9 +868,7 @@ function EditItemModal({
                 className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
               >
                 <Calendar size={16} color={mutedColor} />
-                <Text className="text-base text-foreground">
-                  {formatDate(selectedDate)}
-                </Text>
+                <Text className="text-base text-foreground">{formatDate(selectedDate)}</Text>
               </Pressable>
               {showDatePicker && (
                 <DateTimePicker
@@ -904,7 +893,9 @@ function EditItemModal({
                   className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
                 >
                   <Clock size={16} color={mutedColor} />
-                  <Text className={`text-base ${startTimeDate ? "text-foreground" : "text-muted-foreground"}`}>
+                  <Text
+                    className={`text-base ${startTimeDate ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {startTimeDate ? fmtTime(startTimeDate) : "Optional"}
                   </Text>
                 </Pressable>
@@ -928,7 +919,9 @@ function EditItemModal({
                   className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
                 >
                   <Clock size={16} color={mutedColor} />
-                  <Text className={`text-base ${endTimeDate ? "text-foreground" : "text-muted-foreground"}`}>
+                  <Text
+                    className={`text-base ${endTimeDate ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {endTimeDate ? fmtTime(endTimeDate) : "Optional"}
                   </Text>
                 </Pressable>

@@ -1,19 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import {
-  Calendar,
-  MapPin,
-  Plus,
-  User,
-} from "lucide-react-native";
+import { Calendar, MapPin, Plus, Settings, User } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import { useAuthStore } from "@/store/authStore";
-import { useTripStore, type Trip } from "@/store/tripStore";
 import { cn, daysUntil, formatDateRange } from "@/lib/utils";
+import { useAuthStore } from "@/store/authStore";
+import { type Trip, useTripStore } from "@/store/tripStore";
 
 function getTripStatus(trip: Trip) {
   const now = new Date();
@@ -25,14 +20,25 @@ function getTripStatus(trip: Trip) {
   if (isActive) {
     const dayNum = Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    return { badge: "Active", badgeClass: "bg-chart-2/20", textClass: "text-chart-2", subtitle: `Day ${dayNum} of ${totalDays}` };
+    return {
+      badge: "Active",
+      badgeClass: "bg-chart-2/20",
+      textClass: "text-chart-2",
+      subtitle: `Day ${dayNum} of ${totalDays}`,
+    };
   }
   if (isUpcoming) {
     const days = daysUntil(trip.startDate);
-    const subtitle = days === 0 ? "Starts today!" : days === 1 ? "Starts tomorrow" : `In ${days} days`;
+    const subtitle =
+      days === 0 ? "Starts today!" : days === 1 ? "Starts tomorrow" : `In ${days} days`;
     return { badge: "Upcoming", badgeClass: "bg-primary/20", textClass: "text-primary", subtitle };
   }
-  return { badge: "Past", badgeClass: "bg-muted", textClass: "text-muted-foreground", subtitle: "Completed" };
+  return {
+    badge: "Past",
+    badgeClass: "bg-muted",
+    textClass: "text-muted-foreground",
+    subtitle: "Completed",
+  };
 }
 
 function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
@@ -65,9 +71,7 @@ function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
         </View>
         <View className="items-end gap-1">
           <View className={cn("rounded-full px-2.5 py-1", status.badgeClass)}>
-            <Text className={cn("text-xs font-semibold", status.textClass)}>
-              {status.badge}
-            </Text>
+            <Text className={cn("text-xs font-semibold", status.textClass)}>{status.badge}</Text>
           </View>
           <Text className="text-xs text-muted-foreground">{status.subtitle}</Text>
         </View>
@@ -84,17 +88,14 @@ function SkeletonCard() {
       Animated.sequence([
         Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-      ])
+      ]),
     );
     animation.start();
     return () => animation.stop();
   }, [opacity]);
 
   return (
-    <Animated.View
-      style={{ opacity }}
-      className="rounded-2xl border border-border bg-card p-4"
-    >
+    <Animated.View style={{ opacity }} className="rounded-2xl border border-border bg-card p-4">
       <View className="gap-2">
         <View className="h-3 w-32 rounded-full bg-muted" />
         <View className="h-5 w-48 rounded-full bg-muted" />
@@ -149,19 +150,14 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerClassName="flex-grow px-5 pt-6 pb-6"
         refreshControl={
-          <RefreshControl
-            refreshing={tripsQuery.isRefetching}
-            onRefresh={onRefresh}
-          />
+          <RefreshControl refreshing={tripsQuery.isRefetching} onRefresh={onRefresh} />
         }
       >
         <View className="gap-6">
           {/* Header */}
           <View className="flex-row items-start justify-between">
             <View>
-              <Text className="text-2xl font-bold text-foreground">
-                Hello, {displayName}!
-              </Text>
+              <Text className="text-2xl font-bold text-foreground">Hello, {displayName}!</Text>
               <Text className="mt-1 text-sm text-muted-foreground">
                 {trips.length === 0
                   ? "Ready to plan your first trip?"
@@ -186,9 +182,7 @@ export default function HomeScreen() {
             accessibilityLabel="Create a new trip"
           >
             <Plus size={20} color={iconColor} />
-            <Text className="text-base font-semibold text-primary">
-              Plan a New Trip
-            </Text>
+            <Text className="text-base font-semibold text-primary">Plan a New Trip</Text>
           </Pressable>
 
           {/* Loading skeletons */}
@@ -204,9 +198,7 @@ export default function HomeScreen() {
           {!tripsQuery.isLoading && trips.length === 0 && (
             <View className="items-center rounded-2xl border border-border bg-card py-10">
               <MapPin size={40} color={mutedColor} />
-              <Text className="mt-3 text-lg font-semibold text-foreground">
-                No trips yet
-              </Text>
+              <Text className="mt-3 text-lg font-semibold text-foreground">No trips yet</Text>
               <Text className="mt-1 text-sm text-muted-foreground">
                 Tap above to plan your first adventure
               </Text>
@@ -216,9 +208,7 @@ export default function HomeScreen() {
           {/* Active trips */}
           {activeTrips.length > 0 && (
             <View className="gap-3">
-              <Text className="text-sm font-semibold text-chart-2">
-                ACTIVE NOW
-              </Text>
+              <Text className="text-sm font-semibold text-chart-2">ACTIVE NOW</Text>
               {activeTrips.map((trip) => (
                 <TripCard
                   key={trip.id}
@@ -235,9 +225,7 @@ export default function HomeScreen() {
           {/* Upcoming trips */}
           {upcomingTrips.length > 0 && (
             <View className="gap-3">
-              <Text className="text-sm font-semibold text-primary">
-                UPCOMING
-              </Text>
+              <Text className="text-sm font-semibold text-primary">UPCOMING</Text>
               {upcomingTrips.map((trip) => (
                 <TripCard
                   key={trip.id}
@@ -254,9 +242,7 @@ export default function HomeScreen() {
           {/* Past trips */}
           {pastTrips.length > 0 && (
             <View className="gap-3">
-              <Text className="text-sm font-semibold text-muted-foreground">
-                PAST TRIPS
-              </Text>
+              <Text className="text-sm font-semibold text-muted-foreground">PAST TRIPS</Text>
               {pastTrips.map((trip) => (
                 <TripCard
                   key={trip.id}

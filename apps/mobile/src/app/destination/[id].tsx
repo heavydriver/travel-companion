@@ -247,7 +247,9 @@ const ThingToDoRow = memo(function ThingToDoRow({
         <View className="h-[4.5rem] w-[4.5rem] overflow-hidden rounded-xl bg-muted">
           {place.imageUrl ? (
             <Image
-              source={{ uri: place.imageUrl }}
+              source={{
+                uri: place.imageUrl,
+              }}
               style={{ width: "100%", height: "100%" }}
               contentFit="cover"
               transition={150}
@@ -371,7 +373,11 @@ export default function DestinationDetailsScreen() {
 
   return (
     <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120 }}
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+      >
         <View className="relative w-full" style={{ height: HERO_HEIGHT }}>
           {destination.imageUrl ? (
             <Image
