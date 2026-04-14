@@ -82,6 +82,16 @@ const cdnBaseUrl = config.cdnBaseUrl.endsWith("/")
   ? config.cdnBaseUrl.slice(0, -1)
   : config.cdnBaseUrl;
 
+function cdnDestinationId(record: { id?: string; destinationId?: string }): string | null {
+  if (typeof record.destinationId === "string" && record.destinationId.length > 0) {
+    return record.destinationId;
+  }
+  if (typeof record.id === "string" && record.id.length > 0) {
+    return record.id;
+  }
+  return null;
+}
+
 function withCdnImageUrl<T extends { imageUrl: string | null }>(record: T): T {
   if (!record.imageUrl || !cdnBaseUrl) {
     return record;
@@ -90,13 +100,16 @@ function withCdnImageUrl<T extends { imageUrl: string | null }>(record: T): T {
     return record;
   }
 
-  const normalizedPath = record.imageUrl.startsWith("/")
-    ? record.imageUrl
-    : `/${record.imageUrl}`;
+  const destinationId = cdnDestinationId(record as { id?: string; destinationId?: string });
+  if (!destinationId) {
+    return record;
+  }
+
+  const normalizedPath = record.imageUrl.startsWith("/") ? record.imageUrl : `/${record.imageUrl}`;
 
   return {
     ...record,
-    imageUrl: `${cdnBaseUrl}${normalizedPath}`,
+    imageUrl: `${cdnBaseUrl}/${destinationId}${normalizedPath}`,
   };
 }
 

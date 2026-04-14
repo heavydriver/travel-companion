@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { ChevronRight, MessageCircle, User, Users } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, MessageCircle, User, Users } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useState } from "react";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
@@ -89,9 +89,7 @@ export default function SettingsScreen() {
               <User size={24} color={resolvedIcon} />
             </View>
             <View className="flex-1">
-              <Text className="text-base font-semibold text-foreground">
-                Edit Profile
-              </Text>
+              <Text className="text-base font-semibold text-foreground">Edit Profile</Text>
             </View>
 
             <View className="gap-1">
