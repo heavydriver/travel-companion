@@ -10,24 +10,19 @@ import {
   CirclePlus,
   Clock,
   Heart,
-  Share2,
+  Languages,
   Star,
   Thermometer,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Dimensions,
-  Pressable,
-  ScrollView,
-  Share,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { showAppToast } from "@/components/shared/AppToast";
+import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDestinationFavorites } from "@/features/destination/favorites";
+import { hasEligibleTripForDestination, type Trip } from "@/store/tripStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HERO_HEIGHT = Math.min(400, Math.round(SCREEN_WIDTH * 1.05));
@@ -48,6 +43,12 @@ type PlacePreview = {
   city: string | null;
 };
 
+type DestinationLanguageLink = {
+  id: string;
+  isPrimary: boolean;
+  language: { id: string; name: string; isoCode: string; nativeName: string };
+};
+
 type DestinationDetail = {
   id: string;
   name: string;
@@ -60,6 +61,9 @@ type DestinationDetail = {
   emergencyNumber: string | null;
   imageUrl: string | null;
   kind: string | null;
+  latitude: number;
+  longitude: number;
+  languages: DestinationLanguageLink[];
 };
 
 function formatKindLabel(kind: string | null): string {
@@ -100,39 +104,65 @@ function currencyLabel(code: string): string {
   return sym ? `${upper} (${sym})` : upper;
 }
 
-/** Local wall time in `ianaTimeZone` plus offset, e.g. `22:10 (UTC+5:30)`. */
-function formatDestinationClock(ianaTimeZone: string, at: Date): string {
+/** Local wall clock in IANA zone, e.g. `22:10`. */
+function formatDestinationLocalClock(ianaTimeZone: string, at: Date): string {
+  const tz = ianaTimeZone.trim();
+  if (!tz) return "—";
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(at);
+  } catch {
+    return tz;
+  }
+}
+
+/** Offset label e.g. `UTC+5:30` for zone at `at`. */
+function formatDestinationGmtStyleOffset(ianaTimeZone: string, at: Date): string {
   const tz = ianaTimeZone.trim();
   if (!tz) return "—";
   try {
     const parts = new Intl.DateTimeFormat("en-GB", {
       timeZone: tz,
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
       timeZoneName: "longOffset",
     }).formatToParts(at);
-
-    let hour = "";
-    let minute = "";
-    let offsetRaw = "";
-    for (const p of parts) {
-      if (p.type === "hour") hour = p.value;
-      if (p.type === "minute") minute = p.value;
-      if (p.type === "timeZoneName") offsetRaw = p.value;
-    }
-    const time = `${hour}:${minute}`;
-    if (!offsetRaw) {
-      return `${time} (${tz})`;
-    }
-    const offset = offsetRaw
+    const offsetRaw = parts.find((p) => p.type === "timeZoneName")?.value ?? "";
+    if (!offsetRaw) return tz;
+    return offsetRaw
       .replace(/^GMT/i, "UTC")
       .replace(/\u2212/g, "-")
       .replace(/\s+/g, "");
-    return `${time}`;
   } catch {
     return tz;
   }
+}
+
+function pickNonEnglishDestinationLanguage(
+  links: DestinationLanguageLink[],
+): DestinationLanguageLink | null {
+  const list = links.filter((l) => l.language.isoCode.toLowerCase() !== "en");
+  if (list.length === 0) return null;
+  return list.find((l) => l.isPrimary) ?? list[0] ?? null;
+}
+
+function readOpenMeteoCurrentTempC(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null;
+  const cur = (data as { current?: unknown }).current;
+  if (!cur || typeof cur !== "object") return null;
+  const t = (cur as { temperature_2m?: unknown }).temperature_2m;
+  return typeof t === "number" && Number.isFinite(t) ? t : null;
+}
+
+function shufflePlaces<T>(places: T[]): T[] {
+  const shuffled = [...places];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+  return shuffled;
 }
 
 function titleCaseWords(text: string): string {
@@ -227,66 +257,6 @@ const MustVisitCard = memo(function MustVisitCard({
   );
 });
 
-const ThingToDoRow = memo(function ThingToDoRow({
-  place,
-  currencyCode,
-}: {
-  place: PlacePreview;
-  currencyCode: string;
-}) {
-  const router = useRouter();
-  const priceText = formatPlacePrice(place, currencyCode);
-  const categoryLabel = titleCaseWords(place.category.trim() || "Place");
-
-  return (
-    <View className="rounded-2xl border border-border/80 bg-card/30 overflow-hidden px-2">
-      <Pressable
-        onPress={() => router.push(`/place/${place.id}` as never)}
-        className="flex-row gap-3 border-b border-border/50 py-3.5 pl-1 pr-1 active:opacity-85 last:border-b-0"
-      >
-        <View className="h-[4.5rem] w-[4.5rem] overflow-hidden rounded-xl bg-muted">
-          {place.imageUrl ? (
-            <Image
-              source={{
-                uri: place.imageUrl,
-              }}
-              style={{ width: "100%", height: "100%" }}
-              contentFit="cover"
-              transition={150}
-            />
-          ) : null}
-        </View>
-        <View className="min-w-0 flex-1 justify-center">
-          <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
-            {place.name}
-          </Text>
-          {place.description ? (
-            <Text className="mt-0.5 text-xs leading-4 text-muted-foreground" numberOfLines={1}>
-              {place.description}
-            </Text>
-          ) : null}
-          <View className="mt-1.5 flex-row flex-wrap items-center gap-1">
-            {place.rating != null ? (
-              <>
-                <Star size={12} color="#FBBF24" fill="#FBBF24" />
-                <Text className="text-xs text-muted-foreground">{place.rating.toFixed(1)}</Text>
-                <Text className="text-xs text-muted-foreground">·</Text>
-              </>
-            ) : null}
-            <Text className="text-xs font-semibold text-primary">{categoryLabel}</Text>
-            {priceText != null ? (
-              <>
-                <Text className="text-xs text-muted-foreground">·</Text>
-                <Text className="text-xs font-normal text-accent">{priceText}</Text>
-              </>
-            ) : null}
-          </View>
-        </View>
-      </Pressable>
-    </View>
-  );
-});
-
 export default function DestinationDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -296,9 +266,10 @@ export default function DestinationDetailsScreen() {
   const accentColor = primaryVar ? `hsl(${primaryVar})` : "#3B82F6";
 
   const [now, setNow] = useState(() => new Date());
+  const [timeMode, setTimeMode] = useState<"local" | "gmt">("local");
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
+    const tick = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(tick);
   }, []);
 
   const destinationQuery = useQuery({
@@ -312,6 +283,66 @@ export default function DestinationDetailsScreen() {
       return res.data;
     },
     enabled: !!id,
+    refetchOnWindowFocus: false,
+  });
+
+  const [shuffledCuratedPlaces, setShuffledCuratedPlaces] = useState<PlacePreview[]>([]);
+  const [shuffledOtherPlaces, setShuffledOtherPlaces] = useState<PlacePreview[]>([]);
+
+  const curatedPlacesSource = useMemo(
+    () => (destinationQuery.data?.curatedPlaces ?? []) as PlacePreview[],
+    [destinationQuery.data?.curatedPlaces],
+  );
+  const otherPlacesSource = useMemo(
+    () => (destinationQuery.data?.otherPlaces ?? []) as PlacePreview[],
+    [destinationQuery.data?.otherPlaces],
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dataUpdatedAt triggers reshuffle after refetch when TanStack keeps same place array refs
+  useEffect(() => {
+    setShuffledCuratedPlaces(shufflePlaces(curatedPlacesSource));
+    setShuffledOtherPlaces(shufflePlaces(otherPlacesSource));
+  }, [destinationQuery.dataUpdatedAt, curatedPlacesSource, otherPlacesSource]);
+
+  const destForQueries = destinationQuery.data?.destination as DestinationDetail | undefined;
+
+  const tripsForDestinationQuery = useQuery({
+    queryKey: ["trips", "destination", id],
+    queryFn: async () => {
+      if (!id) throw new Error("Missing destination id");
+      const res = await client.api.v1.trips.get({
+        query: { destinationId: id },
+      });
+      if (res.error) throw new Error("Failed to load trips");
+      return res.data;
+    },
+    enabled: Boolean(id),
+    staleTime: 60 * 1000,
+  });
+
+  const weatherPeekQuery = useQuery({
+    queryKey: [
+      "weather-forecast",
+      destForQueries?.latitude,
+      destForQueries?.longitude,
+      destForQueries?.timezone,
+      7,
+    ],
+    queryFn: async () => {
+      if (!destForQueries) throw new Error("No destination");
+      const res = await client.api.v1.weather.forecast.get({
+        query: {
+          latitude: destForQueries.latitude,
+          longitude: destForQueries.longitude,
+          forecastDays: 7,
+          timezone: destForQueries.timezone,
+        },
+      });
+      if (res.error) throw new Error("Weather failed");
+      return res.data;
+    },
+    enabled: Boolean(destForQueries),
+    staleTime: 10 * 60 * 1000,
   });
 
   const allPlaces = useMemo(() => {
@@ -347,8 +378,6 @@ export default function DestinationDetailsScreen() {
   }
 
   const destination = destinationQuery.data?.destination as DestinationDetail | undefined;
-  const curatedPlaces = (destinationQuery.data?.curatedPlaces ?? []) as PlacePreview[];
-  const otherPlaces = (destinationQuery.data?.otherPlaces ?? []) as PlacePreview[];
 
   if (!destination) {
     return (
@@ -362,20 +391,19 @@ export default function DestinationDetailsScreen() {
 
   const favorite = isFavorite(destination.id);
   const kindLabel = formatKindLabel(destination.kind);
-
-  const onShare = () => {
-    const line = destination.description?.trim() || `Explore ${destination.name}`;
-    void Share.share({
-      message: `${destination.name} — ${line}`,
-      title: destination.name,
-    });
-  };
+  const languageForGuide = pickNonEnglishDestinationLanguage(destination.languages ?? []);
+  const hasActiveOrUpcomingTrip = hasEligibleTripForDestination(
+    (tripsForDestinationQuery.data?.trips ?? []) as Trip[],
+    destination.id,
+  );
+  const peekTempC = readOpenMeteoCurrentTempC(weatherPeekQuery.data);
 
   return (
     <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: hasActiveOrUpcomingTrip ? 32 : 120 }}
         className="flex-1"
+        nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
         <View className="relative w-full" style={{ height: HERO_HEIGHT }}>
@@ -413,17 +441,47 @@ export default function DestinationDetailsScreen() {
               <ChevronLeft size={22} color="#fff" />
             </OverlayIconButton>
             <View className="flex-row gap-2">
-              {/* <OverlayIconButton onPress={onShare}>
-                <Share2 size={18} color="#fff" />
-              </OverlayIconButton> */}
+              {languageForGuide ? (
+                <OverlayIconButton
+                  onPress={() =>
+                    router.push({
+                      pathname: "/language-guide",
+                      params: {
+                        languageId: languageForGuide.language.id,
+                        destinationId: destination.id,
+                      },
+                    } as never)
+                  }
+                >
+                  <Languages size={18} color="#fff" />
+                </OverlayIconButton>
+              ) : null}
               <OverlayIconButton
-                onPress={() =>
-                  void toggleFavorite(destination.id, {
-                    name: destination.name,
-                    country: destination.country,
-                    region: destination.region,
-                  })
-                }
+                onPress={() => {
+                  const wasFavorite = favorite;
+                  void (async () => {
+                    try {
+                      await toggleFavorite(destination.id, {
+                        name: destination.name,
+                        country: destination.country,
+                        imageUrl: destination.imageUrl,
+                      });
+                      showAppToast({
+                        variant: wasFavorite ? "destructive" : "success",
+                        title: wasFavorite ? "Removed from favorites" : "Added to favorites",
+                        message: wasFavorite
+                          ? `${destination.name} was removed from favorite destinations`
+                          : `${destination.name} was added to favorite destinations`,
+                      });
+                    } catch {
+                      showAppToast({
+                        variant: "error",
+                        title: "Could not update favorites",
+                        message: "Please try again.",
+                      });
+                    }
+                  })();
+                }}
               >
                 <Heart
                   size={18}
@@ -460,22 +518,57 @@ export default function DestinationDetailsScreen() {
         </View>
 
         <View className="pt-4 flex-row justify-around border-b border-border pb-4 bg-card/30">
-          <View className="items-center gap-1" style={{ width: SCREEN_WIDTH / 4 - 8 }}>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/weather",
+                params: {
+                  lat: String(destination.latitude),
+                  lng: String(destination.longitude),
+                  timezone: destination.timezone,
+                  name: destination.name,
+                  days: "7",
+                },
+              } as never)
+            }
+            className="items-center gap-1 active:opacity-75"
+            style={{ width: SCREEN_WIDTH / 4 - 8 }}
+          >
             <Thermometer size={20} color={accentColor} />
-            <Text className="text-center text-[11px] font-medium text-foreground">18°C</Text>
-          </View>
-          <View className="items-center gap-1" style={{ width: SCREEN_WIDTH / 4 - 8 }}>
+            <Text className="text-center text-[11px] font-medium text-foreground">
+              {peekTempC != null ? `${peekTempC.toFixed(0)}°C` : "—"}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTimeMode((m) => (m === "local" ? "gmt" : "local"))}
+            className="items-center gap-1 active:opacity-75"
+            style={{ width: SCREEN_WIDTH / 4 - 8 }}
+          >
             <Clock size={20} color={accentColor} />
             <Text className="text-center text-[11px] font-medium text-foreground" numberOfLines={2}>
-              {formatDestinationClock(destination.timezone, now)}
+              {timeMode === "local"
+                ? formatDestinationLocalClock(destination.timezone, now)
+                : formatDestinationGmtStyleOffset(destination.timezone, now)}
             </Text>
-          </View>
-          <View className="items-center gap-1" style={{ width: SCREEN_WIDTH / 4 - 8 }}>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/currency",
+                params: {
+                  base: destination.currencyCode.toUpperCase(),
+                  quote: "USD",
+                },
+              } as never)
+            }
+            className="items-center gap-1 active:opacity-75"
+            style={{ width: SCREEN_WIDTH / 4 - 8 }}
+          >
             <Banknote size={20} color={accentColor} />
             <Text className="text-center text-[11px] font-medium text-foreground" numberOfLines={2}>
               {currencyLabel(destination.currencyCode)}
             </Text>
-          </View>
+          </Pressable>
         </View>
 
         <View className="gap-6 px-5 pt-5">
@@ -486,7 +579,7 @@ export default function DestinationDetailsScreen() {
                 <Text className="text-sm font-semibold text-primary">See Map</Text>
               </Pressable>
             </View>
-            {curatedPlaces.length === 0 ? (
+            {shuffledCuratedPlaces.length === 0 ? (
               <Text className="text-sm text-muted-foreground">No curated places yet.</Text>
             ) : (
               <ScrollView
@@ -494,7 +587,7 @@ export default function DestinationDetailsScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ paddingRight: 8 }}
               >
-                {curatedPlaces.map((place) => (
+                {shuffledCuratedPlaces.map((place) => (
                   <MustVisitCard
                     key={place.id}
                     place={place}
@@ -507,45 +600,67 @@ export default function DestinationDetailsScreen() {
 
           <View>
             <Text className="mb-3 text-lg font-bold text-foreground">Things to Do</Text>
-            <View className="overflow-hidden gap-3">
-              {otherPlaces.length === 0 ? (
-                <Text className="py-6 text-center text-sm text-muted-foreground">
-                  No more activities listed yet.
-                </Text>
-              ) : (
-                otherPlaces.map((place) => (
-                  <ThingToDoRow
-                    key={place.id}
-                    place={place}
-                    currencyCode={destination.currencyCode}
-                  />
-                ))
-              )}
-            </View>
+            {shuffledOtherPlaces.length === 0 ? (
+              <Text className="py-6 text-center text-sm text-muted-foreground">
+                No more activities listed yet.
+              </Text>
+            ) : (
+              <View className="gap-3">
+                {shuffledOtherPlaces.map((place) => {
+                  const priceText = formatPlacePrice(place, destination.currencyCode);
+                  const categoryLabel = titleCaseWords(place.category.trim() || "Place");
+                  return (
+                    <PlaceCard
+                      key={place.id}
+                      title={place.name}
+                      subtitle={place.description}
+                      rating={place.rating}
+                      imageUrl={place.imageUrl}
+                      metaRight={
+                        <>
+                          <Text className="text-xs font-semibold text-primary">
+                            {categoryLabel}
+                          </Text>
+                          {priceText != null ? (
+                            <>
+                              <Text className="text-xs text-muted-foreground">·</Text>
+                              <Text className="text-xs font-normal text-accent">{priceText}</Text>
+                            </>
+                          ) : null}
+                        </>
+                      }
+                      onPress={() => router.push(`/place/${place.id}` as never)}
+                    />
+                  );
+                })}
+              </View>
+            )}
           </View>
         </View>
       </ScrollView>
 
-      <View
-        className="absolute bottom-0 left-0 right-0 px-4 pb-2 pt-1"
-        pointerEvents="box-none"
-        style={{ bottom: insets.bottom }}
-      >
-        <Pressable
-          onPress={() => openTrip(destination)}
-          className="flex-row items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 active:opacity-90"
+      {!hasActiveOrUpcomingTrip ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 px-4 pb-2 pt-1"
+          pointerEvents="box-none"
+          style={{ bottom: insets.bottom }}
         >
-          <View className="shrink-0">
-            <CirclePlus size={30} color="#fff" strokeWidth={2.25} />
-          </View>
-          <Text
-            className="max-w-[72%] shrink text-center text-lg font-semibold leading-5 text-primary-foreground"
-            numberOfLines={2}
+          <Pressable
+            onPress={() => openTrip(destination)}
+            className="flex-row items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 active:opacity-90"
           >
-            Create trip to {destination.name}
-          </Text>
-        </Pressable>
-      </View>
+            <View className="shrink-0">
+              <CirclePlus size={30} color="#fff" strokeWidth={2.25} />
+            </View>
+            <Text
+              className="max-w-[72%] shrink text-center text-lg font-semibold leading-5 text-primary-foreground"
+              numberOfLines={2}
+            >
+              Create trip to {destination.name}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }

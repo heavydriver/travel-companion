@@ -6,14 +6,26 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { useEffect } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Toast from "react-native-toast-message";
 import { client, EdenProvider } from "@/api/client";
+import { appToastConfig } from "@/components/shared/AppToast";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
+import { DestinationFavoritesProvider } from "@/features/destination/favorites";
 import { NAV_THEME } from "@/lib/theme";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
 
 const queryClient = new QueryClient();
+
+function RootToast() {
+  const insets = useSafeAreaInsets();
+  return (
+    <Toast config={appToastConfig} position="top" topOffset={insets.top + 8} />
+  );
+}
 
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
@@ -29,14 +41,19 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <EdenProvider client={client} queryClient={queryClient}>
-        <KeyboardProvider>
-          <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-            <OfflineBanner />
-            <Stack screenOptions={{ headerShown: false }} />
-            <PortalHost />
-          </ThemeProvider>
-        </KeyboardProvider>
+        <DestinationFavoritesProvider>
+          <KeyboardProvider>
+            <GestureHandlerRootView>
+              <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+                <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+                <OfflineBanner />
+                <Stack screenOptions={{ headerShown: false }} />
+                <PortalHost />
+                <RootToast />
+              </ThemeProvider>
+            </GestureHandlerRootView>
+          </KeyboardProvider>
+        </DestinationFavoritesProvider>
       </EdenProvider>
     </QueryClientProvider>
   );

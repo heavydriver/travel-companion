@@ -4,21 +4,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowDownUp, ChevronLeft } from "lucide-react-native";
 import { useColorScheme, useUnstableNativeVariable } from "nativewind";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { useEden } from "@/api/client";
 import { Screen } from "@/components/shared/Screen";
-import {
-  NativeSelectScrollView,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { CurrencyFlagEmoji } from "@/lib/currencyFlag";
-import { cn } from "@/lib/utils";
+import { CurrencySelect } from "@/components/shared/CurrencySelect";
 
 type SupportedCurrency = { code: string; name: string; country: string };
 
@@ -67,11 +56,10 @@ function formatRatesDate(isoDate: string): string {
   });
 }
 
-const SELECT_COL_CLASS = "w-[112px] justify-center align-items-center";
+const TRIGGER_COL_CLASS = "w-[112px]";
 
 export default function CurrencyConverterScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const eden = useEden();
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const foreground = useUnstableNativeVariable("--foreground");
@@ -79,13 +67,6 @@ export default function CurrencyConverterScreen() {
   const isDark = colorScheme === "dark";
   const placeholderColor = mutedFg ? `hsl(${mutedFg})` : isDark ? "#94a3b8" : "#64748b";
   const iconColor = foreground ? `hsl(${foreground})` : isDark ? "#e2e8f0" : "#334155";
-
-  const contentInsets = {
-    top: insets.top,
-    bottom: Platform.select({ ios: insets.bottom, android: insets.bottom + 24 }),
-    left: 12,
-    right: 12,
-  };
 
   const params = useLocalSearchParams<{ base?: string; quote?: string }>();
 
@@ -174,9 +155,6 @@ export default function CurrencyConverterScreen() {
     }
   }, [rate]);
 
-  const baseOption = useMemo(() => ({ value: baseCode, label: baseCode }), [baseCode]);
-  const quoteOption = useMemo(() => ({ value: quoteCode, label: quoteCode }), [quoteCode]);
-
   const swapCurrencies = () => {
     setBaseCode(quoteCode);
     setQuoteCode(baseCode);
@@ -184,35 +162,6 @@ export default function CurrencyConverterScreen() {
     setQuoteInput(baseInput);
     lastEdited.current = "base";
   };
-
-  const currencySelect = (
-    code: string,
-    option: { value: string; label: string },
-    onSelect: (opt?: { value: string }) => void,
-  ) => (
-    <Select value={option} onValueChange={onSelect}>
-      <SelectTrigger className={cn("h-[48px] border-border bg-card px-2")}>
-        <View className="flex-row items-center gap-2">
-          <CurrencyFlagEmoji countryCode={byCode.get(code)?.country ?? "ZZ"} />
-          <SelectValue placeholder="—" className="text-base font-semibold text-foreground" />
-        </View>
-      </SelectTrigger>
-      <SelectContent insets={contentInsets} className={SELECT_COL_CLASS}>
-        <NativeSelectScrollView keyboardShouldPersistTaps="handled">
-          <SelectGroup>
-            {currencies.map((c) => (
-              <SelectItem key={c.code} value={c.code} label={c.code}>
-                <View className="flex-row items-center gap-2 py-0.5">
-                  <CurrencyFlagEmoji countryCode={c.country} />
-                  <Text className="text-sm text-foreground">{c.code}</Text>
-                </View>
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </NativeSelectScrollView>
-      </SelectContent>
-    </Select>
-  );
 
   return (
     <Screen scrollable contentClassName="pb-8">
@@ -244,11 +193,13 @@ export default function CurrencyConverterScreen() {
           <View className="gap-2">
             <View className="gap-1">
               <Text className="text-sm font-medium text-muted-foreground">Base currency</Text>
-              <View className="flex-row items-stretch gap-3 justify-center align-items-center">
-                <View className={SELECT_COL_CLASS}>
-                  {currencySelect(baseCode, baseOption, (opt) => {
-                    if (opt?.value) setBaseCode(opt.value);
-                  })}
+              <View className="flex-row items-stretch gap-3">
+                <View className={TRIGGER_COL_CLASS}>
+                  <CurrencySelect
+                    value={baseCode}
+                    onChange={setBaseCode}
+                    currencies={currencies}
+                  />
                 </View>
                 <TextInput
                   value={baseInput}
@@ -260,7 +211,7 @@ export default function CurrencyConverterScreen() {
                 />
               </View>
               {baseMeta ? (
-                <Text className="text-xm font-semibold text-primary" numberOfLines={2}>
+                <Text className="text-xs font-semibold text-primary" numberOfLines={2}>
                   {baseMeta.name} ({getSymbolFromCurrency(baseCode)})
                 </Text>
               ) : null}
@@ -279,11 +230,13 @@ export default function CurrencyConverterScreen() {
 
             <View className="gap-1">
               <Text className="text-sm font-medium text-muted-foreground">Convert to</Text>
-              <View className="flex-row items-stretch gap-3 justify-center align-items-center">
-                <View className={SELECT_COL_CLASS}>
-                  {currencySelect(quoteCode, quoteOption, (opt) => {
-                    if (opt?.value) setBaseCode(opt.value);
-                  })}
+              <View className="flex-row items-stretch gap-3">
+                <View className={TRIGGER_COL_CLASS}>
+                  <CurrencySelect
+                    value={quoteCode}
+                    onChange={setQuoteCode}
+                    currencies={currencies}
+                  />
                 </View>
                 <TextInput
                   value={quoteInput}
@@ -295,7 +248,7 @@ export default function CurrencyConverterScreen() {
                 />
               </View>
               {quoteMeta ? (
-                <Text className="text-xm font-semibold text-primary" numberOfLines={2}>
+                <Text className="text-xs font-semibold text-primary" numberOfLines={2}>
                   {quoteMeta.name} ({getSymbolFromCurrency(quoteCode)})
                 </Text>
               ) : null}

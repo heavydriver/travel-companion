@@ -13,6 +13,7 @@ export const LanguageListResponse = t.Object({
 
 export const LanguagePhraseQuery = t.Object({
   page: t.Optional(t.Number({ minimum: 1 })),
+  destinationId: t.Optional(t.String()),
 });
 
 export const LanguagePhraseItem = t.Object({

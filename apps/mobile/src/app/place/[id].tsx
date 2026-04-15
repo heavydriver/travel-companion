@@ -26,8 +26,9 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
-import { getEligibleTripForDestination, useTripStore } from "@/store/tripStore";
+import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 /** Slightly shorter than destination hero — closer to a maps preview strip. */
@@ -77,12 +78,41 @@ function toMinutes(day: number, hour: number, minute: number): number {
   return day * 24 * 60 + hour * 60 + minute;
 }
 
-/** API convention: 0 = Monday … 6 = Sunday (matches user spec). */
-function apiDayAndWeekMinutes(now: Date): { apiDay: number; minutesFromWeekStart: number } {
-  const jsDay = now.getDay();
-  const apiDay = jsDay === 0 ? 6 : jsDay - 1;
-  const minutesFromWeekStart = apiDay * 24 * 60 + now.getHours() * 60 + now.getMinutes();
-  return { apiDay, minutesFromWeekStart };
+/** API convention: 0 = Monday … 6 = Sunday — wall clock in destination IANA zone. */
+const WEEKDAY_LONG_TO_API: Record<string, number> = {
+  monday: 0,
+  tuesday: 1,
+  wednesday: 2,
+  thursday: 3,
+  friday: 4,
+  saturday: 5,
+  sunday: 6,
+};
+
+function apiDayAndWeekMinutesInTimeZone(
+  timeZone: string,
+  at: Date,
+): { apiDay: number; minutesFromWeekStart: number } | null {
+  const tz = timeZone.trim();
+  if (!tz) return null;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      weekday: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      hourCycle: "h23",
+    }).formatToParts(at);
+    const wdRaw = parts.find((p) => p.type === "weekday")?.value?.toLowerCase() ?? "";
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    const apiDay = WEEKDAY_LONG_TO_API[wdRaw];
+    if (apiDay === undefined || Number.isNaN(hour) || Number.isNaN(minute)) return null;
+    return { apiDay, minutesFromWeekStart: apiDay * 24 * 60 + hour * 60 + minute };
+  } catch {
+    return null;
+  }
 }
 
 function parseOpeningHours(raw: unknown): OpeningHoursPayload | null {
@@ -125,8 +155,11 @@ function parseOpeningHours(raw: unknown): OpeningHoursPayload | null {
   };
 }
 
-function isOpenFromPeriods(periods: OpeningPeriod[], now: Date): boolean {
-  const { minutesFromWeekStart: cur } = apiDayAndWeekMinutes(now);
+function isOpenFromPeriodsAt(
+  periods: OpeningPeriod[],
+  pos: { minutesFromWeekStart: number },
+): boolean {
+  const cur = pos.minutesFromWeekStart;
   for (const p of periods) {
     const start = toMinutes(p.open.day, p.open.hour, p.open.minute);
     let end = toMinutes(p.close.day, p.close.hour, p.close.minute);
@@ -137,8 +170,11 @@ function isOpenFromPeriods(periods: OpeningPeriod[], now: Date): boolean {
   return false;
 }
 
-function findActivePeriod(periods: OpeningPeriod[], now: Date): OpeningPeriod | null {
-  const { minutesFromWeekStart: cur } = apiDayAndWeekMinutes(now);
+function findActivePeriodAt(
+  periods: OpeningPeriod[],
+  pos: { minutesFromWeekStart: number },
+): OpeningPeriod | null {
+  const cur = pos.minutesFromWeekStart;
   for (const p of periods) {
     const start = toMinutes(p.open.day, p.open.hour, p.open.minute);
     let end = toMinutes(p.close.day, p.close.hour, p.close.minute);
@@ -150,19 +186,17 @@ function findActivePeriod(periods: OpeningPeriod[], now: Date): OpeningPeriod | 
 }
 
 function formatClock12(hour: number, minute: number): string {
-  const d = new Date(Date.UTC(2000, 0, 1, hour, minute));
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: minute ? "2-digit" : undefined,
-    hour12: true,
-  }).format(d);
+  const normalized = ((hour % 24) + 24) % 24;
+  const period = normalized >= 12 ? "PM" : "AM";
+  const hour12 = normalized % 12 || 12;
+  const minutePart = minute ? `:${String(minute).padStart(2, "0")}` : "";
+  return `${hour12}${minutePart} ${period}`;
 }
 
-function formatPeriodRow(p: OpeningPeriod): string {
-  const openDay = DAY_NAMES[p.open.day] ?? `Day ${p.open.day}`;
+function formatPeriodTimeRange(p: OpeningPeriod): string {
   const openT = formatClock12(p.open.hour, p.open.minute);
   const closeT = formatClock12(p.close.hour, p.close.minute);
-  return `${openDay}: ${openT} – ${closeT}`;
+  return `${openT} – ${closeT}`;
 }
 
 function formatCategoryLabel(category: string): string {
@@ -249,7 +283,7 @@ export default function PlaceDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const trips = useTripStore((state) => state.trips);
+  const storeTrips = useTripStore((state) => state.trips);
   const primaryVar = useUnstableNativeVariable("--primary");
   const accentColor = primaryVar ? `hsl(${primaryVar})` : "#3B82F6";
   const mutedVar = useUnstableNativeVariable("--muted-foreground");
@@ -275,11 +309,31 @@ export default function PlaceDetailsScreen() {
   });
 
   const place = placeQuery.data?.place as PlaceDetail | undefined;
-  const eligibleTrip = place
-    ? getEligibleTripForDestination(trips, place.destinationId)
-    : undefined;
 
-  const destinationForTripQuery = useQuery({
+  const tripsForDestinationQuery = useQuery({
+    queryKey: ["trips", "destination", place?.destinationId],
+    queryFn: async () => {
+      if (!place?.destinationId) throw new Error("Missing destination id");
+      const res = await client.api.v1.trips.get({
+        query: { destinationId: place.destinationId },
+      });
+      if (res.error) throw new Error("Failed to load trips");
+      return res.data;
+    },
+    enabled: Boolean(place?.destinationId),
+    staleTime: 60 * 1000,
+  });
+
+  const eligibleTrip = useMemo(() => {
+    if (!place) return undefined;
+    const fromApi = (tripsForDestinationQuery.data?.trips ?? []) as Trip[];
+    const list = tripsForDestinationQuery.isSuccess
+      ? fromApi
+      : storeTrips.filter((t) => t.destination.id === place.destinationId);
+    return getEligibleTripForDestination(list, place.destinationId);
+  }, [place, tripsForDestinationQuery.data, tripsForDestinationQuery.isSuccess, storeTrips]);
+
+  const destinationMetaQuery = useQuery({
     queryKey: ["destination-details", place?.destinationId],
     queryFn: async () => {
       if (!place?.destinationId) {
@@ -289,7 +343,20 @@ export default function PlaceDetailsScreen() {
       if (res.error) throw new Error("Failed to load destination");
       return res.data;
     },
-    enabled: !!place?.destinationId && !eligibleTrip,
+    enabled: Boolean(place?.destinationId),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const itineraryQuery = useQuery({
+    queryKey: ["itinerary", eligibleTrip?.id],
+    queryFn: async () => {
+      if (!eligibleTrip) throw new Error("No trip");
+      const res = await client.api.v1.trips({ tripId: eligibleTrip.id })["itinerary-items"].get();
+      if (res.error) throw new Error("Failed to load itinerary");
+      return res.data;
+    },
+    enabled: Boolean(eligibleTrip?.id && place?.id),
+    staleTime: 30 * 1000,
   });
 
   const openTrip = useCallback(
@@ -306,30 +373,56 @@ export default function PlaceDetailsScreen() {
     [router],
   );
 
+  const destinationTimeZone = useMemo(() => {
+    const dest = destinationMetaQuery.data?.destination as { timezone?: string } | undefined;
+    const tz = dest?.timezone?.trim();
+    return tz && tz.length > 0 ? tz : null;
+  }, [destinationMetaQuery.data]);
+
   const openingParsed = useMemo(
     () => parseOpeningHours(place?.openingHours),
     [place?.openingHours],
   );
+
+  const nowInDestination = useMemo(() => {
+    if (!destinationTimeZone) return null;
+    return apiDayAndWeekMinutesInTimeZone(destinationTimeZone, now);
+  }, [destinationTimeZone, now]);
+
   const openNow = useMemo(() => {
-    if (!openingParsed?.periods?.length) return null;
-    return isOpenFromPeriods(openingParsed.periods, now);
-  }, [openingParsed, now]);
+    if (!openingParsed?.periods?.length || !nowInDestination) return null;
+    return isOpenFromPeriodsAt(openingParsed.periods, nowInDestination);
+  }, [openingParsed, nowInDestination]);
 
   const closesAtLabel = useMemo(() => {
-    if (!openingParsed?.periods?.length || openNow !== true) return null;
-    const active = findActivePeriod(openingParsed.periods, now);
+    if (!openingParsed?.periods?.length || openNow !== true || !nowInDestination) return null;
+    const active = findActivePeriodAt(openingParsed.periods, nowInDestination);
     if (!active) return null;
     return formatClock12(active.close.hour, active.close.minute);
-  }, [openingParsed, now, openNow]);
+  }, [openingParsed, nowInDestination, openNow]);
 
-  const sortedPeriods = useMemo(() => {
-    if (!openingParsed?.periods?.length) return [];
-    return [...openingParsed.periods].sort((a, b) => {
-      const sa = toMinutes(a.open.day, a.open.hour, a.open.minute);
-      const sb = toMinutes(b.open.day, b.open.hour, b.open.minute);
-      return sa - sb;
-    });
+  const periodsByDay = useMemo(() => {
+    const buckets: OpeningPeriod[][] = [[], [], [], [], [], [], []];
+    if (!openingParsed?.periods?.length) return buckets;
+    for (const p of openingParsed.periods) {
+      if (p.open.day >= 0 && p.open.day <= 6) buckets[p.open.day].push(p);
+    }
+    for (const list of buckets) {
+      list.sort(
+        (a, b) =>
+          toMinutes(a.open.day, a.open.hour, a.open.minute) -
+          toMinutes(b.open.day, b.open.hour, b.open.minute),
+      );
+    }
+    return buckets;
   }, [openingParsed]);
+
+  const todayApiDay = nowInDestination?.apiDay ?? null;
+
+  const placeInItinerary = Boolean(
+    place &&
+      itineraryQuery.data?.items?.some((it: { placeId: string | null }) => it.placeId === place.id),
+  );
 
   const addToItineraryMutation = useMutation({
     mutationFn: async () => {
@@ -344,12 +437,47 @@ export default function PlaceDetailsScreen() {
         placeId: place.id,
       });
       if (res.error) throw new Error("Failed to add to itinerary");
-      return res.data;
+      return { tripId: eligibleTrip.id, tripTitle: eligibleTrip.title };
     },
-    onSuccess: async () => {
-      if (eligibleTrip) {
-        await queryClient.invalidateQueries({ queryKey: ["itinerary", eligibleTrip.id] });
+    onMutate: async () => {
+      if (!place || !eligibleTrip) return;
+      await queryClient.cancelQueries({ queryKey: ["itinerary", eligibleTrip.id] });
+      const prev = queryClient.getQueryData<{ items: unknown[] }>(["itinerary", eligibleTrip.id]);
+      const items = (prev?.items ?? []) as Array<{ order: number }>;
+      const nextOrder =
+        items.length > 0 ? Math.max(...items.map((i) => Number(i.order) || 0)) + 1 : 0;
+      const targetDate = clampDateToTrip(new Date(), eligibleTrip.startDate, eligibleTrip.endDate);
+      queryClient.setQueryData(["itinerary", eligibleTrip.id], {
+        items: [
+          ...items,
+          {
+            id: `optimistic-${place.id}`,
+            tripId: eligibleTrip.id,
+            placeId: place.id,
+            title: place.name,
+            notes: null,
+            date: targetDate.toISOString(),
+            startTime: null,
+            endTime: null,
+            order: nextOrder,
+            isDone: false,
+          },
+        ],
+      });
+      return { prev, tripId: eligibleTrip.id };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev !== undefined && ctx.tripId) {
+        queryClient.setQueryData(["itinerary", ctx.tripId], ctx.prev);
       }
+    },
+    onSuccess: async (data) => {
+      showAppToast({
+        variant: "success",
+        title: "Added to trip",
+        message: `${place?.name ?? "Place"} was added to ${data.tripTitle}.`,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["itinerary", data.tripId] });
     },
   });
 
@@ -395,14 +523,22 @@ export default function PlaceDetailsScreen() {
         ? "No reviews yet"
         : null;
 
-  const locationLines = [place.address, place.city].filter(Boolean).join("\n");
+  const locationLines = [place.address].filter(Boolean).join("\n");
   const coordsText = `${place.latitude.toFixed(5)}, ${place.longitude.toFixed(5)}`;
+  const showAddToItinerary = Boolean(eligibleTrip) && !placeInItinerary;
+  const itineraryFirstLoadPending =
+    Boolean(eligibleTrip) && !placeInItinerary && !itineraryQuery.isFetched;
+  const destinationForCreate = destinationMetaQuery.data?.destination as
+    | { id: string; name: string; country: string }
+    | undefined;
 
   return (
     <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 80 }}
+        contentContainerStyle={{
+          paddingBottom: showAddToItinerary ? 100 : eligibleTrip ? 40 : 140,
+        }}
         showsVerticalScrollIndicator={false}
       >
         <View className="relative w-full" style={{ height: HERO_HEIGHT }}>
@@ -486,18 +622,6 @@ export default function PlaceDetailsScreen() {
                 {priceText}
               </Text>
             ) : null}
-
-            {openNow !== null ? (
-              <View className="mt-2 flex-row items-center gap-2 rounded-xl border border-border/80 bg-card/40 px-3 py-1">
-                <View
-                  className={`h-2.5 w-2.5 rounded-full ${openNow ? "bg-emerald-500" : "bg-red-500"}`}
-                />
-                <Text className="text-sm font-semibold text-foreground">
-                  {openNow ? "Open now" : "Closed"}
-                  {openNow && closesAtLabel ? ` · Closes ${closesAtLabel}` : ""}
-                </Text>
-              </View>
-            ) : null}
           </View>
 
           {place.description?.trim() ? (
@@ -516,12 +640,6 @@ export default function PlaceDetailsScreen() {
                 value={locationLines}
               />
             ) : null}
-            <InfoRow
-              icon={<MapPin size={18} color={accentColor} />}
-              label="Coordinates"
-              value={coordsText}
-              valueClassName="font-mono text-xs"
-            />
             {place.phoneNumber?.trim() ? (
               <InfoRow
                 icon={<Phone size={18} color={accentColor} />}
@@ -540,20 +658,57 @@ export default function PlaceDetailsScreen() {
             ) : null}
           </View>
 
-          {sortedPeriods.length > 0 ? (
+          {openingParsed?.periods && openingParsed.periods.length > 0 ? (
             <View className="mt-5 rounded-2xl border border-border/80 bg-card/30 px-4 py-1">
-              <View className="flex-row items-center gap-2 border-b border-border/60 py-3">
-                <Clock size={18} color={accentColor} />
-                <Text className="text-base font-bold text-foreground">Hours</Text>
-              </View>
-              {sortedPeriods.map((p) => (
-                <View
-                  key={`${p.open.day}-${p.open.hour}-${p.open.minute}-${p.close.day}-${p.close.hour}-${p.close.minute}`}
-                  className="border-b border-border/40 py-2.5 last:border-b-0"
-                >
-                  <Text className="text-sm leading-5 text-foreground">{formatPeriodRow(p)}</Text>
+              <View className="flex-row justify-between items-center gap-3 border-b border-border/60 py-3">
+                <View className="flex-row items-center gap-2">
+                  <Clock size={18} color={accentColor} />
+                  <View className="ml-1 min-w-0">
+                    <Text className="text-base font-bold text-foreground">Hours</Text>
+                    <Text className="mt-0.5 text-xs text-muted-foreground">
+                      Local destination time
+                    </Text>
+                  </View>
                 </View>
-              ))}
+                {openNow !== null ? (
+                  <View
+                    className={`rounded-full px-2.5 py-1 ${openNow ? "bg-emerald-500/15" : "bg-red-500/15"}`}
+                  >
+                    <Text
+                      className={`text-xs font-semibold ${openNow ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}
+                    >
+                      {openNow ? "Open now" : "Closed"}
+                      {openNow && closesAtLabel ? ` · Closes ${closesAtLabel}` : ""}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              {DAY_NAMES.map((dayName, dayIndex) => {
+                const dayPeriods = periodsByDay[dayIndex] ?? [];
+                const isToday = todayApiDay === dayIndex;
+                const dayLabel = isToday ? `${dayName} · Today` : dayName;
+                const scheduleText =
+                  dayPeriods.length === 0
+                    ? "Closed"
+                    : dayPeriods.map((p) => formatPeriodTimeRange(p)).join(", ");
+                return (
+                  <View
+                    key={dayName}
+                    className={`flex-row items-start justify-between gap-3 rounded-md border-b border-border/40 py-3 last:border-b-0 ${isToday ? "bg-primary/5 px-2" : ""}`}
+                  >
+                    <Text
+                      className={`text-sm ${isToday ? "font-bold text-foreground" : "font-medium text-muted-foreground"}`}
+                    >
+                      {dayLabel}
+                    </Text>
+                    <Text
+                      className={`max-w-[62%] text-right text-sm ${dayPeriods.length === 0 ? "text-muted-foreground" : "text-foreground"}`}
+                    >
+                      {scheduleText}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           ) : null}
 
@@ -563,7 +718,7 @@ export default function PlaceDetailsScreen() {
                 No active trip for this destination. Create a trip to add this place to your
                 itinerary.
               </Text>
-              {destinationForTripQuery.isError ? (
+              {destinationMetaQuery.isError ? (
                 <Text className="mt-2 text-sm text-destructive">
                   {"Couldn't load destination details. Tap Create trip again to retry."}
                 </Text>
@@ -572,26 +727,25 @@ export default function PlaceDetailsScreen() {
                 <Button
                   label="Create trip"
                   variant="secondary"
-                  loading={destinationForTripQuery.isPending}
-                  disabled={destinationForTripQuery.isPending}
+                  loading={destinationMetaQuery.isPending}
+                  disabled={destinationMetaQuery.isPending}
                   onPress={() => {
-                    const destination = destinationForTripQuery.data?.destination as
-                      | { id: string; name: string; country: string }
-                      | undefined;
-                    if (destination) {
-                      openTrip(destination);
+                    if (destinationForCreate) {
+                      openTrip(destinationForCreate);
                       return;
                     }
-                    void destinationForTripQuery.refetch();
+                    void destinationMetaQuery.refetch();
                   }}
                 />
               </View>
             </View>
           ) : null}
         </View>
+
+        <Text className="mt-4 px-5 text-center text-xs text-muted-foreground/70">{coordsText}</Text>
       </ScrollView>
 
-      {eligibleTrip ? (
+      {showAddToItinerary ? (
         <View
           className="absolute bottom-0 left-0 right-0 px-4 pb-2 pt-1"
           pointerEvents="box-none"
@@ -599,12 +753,20 @@ export default function PlaceDetailsScreen() {
         >
           <Pressable
             onPress={() => addToItineraryMutation.mutate()}
-            disabled={addToItineraryMutation.isPending}
+            disabled={addToItineraryMutation.isPending || itineraryFirstLoadPending}
             className="flex-row items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 active:opacity-90 disabled:opacity-60"
           >
-            <CirclePlus size={28} color="#fff" strokeWidth={2.25} />
+            {itineraryFirstLoadPending || addToItineraryMutation.isPending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <CirclePlus size={28} color="#fff" strokeWidth={2.25} />
+            )}
             <Text className="text-center text-lg font-semibold text-primary-foreground">
-              {addToItineraryMutation.isPending ? "Adding…" : "Add to itinerary"}
+              {addToItineraryMutation.isPending
+                ? "Adding…"
+                : itineraryFirstLoadPending
+                  ? "Loading itinerary…"
+                  : "Add to itinerary"}
             </Text>
           </Pressable>
           {/* <Text className="mt-1.5 text-center text-xs text-muted-foreground" numberOfLines={1}>

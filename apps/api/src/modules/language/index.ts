@@ -20,7 +20,11 @@ export const languageModule = new Elysia({ prefix: "/languages" })
   .get(
     "/:languageId/phrases",
     async ({ params, query }) => {
-      return languageService.listPhrasesByLanguage(params.languageId, query.page ?? 1);
+      return languageService.listPhrasesByLanguage(
+        params.languageId,
+        query.page ?? 1,
+        query.destinationId,
+      );
     },
     {
       params: t.Object({ languageId: t.String() }),

@@ -197,6 +197,7 @@ export default function ExploreScreen() {
       return res.data;
     },
     staleTime: POPULAR_DESTINATIONS_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   });
 
   const nearbyQuery = useQuery({
@@ -208,10 +209,18 @@ export default function ExploreScreen() {
     enabled: !!locationCoords,
   });
 
-  const popularDestinations = (popularQuery.data?.destinations ?? []) as PopularDestination[];
+  const popularDestinations = useMemo(
+    () => (popularQuery.data?.destinations ?? []) as PopularDestination[],
+    [popularQuery.data?.destinations],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dataUpdatedAt triggers reshuffle after refetch when TanStack keeps same destinations ref
   useEffect(() => {
-    setShuffledPopularDestinations(popularDestinations);
-  }, [popularDestinations]);
+    if (popularDestinations.length === 0) {
+      setShuffledPopularDestinations([]);
+      return;
+    }
+    setShuffledPopularDestinations(shuffleDestinations(popularDestinations));
+  }, [popularQuery.dataUpdatedAt, popularDestinations]);
 
   const visiblePopularDestinations = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase();
@@ -227,17 +236,19 @@ export default function ExploreScreen() {
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    setShuffledPopularDestinations((current) =>
-      shuffleDestinations(current.length > 0 ? current : popularDestinations),
-    );
     try {
-      const coords = await loadCurrentLocation();
-      if (coords) {
-        await queryClient.fetchQuery({
-          queryKey: ["nearby-favorites", coords.lat, coords.lng],
-          queryFn: () => fetchNearbyFavorites(coords),
-        });
-      }
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: POPULAR_DESTINATIONS_QUERY_KEY }),
+        (async () => {
+          const coords = await loadCurrentLocation();
+          if (coords) {
+            await queryClient.fetchQuery({
+              queryKey: ["nearby-favorites", coords.lat, coords.lng],
+              queryFn: () => fetchNearbyFavorites(coords),
+            });
+          }
+        })(),
+      ]);
     } finally {
       setIsRefreshing(false);
     }

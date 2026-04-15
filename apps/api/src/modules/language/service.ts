@@ -29,7 +29,11 @@ export const languageService = {
     });
   },
 
-  async listPhrasesByLanguage(languageId: string, page: number) {
+  async listPhrasesByLanguage(
+    languageId: string,
+    page: number,
+    destinationId?: string,
+  ) {
     const language = await prisma.language.findUnique({
       where: { id: languageId },
       select: { id: true },
@@ -39,18 +43,33 @@ export const languageService = {
       throw new AppError(404, "NOT_FOUND", "Language not found");
     }
 
+    if (destinationId) {
+      const destination = await prisma.destination.findUnique({
+        where: { id: destinationId },
+        select: { id: true },
+      });
+      if (!destination) {
+        throw new AppError(404, "NOT_FOUND", "Destination not found");
+      }
+    }
+
+    const phraseWhere = {
+      languageId,
+      ...(destinationId ? { destinationId } : {}),
+    };
+
     const currentPage = Number.isFinite(page) && page > 0 ? page : 1;
     const skip = (currentPage - 1) * PAGE_SIZE;
 
     const [phrases, total] = await Promise.all([
       prisma.phrase.findMany({
-        where: { languageId },
+        where: phraseWhere,
         select: phraseListSelect,
         orderBy: [{ isEssential: "desc" }, { category: "asc" }, { englishText: "asc" }],
         skip,
         take: PAGE_SIZE,
       }),
-      prisma.phrase.count({ where: { languageId } }),
+      prisma.phrase.count({ where: phraseWhere }),
     ]);
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

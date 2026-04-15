@@ -10,6 +10,8 @@ import { placeModule } from "./modules/place";
 import { connectionModule, socialModule } from "./modules/social";
 import { tripModule } from "./modules/trip";
 import { userModule } from "./modules/user";
+import { currencyModule } from "./modules/currency";
+import { weatherModule } from "./modules/weather";
 
 export const app = new Elysia({ prefix: "/api/v1" })
   // .use(cors({ origin: config.frontendUrl, credentials: true }))
@@ -23,6 +25,8 @@ export const app = new Elysia({ prefix: "/api/v1" })
   .use(placeModule)
   .use(offlineModule)
   .use(languageModule)
+  .use(weatherModule)
+  .use(currencyModule)
   .use(socialModule)
   .use(connectionModule)
   .use(messageModule);
