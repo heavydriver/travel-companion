@@ -95,6 +95,7 @@ export const DestinationDetailResponse = t.Object({
       priceLevel: t.Nullable(t.Number()),
       address: t.Nullable(t.String()),
       city: t.Nullable(t.String()),
+      openingHours: t.Nullable(t.Any()),
     })
   ),
   otherPlaces: t.Array(
@@ -115,6 +116,7 @@ export const DestinationDetailResponse = t.Object({
       priceLevel: t.Nullable(t.Number()),
       address: t.Nullable(t.String()),
       city: t.Nullable(t.String()),
+      openingHours: t.Nullable(t.Any()),
     })
   ),
 });

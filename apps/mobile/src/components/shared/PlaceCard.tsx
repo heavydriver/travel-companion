@@ -12,6 +12,8 @@ export type PlaceCardProps = {
   imageUrl?: string | null;
   placeholderIcon?: ReactNode;
   onPress: () => void;
+  /** Shown at end of row (e.g. add-to-itinerary); does not replace onPress on the main area. */
+  endAction?: ReactNode;
 };
 
 /**
@@ -26,47 +28,53 @@ export const PlaceCard = memo(function PlaceCard({
   imageUrl,
   placeholderIcon,
   onPress,
+  endAction,
 }: PlaceCardProps) {
   const mutedParts = useUnstableNativeVariable("--muted-foreground");
   const mutedIconColor = mutedParts ? `hsl(${mutedParts})` : "#888";
 
   return (
-    <Pressable
-      onPress={onPress}
-      className="flex-row gap-3 rounded-2xl border border-border/80 bg-card/80 px-3 py-3.5 active:opacity-80"
-    >
-      <View className="h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
-        {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={{ width: "100%", height: "100%" }}
-            contentFit="cover"
-            transition={150}
-          />
-        ) : (
-          (placeholderIcon ?? <MapPin size={22} color={mutedIconColor} />)
-        )}
-      </View>
-      <View className="min-w-0 flex-1 justify-center">
-        <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text className="mt-0.5 text-xs leading-4 text-muted-foreground" numberOfLines={1}>
-            {subtitle}
-          </Text>
-        ) : null}
-        <View className="mt-1.5 flex-row flex-wrap items-center gap-1">
-          {rating != null ? (
-            <>
-              <Star size={12} color="#FBBF24" fill="#FBBF24" />
-              <Text className="text-xs text-muted-foreground">{rating.toFixed(1)}</Text>
-              {metaRight != null ? <Text className="text-xs text-muted-foreground">·</Text> : null}
-            </>
-          ) : null}
-          {metaRight}
+    <View className="flex-row items-stretch rounded-2xl border border-border/80 bg-card/80">
+      <Pressable
+        onPress={onPress}
+        className="min-w-0 flex-1 flex-row gap-3 px-3 py-3.5 active:opacity-80"
+      >
+        <View className="h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
+          {imageUrl ? (
+            <Image
+              source={{ uri: imageUrl }}
+              style={{ width: "100%", height: "100%" }}
+              contentFit="cover"
+              transition={150}
+            />
+          ) : (
+            (placeholderIcon ?? <MapPin size={22} color={mutedIconColor} />)
+          )}
         </View>
-      </View>
-    </Pressable>
+        <View className="min-w-0 flex-1 justify-center">
+          <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text className="mt-0.5 text-xs leading-4 text-muted-foreground" numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
+          <View className="mt-1.5 flex-row flex-wrap items-center gap-1">
+            {rating != null ? (
+              <>
+                <Star size={12} color="#FBBF24" fill="#FBBF24" />
+                <Text className="text-xs text-muted-foreground">{rating.toFixed(1)}</Text>
+                {metaRight != null ? <Text className="text-xs text-muted-foreground">·</Text> : null}
+              </>
+            ) : null}
+            {metaRight}
+          </View>
+        </View>
+      </Pressable>
+      {endAction != null ? (
+        <View className="justify-center pr-2">{endAction}</View>
+      ) : null}
+    </View>
   );
 });

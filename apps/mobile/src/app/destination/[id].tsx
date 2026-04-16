@@ -23,6 +23,7 @@ import { showAppToast } from "@/components/shared/AppToast";
 import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDestinationFavorites } from "@/features/destination/favorites";
 import { hasEligibleTripForDestination, type Trip } from "@/store/tripStore";
+import { useMapSessionStore, type MapSessionPlace } from "@/store/mapSessionStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HERO_HEIGHT = Math.min(400, Math.round(SCREEN_WIDTH * 1.05));
@@ -38,9 +39,13 @@ type PlacePreview = {
   reviewCount: number | null;
   imageUrl: string | null;
   isCurated: boolean;
+  isFeatured: boolean;
   priceLevel: number | null;
   address: string | null;
   city: string | null;
+  latitude: number;
+  longitude: number;
+  openingHours?: unknown | null;
 };
 
 type DestinationLanguageLink = {
@@ -257,9 +262,28 @@ const MustVisitCard = memo(function MustVisitCard({
   );
 });
 
+function toMapSessionPlaces(places: PlacePreview[]): MapSessionPlace[] {
+  return places.map((p) => ({
+    id: p.id,
+    destinationId: p.destinationId,
+    name: p.name,
+    category: p.category,
+    description: p.description,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    imageUrl: p.imageUrl,
+    rating: p.rating,
+    reviewCount: p.reviewCount,
+    isCurated: p.isCurated,
+    isFeatured: p.isFeatured,
+    openingHours: p.openingHours ?? null,
+  }));
+}
+
 export default function DestinationDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const setMapSession = useMapSessionStore((s) => s.setSession);
   const insets = useSafeAreaInsets();
   const { isFavorite, toggleFavorite } = useDestinationFavorites();
   const primaryVar = useUnstableNativeVariable("--primary");
@@ -575,7 +599,22 @@ export default function DestinationDetailsScreen() {
           <View>
             <View className="mb-3 flex-row items-center justify-between">
               <Text className="text-lg font-bold text-foreground">Must-Visit Places</Text>
-              <Pressable onPress={() => router.push("/(tabs)/map" as never)} hitSlop={8}>
+              <Pressable
+                onPress={() => {
+                  const popular = allPlaces.filter((p) => p.isCurated || p.isFeatured);
+                  const forMap = popular.length > 0 ? popular : allPlaces;
+                  setMapSession({
+                    destinationId: destination.id,
+                    destinationName: destination.name,
+                    latitude: destination.latitude,
+                    longitude: destination.longitude,
+                    timezone: destination.timezone,
+                    places: toMapSessionPlaces(forMap),
+                  });
+                  router.push("/(tabs)/map" as never);
+                }}
+                hitSlop={8}
+              >
                 <Text className="text-sm font-semibold text-primary">See Map</Text>
               </Pressable>
             </View>

@@ -22,6 +22,7 @@ export const PlaceListItemShape = t.Object({
   reviewCount: t.Nullable(t.Number()),
   isCurated: t.Boolean(),
   isFeatured: t.Boolean(),
+  openingHours: t.Nullable(t.Any()),
 });
 
 export const NearbyPlaceQueryParams = t.Object({

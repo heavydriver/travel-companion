@@ -19,6 +19,7 @@ const listSelect = {
   reviewCount: true,
   isCurated: true,
   isFeatured: true,
+  openingHours: true,
 } as const;
 
 const cdnBaseUrl = config.cdnBaseUrl.endsWith("/")

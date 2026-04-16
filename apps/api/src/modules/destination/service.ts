@@ -76,6 +76,7 @@ const placePreviewSelect = {
   priceLevel: true,
   address: true,
   city: true,
+  openingHours: true,
 } as const;
 
 const cdnBaseUrl = config.cdnBaseUrl.endsWith("/")

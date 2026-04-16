@@ -43,7 +43,7 @@ export default function RootLayout() {
       <EdenProvider client={client} queryClient={queryClient}>
         <DestinationFavoritesProvider>
           <KeyboardProvider>
-            <GestureHandlerRootView>
+            <GestureHandlerRootView style={{ flex: 1 }}>
               <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
                 <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
                 <OfflineBanner />
