@@ -29,6 +29,12 @@ export const AuthResponse = t.Object({
     username: t.String(),
   }),
   accessToken: t.String(),
+  /** Also set as HttpOnly cookie for web; required in JSON for React Native (no cookie jar). */
+  refreshToken: t.String(),
+});
+
+export const RefreshRequest = t.Object({
+  refreshToken: t.Optional(t.String()),
 });
 
 export const RefreshResponse = t.Object({

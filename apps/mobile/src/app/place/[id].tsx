@@ -28,6 +28,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { client } from "@/api/client";
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
+import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -278,12 +279,31 @@ function InfoRow({
   return body;
 }
 
+function placeDetailToMapSessionPlace(p: PlaceDetail): MapSessionPlace {
+  return {
+    id: p.id,
+    destinationId: p.destinationId,
+    name: p.name,
+    category: p.category,
+    description: p.description,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    imageUrl: p.imageUrl,
+    rating: p.rating,
+    reviewCount: p.reviewCount,
+    isCurated: p.isCurated,
+    isFeatured: false,
+    openingHours: p.openingHours ?? null,
+  };
+}
+
 export default function PlaceDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const storeTrips = useTripStore((state) => state.trips);
+  const setMapSession = useMapSessionStore((s) => s.setSession);
   const primaryVar = useUnstableNativeVariable("--primary");
   const accentColor = primaryVar ? `hsl(${primaryVar})` : "#3B82F6";
   const mutedVar = useUnstableNativeVariable("--muted-foreground");
@@ -481,6 +501,27 @@ export default function PlaceDetailsScreen() {
     },
   });
 
+  const openOnMap = useCallback(() => {
+    if (!place) return;
+    const dest = destinationMetaQuery.data?.destination as
+      | { name: string; latitude: number; longitude: number; timezone?: string }
+      | undefined;
+    if (!dest) return;
+    setMapSession({
+      destinationId: place.destinationId,
+      destinationName: dest.name,
+      latitude: dest.latitude,
+      longitude: dest.longitude,
+      timezone: dest.timezone?.trim() ?? null,
+      places: [placeDetailToMapSessionPlace(place)],
+      focusLatitude: place.latitude,
+      focusLongitude: place.longitude,
+      focusZoomLevel: 15,
+      returnHref: `/place/${place.id}`,
+    });
+    router.push("/(tabs)/map" as never);
+  }, [place, destinationMetaQuery.data, setMapSession, router]);
+
   const openWebsite = useCallback(() => {
     if (!place?.websiteUrl?.trim()) return;
     let url = place.websiteUrl.trim();
@@ -657,6 +698,17 @@ export default function PlaceDetailsScreen() {
               />
             ) : null}
           </View>
+
+          {destinationMetaQuery.data?.destination ? (
+            <View className="mt-4">
+              <Button
+                label="View on map"
+                variant="secondary"
+                onPress={openOnMap}
+                className="w-full"
+              />
+            </View>
+          ) : null}
 
           {openingParsed?.periods && openingParsed.periods.length > 0 ? (
             <View className="mt-5 rounded-2xl border border-border/80 bg-card/30 px-4 py-1">

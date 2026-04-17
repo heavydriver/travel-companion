@@ -1,7 +1,7 @@
 import "./global.css";
 import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
@@ -11,14 +11,13 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { client, EdenProvider } from "@/api/client";
+import { queryClient } from "@/lib/queryClient";
 import { appToastConfig } from "@/components/shared/AppToast";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { DestinationFavoritesProvider } from "@/features/destination/favorites";
 import { NAV_THEME } from "@/lib/theme";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
-
-const queryClient = new QueryClient();
 
 function RootToast() {
   const insets = useSafeAreaInsets();

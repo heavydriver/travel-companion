@@ -8,6 +8,7 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
 import { Screen } from "@/components/shared/Screen";
+import { clearQueryCache } from "@/lib/queryClient";
 import { useAuthStore } from "@/store/authStore";
 
 export default function SettingsScreen() {
@@ -55,6 +56,7 @@ export default function SettingsScreen() {
             // Best-effort
           }
           await logout();
+          clearQueryCache();
           router.replace("/(auth)/login" as never);
         },
       },

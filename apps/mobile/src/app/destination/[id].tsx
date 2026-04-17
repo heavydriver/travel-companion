@@ -601,15 +601,15 @@ export default function DestinationDetailsScreen() {
               <Text className="text-lg font-bold text-foreground">Must-Visit Places</Text>
               <Pressable
                 onPress={() => {
-                  const popular = allPlaces.filter((p) => p.isCurated || p.isFeatured);
-                  const forMap = popular.length > 0 ? popular : allPlaces;
                   setMapSession({
                     destinationId: destination.id,
                     destinationName: destination.name,
                     latitude: destination.latitude,
                     longitude: destination.longitude,
                     timezone: destination.timezone,
-                    places: toMapSessionPlaces(forMap),
+                    places: toMapSessionPlaces(allPlaces),
+                    returnHref: `/destination/${destination.id}`,
+                    startWithCuratedPlacesOnly: true,
                   });
                   router.push("/(tabs)/map" as never);
                 }}

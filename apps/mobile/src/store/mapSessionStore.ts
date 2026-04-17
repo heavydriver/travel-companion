@@ -24,16 +24,27 @@ export type MapSession = {
   longitude: number;
   timezone: string | null;
   places: MapSessionPlace[];
+  /** When set, the map opens centered on this point (e.g. place detail → map). */
+  focusLatitude?: number | null;
+  focusLongitude?: number | null;
+  focusZoomLevel?: number | null;
+  /** Expo route to return to when leaving the session (e.g. `/destination/abc`). */
+  returnHref?: string | null;
+  /** When true, map applies “curated only” once for this session (must-visit map entry). */
+  startWithCuratedPlacesOnly?: boolean;
 };
 
 type MapSessionState = {
   session: MapSession | null;
+  /** Increments on each `setSession` so the map can run a one-shot camera to context. */
+  sessionRevision: number;
   setSession: (session: MapSession) => void;
   clearSession: () => void;
 };
 
 export const useMapSessionStore = create<MapSessionState>((set) => ({
   session: null,
-  setSession: (session) => set({ session }),
+  sessionRevision: 0,
+  setSession: (session) => set((s) => ({ session, sessionRevision: s.sessionRevision + 1 })),
   clearSession: () => set({ session: null }),
 }));
