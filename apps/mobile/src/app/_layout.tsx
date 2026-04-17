@@ -1,7 +1,11 @@
 import "./global.css";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
 import { ThemeProvider } from "@react-navigation/native";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { QueryClient, onlineManager } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { PortalHost } from "@rn-primitives/portal";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
@@ -13,7 +17,30 @@ import { NAV_THEME } from "@/lib/theme";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
 
-const queryClient = new QueryClient();
+onlineManager.setEventListener((setOnline) =>
+  NetInfo.addEventListener((state) => {
+    setOnline(!!state.isConnected);
+  })
+);
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24,
+      staleTime: 1000 * 60 * 5,
+      networkMode: "offlineFirst",
+      retry: 2,
+    },
+    mutations: {
+      networkMode: "online",
+    },
+  },
+});
+
+const asyncPersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "travel_companion_query_cache",
+});
 
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
@@ -27,7 +54,10 @@ export default function RootLayout() {
   }, [startListening, hydrateOffline]);
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 }}
+    >
       <EdenProvider client={client} queryClient={queryClient}>
         <KeyboardProvider>
           <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
@@ -38,6 +68,6 @@ export default function RootLayout() {
           </ThemeProvider>
         </KeyboardProvider>
       </EdenProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

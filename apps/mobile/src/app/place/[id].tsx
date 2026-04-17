@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -522,6 +523,20 @@ export default function PlaceDetailsScreen() {
               value={coordsText}
               valueClassName="font-mono text-xs"
             />
+            <Pressable
+              onPress={() => {
+                const label = encodeURIComponent(place.name);
+                const url = Platform.select({
+                  ios: `maps:0,0?q=${label}@${place.latitude},${place.longitude}`,
+                  default: `geo:${place.latitude},${place.longitude}?q=${label}`,
+                });
+                Linking.openURL(url);
+              }}
+              className="flex-row items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 active:opacity-80"
+            >
+              <ExternalLink size={16} color={accentColor} />
+              <Text className="text-sm font-semibold text-primary">Open in Maps</Text>
+            </Pressable>
             {place.phoneNumber?.trim() ? (
               <InfoRow
                 icon={<Phone size={18} color={accentColor} />}

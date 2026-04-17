@@ -18,6 +18,8 @@ import { z } from "zod";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
+import { useDebounce } from "@/hooks/useDebounce";
+import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { Screen } from "@/components/shared/Screen";
 import { formatDate } from "@/lib/utils";
 
@@ -110,7 +112,8 @@ export default function NewTripScreen() {
     },
   });
 
-  const onSubmit = handleSubmit((values) => createMutation.mutate(values));
+  const { guardAction } = useOfflineGuard();
+  const onSubmit = handleSubmit((values) => guardAction(() => createMutation.mutate(values)));
 
   const selectDestination = (dest: Destination) => {
     setSelectedDest(dest);

@@ -30,6 +30,7 @@ import {
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
+import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { formatDate, toDateOnly } from "@/lib/utils";
 import { useOfflineStore } from "@/store/offlineStore";
 
@@ -65,6 +66,7 @@ export default function TripDetailScreen() {
   const foreground = useUnstableNativeVariable("--foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
 
+  const { guardAction } = useOfflineGuard();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState<ItineraryItem | null>(null);
@@ -191,7 +193,7 @@ export default function TripDetailScreen() {
                 {
                   text: "Delete",
                   style: "destructive",
-                  onPress: () => deleteTrip.mutate(),
+                  onPress: () => guardAction(() => deleteTrip.mutate()),
                 },
               ])
             }
@@ -213,7 +215,7 @@ export default function TripDetailScreen() {
             <View className="flex-row items-center justify-between">
               <Text className="flex-1 text-2xl font-bold text-foreground">{trip.title}</Text>
               <Pressable
-                onPress={() => setShowEditModal(true)}
+                onPress={() => guardAction(() => setShowEditModal(true))}
                 className="ml-2 rounded-lg border border-border bg-card p-2 active:opacity-80"
               >
                 <Edit3 size={16} color={mutedColor} />
@@ -263,7 +265,7 @@ export default function TripDetailScreen() {
               </View>
             ) : (
               <Pressable
-                onPress={() => downloadPack.mutate()}
+                onPress={() => guardAction(() => downloadPack.mutate())}
                 disabled={downloading === destId}
                 className="flex-row items-center gap-3 active:opacity-80"
               >
@@ -286,10 +288,10 @@ export default function TripDetailScreen() {
         <View className="flex-row items-center justify-between">
           <Text className="text-lg font-bold text-foreground">Itinerary</Text>
           <Pressable
-            onPress={() => {
+            onPress={() => guardAction(() => {
               setAddDate(trip ? new Date(trip.startDate) : new Date());
               setShowAddModal(true);
-            }}
+            })}
             className="flex-row items-center gap-1 rounded-lg bg-primary px-3 py-2 active:opacity-90"
           >
             <Plus size={16} color="white" />
@@ -330,15 +332,15 @@ export default function TripDetailScreen() {
               {dayItems.map((item) => (
                 <Pressable
                   key={item.id}
-                  onPress={() => setEditingItem(item)}
+                  onPress={() => guardAction(() => setEditingItem(item))}
                   className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 active:opacity-90"
                 >
                   <Pressable
                     onPress={() =>
-                      toggleDone.mutate({
+                      guardAction(() => toggleDone.mutate({
                         itemId: item.id,
                         isDone: !item.isDone,
-                      })
+                      }))
                     }
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: item.isDone }}
@@ -382,7 +384,7 @@ export default function TripDetailScreen() {
                         {
                           text: "Delete",
                           style: "destructive",
-                          onPress: () => deleteItem.mutate(item.id),
+                          onPress: () => guardAction(() => deleteItem.mutate(item.id)),
                         },
                       ])
                     }
