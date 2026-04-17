@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { useEffect } from "react";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { PostHogProvider } from "posthog-react-native";
 import { client, EdenProvider } from "@/api/client";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { NAV_THEME } from "@/lib/theme";
@@ -27,17 +28,23 @@ export default function RootLayout() {
   }, [startListening, hydrateOffline]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <EdenProvider client={client} queryClient={queryClient}>
-        <KeyboardProvider>
-          <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-            <OfflineBanner />
-            <Stack screenOptions={{ headerShown: false }} />
-            <PortalHost />
-          </ThemeProvider>
-        </KeyboardProvider>
-      </EdenProvider>
-    </QueryClientProvider>
+    <PostHogProvider
+      apiKey={process.env.EXPO_PUBLIC_POSTHOG_API_KEY!}
+      options={{ host: process.env.EXPO_PUBLIC_POSTHOG_HOST }}
+      autocapture
+    >
+      <QueryClientProvider client={queryClient}>
+        <EdenProvider client={client} queryClient={queryClient}>
+          <KeyboardProvider>
+            <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+              <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+              <OfflineBanner />
+              <Stack screenOptions={{ headerShown: false }} />
+              <PortalHost />
+            </ThemeProvider>
+          </KeyboardProvider>
+        </EdenProvider>
+      </QueryClientProvider>
+    </PostHogProvider>
   );
 }
