@@ -1,6 +1,7 @@
 import Elysia from "elysia";
 import { errorHandler } from "./middleware/errorHandler";
 import { authModule } from "./modules/auth";
+import { currencyModule } from "./modules/currency";
 import { destinationModule } from "./modules/destination";
 import { itineraryModule } from "./modules/itinerary";
 import { languageModule } from "./modules/language";
@@ -10,7 +11,6 @@ import { placeModule } from "./modules/place";
 import { connectionModule, socialModule } from "./modules/social";
 import { tripModule } from "./modules/trip";
 import { userModule } from "./modules/user";
-import { currencyModule } from "./modules/currency";
 import { weatherModule } from "./modules/weather";
 
 export const app = new Elysia({ prefix: "/api/v1" })
