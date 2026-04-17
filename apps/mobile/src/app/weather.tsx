@@ -6,22 +6,14 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { wmoIconForCode } from "@/features/weather/wmoIcon";
+import { usePreferencesStore } from "@/store/preferencesStore";
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat("en-US", { weekday: "long" });
 const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
 });
-
-type UnitSystem = "metric" | "imperial";
 
 type OpenMeteoDaily = {
   time?: unknown[];
@@ -362,10 +354,9 @@ export default function WeatherScreen() {
   const label = typeof params.name === "string" ? params.name : "Weather";
   const forecastDays = Math.min(16, Math.max(1, Number(params.days) || 7));
 
-  const [unitSystem, setUnitSystem] = useState<UnitSystem>("metric");
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   /** `null` = main card shows current conditions (when API has current + today in daily). Else daily index. Tap same card again toggles back to current. */
   const [focusedDayIndex, setFocusedDayIndex] = useState<number | null>(null);
-  const [unitTriggerWidth, setUnitTriggerWidth] = useState(0);
 
   const foreground = useUnstableNativeVariable("--foreground");
   const foregroundColor = foreground ? `hsl(${foreground})` : "#111827";
@@ -483,20 +474,6 @@ export default function WeatherScreen() {
     return `${value.toFixed(isMetric ? 1 : 2)} ${isMetric ? "mm" : "in"}`;
   };
 
-  const unitOption = useMemo(
-    () => ({
-      value: unitSystem,
-      label: unitSystem === "metric" ? "Metric (C, km/h, mm)" : "Imperial (F, mph, in)",
-    }),
-    [unitSystem],
-  );
-
-  const onUnitChange = (option?: { value: string }) => {
-    if (option?.value === "metric" || option?.value === "imperial") {
-      setUnitSystem(option.value);
-    }
-  };
-
   const mainIconColor = showCurrentInMain && current?.is_day ? "#F59E0B" : primaryColor;
 
   useEffect(() => {
@@ -524,29 +501,12 @@ export default function WeatherScreen() {
         <View className="w-10" />
       </View>
 
-      <View className="border-b border-border px-4 py-3">
-        <Text className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Units
+      <View className="border-b border-border px-4 py-2">
+        <Text className="text-xs text-muted-foreground">
+          Units follow{" "}
+          <Text className="font-semibold text-foreground">Settings → Units</Text> (
+          {unitSystem === "metric" ? "metric" : "imperial"}).
         </Text>
-        <Select value={unitOption} onValueChange={onUnitChange}>
-          <SelectTrigger
-            className="h-11 rounded-xl border-border bg-card"
-            aria-label="Select weather units"
-            onLayout={(event) => {
-              const nextWidth = Math.round(event.nativeEvent.layout.width);
-              setUnitTriggerWidth((prev) => (prev === nextWidth ? prev : nextWidth));
-            }}
-          >
-            <SelectValue placeholder="Select units" />
-          </SelectTrigger>
-          <SelectContent
-            className="border-border bg-card"
-            style={unitTriggerWidth > 0 ? { width: unitTriggerWidth } : undefined}
-          >
-            <SelectItem value="metric" label="Metric (C, km/h, mm)" />
-            <SelectItem value="imperial" label="Imperial (F, mph, in)" />
-          </SelectContent>
-        </Select>
       </View>
 
       {query.isLoading ? (

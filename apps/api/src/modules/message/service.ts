@@ -1,5 +1,6 @@
 import { prisma } from "@repo/db";
 import { AppError } from "../../middleware/errorHandler";
+import { notifyUserPush } from "../../utils/notifyUserPush";
 
 async function requireAcceptedParticipant(connectionId: string, userId: string) {
   const conn = await prisma.connection.findUnique({
@@ -46,6 +47,17 @@ export const messageService = {
         receiverId: otherUserId,
         content,
       },
+    });
+
+    const sender = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+    const preview =
+      content.length > 80 ? `${content.slice(0, 77).trimEnd()}…` : content;
+    void notifyUserPush(otherUserId, `Message from ${sender?.name ?? "Traveler"}`, preview, {
+      type: "message",
+      connectionId,
     });
 
     return formatMessage(message);

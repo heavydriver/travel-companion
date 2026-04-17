@@ -27,6 +27,9 @@ export const AuthResponse = t.Object({
     email: t.String(),
     name: t.String(),
     username: t.String(),
+    avatarUrl: t.Union([t.String(), t.Null()]),
+    bio: t.Union([t.String(), t.Null()]),
+    socialOptIn: t.Boolean(),
   }),
   accessToken: t.String(),
   /** Also set as HttpOnly cookie for web; required in JSON for React Native (no cookie jar). */

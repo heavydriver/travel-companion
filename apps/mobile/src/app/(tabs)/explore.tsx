@@ -5,7 +5,9 @@ import { useRouter } from "expo-router";
 import { Heart, LocateFixed, MapPin, Search, Star } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatDistanceFromKm } from "@/lib/units";
 import { useMapSessionStore } from "@/store/mapSessionStore";
+import { usePreferencesStore } from "@/store/preferencesStore";
 import {
   ActivityIndicator,
   Pressable,
@@ -85,6 +87,7 @@ function PopularDestinationCard({
 function NearbyFavoriteCard({ place }: { place: NearbyPlace }) {
   const router = useRouter();
   const setMapSession = useMapSessionStore((s) => s.setSession);
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
 
   const openOnMap = useCallback(async () => {
     const placeRes = await client.api.v1.places({ id: place.id }).get();
@@ -186,7 +189,7 @@ function NearbyFavoriteCard({ place }: { place: NearbyPlace }) {
           )}
           {typeof place.distanceKm === "number" ? (
             <Text className="text-xs text-muted-foreground">
-              · {place.distanceKm.toFixed(1)} km
+              · {formatDistanceFromKm(place.distanceKm, unitSystem)}
             </Text>
           ) : null}
         </View>

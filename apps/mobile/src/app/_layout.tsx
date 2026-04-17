@@ -16,8 +16,11 @@ import { appToastConfig } from "@/components/shared/AppToast";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { DestinationFavoritesProvider } from "@/features/destination/favorites";
 import { NAV_THEME } from "@/lib/theme";
+import { useInAppSocialMessageSignals } from "@/hooks/useInAppSocialMessageSignals";
+import { usePushRegistration } from "@/hooks/usePushRegistration";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
+import { usePreferencesStore } from "@/store/preferencesStore";
 
 function RootToast() {
   const insets = useSafeAreaInsets();
@@ -27,33 +30,43 @@ function RootToast() {
 }
 
 export default function RootLayout() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RootLayoutInner />
+    </QueryClientProvider>
+  );
+}
+
+function RootLayoutInner() {
   const { colorScheme } = useColorScheme();
   const startListening = useNetworkStore((s) => s.startListening);
   const hydrateOffline = useOfflineStore((s) => s.hydrate);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrateFromStorage);
+  usePushRegistration();
+  useInAppSocialMessageSignals();
 
   useEffect(() => {
     const unsubscribe = startListening();
     hydrateOffline();
+    void hydratePreferences();
     return unsubscribe;
-  }, [startListening, hydrateOffline]);
+  }, [startListening, hydrateOffline, hydratePreferences]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <EdenProvider client={client} queryClient={queryClient}>
-        <DestinationFavoritesProvider>
-          <KeyboardProvider>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-                <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-                <OfflineBanner />
-                <Stack screenOptions={{ headerShown: false }} />
-                <PortalHost />
-                <RootToast />
-              </ThemeProvider>
-            </GestureHandlerRootView>
-          </KeyboardProvider>
-        </DestinationFavoritesProvider>
-      </EdenProvider>
-    </QueryClientProvider>
+    <EdenProvider client={client} queryClient={queryClient}>
+      <DestinationFavoritesProvider>
+        <KeyboardProvider>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+              <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+              <OfflineBanner />
+              <Stack screenOptions={{ headerShown: false }} />
+              <PortalHost />
+              <RootToast />
+            </ThemeProvider>
+          </GestureHandlerRootView>
+        </KeyboardProvider>
+      </DestinationFavoritesProvider>
+    </EdenProvider>
   );
 }

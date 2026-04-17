@@ -1,47 +1,47 @@
-import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, MessageCircle, User, Users } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, MessageCircle, Ruler, User, Users } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useState } from "react";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
-import { ErrorBanner } from "@/components/shared/ErrorBanner";
 import { Screen } from "@/components/shared/Screen";
 import { clearQueryCache } from "@/lib/queryClient";
+import type { UnitSystem } from "@/lib/units";
 import { useAuthStore } from "@/store/authStore";
+import { usePreferencesStore } from "@/store/preferencesStore";
+
+function TabChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`flex-1 rounded-xl px-3 py-2 ${active ? "bg-primary" : "bg-card"}`}
+    >
+      <Text
+        className={`text-center text-sm font-semibold ${active ? "text-primary-foreground" : "text-foreground"}`}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const login = useAuthStore((s) => s.login);
-  const accessToken = useAuthStore((s) => s.accessToken);
   const logout = useAuthStore((s) => s.logout);
-  const mutedFg = useUnstableNativeVariable("--muted-foreground");
-  const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
+
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : undefined;
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState(user?.name ?? "");
-  const [username, setUsername] = useState(user?.username ?? "");
-
-  const updateMutation = useMutation({
-    mutationFn: async () => {
-      const res = await client.api.v1.users.me.patch({
-        name: name.trim(),
-        username: username.trim(),
-      });
-      if (res.error) throw new Error("Failed to update profile");
-      return res.data;
-    },
-    onSuccess: (data) => {
-      if (data?.user && accessToken) {
-        login({ user: data.user, accessToken });
-      }
-      setIsEditing(false);
-    },
-  });
 
   const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -63,10 +63,13 @@ export default function SettingsScreen() {
     ]);
   };
 
+  const onUnitsChange = (next: UnitSystem) => {
+    void setUnitSystem(next);
+  };
+
   return (
     <Screen scrollable>
       <View className="gap-6">
-        {/* Header */}
         <View className="flex-row items-center gap-3">
           <Pressable
             onPress={() => router.back()}
@@ -79,69 +82,50 @@ export default function SettingsScreen() {
 
         <Text className="text-2xl font-bold text-foreground">Settings</Text>
 
-        <ErrorBanner message={updateMutation.error?.message ?? null} />
-
-        {/* Profile section */}
         <Pressable
           onPress={() => router.push("/profile" as never)}
-          className="rounded-2xl border border-border bg-card p-4 active:opacity-90"
+          className="flex-row items-center gap-3 rounded-2xl border border-border bg-card p-4 active:opacity-90"
         >
-          <View className="flex-row items-center gap-3">
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/20">
-              <User size={24} color={resolvedIcon} />
-            </View>
-            <View className="flex-1">
-              <Text className="text-base font-semibold text-foreground">Edit Profile</Text>
-            </View>
+          <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/20">
+            <User size={24} color={resolvedIcon} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-base font-semibold text-foreground">Profile & social</Text>
+            <Text className="mt-0.5 text-sm text-muted-foreground" numberOfLines={2}>
+              Photo, bio, nearby travelers, and connection requests
+            </Text>
+          </View>
+          <ChevronRight size={18} color={resolvedIcon} />
+        </Pressable>
 
-            <View className="gap-1">
-              <Text className="text-sm font-medium text-muted-foreground">Name</Text>
-              <TextInput
-                className="rounded-xl border border-border bg-background px-4 py-3 text-base text-foreground"
-                value={name}
-                onChangeText={setName}
-                placeholder="Your name"
-                placeholderTextColor={mutedColor}
-                maxLength={100}
-              />
+        <View className="rounded-2xl border border-border bg-card p-4">
+          <View className="flex-row items-start gap-3">
+            <View className="mt-0.5 rounded-full bg-primary/15 p-2">
+              <Ruler size={18} color={resolvedIcon} />
             </View>
-
-            <View className="gap-1">
-              <Text className="text-sm font-medium text-muted-foreground">Username</Text>
-              <TextInput
-                className="rounded-xl border border-border bg-background px-4 py-3 text-base text-foreground"
-                value={username}
-                onChangeText={setUsername}
-                placeholder="Username"
-                placeholderTextColor={mutedColor}
-                maxLength={30}
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <Button
-                  label="Cancel"
-                  variant="secondary"
-                  onPress={() => {
-                    setName(user?.name ?? "");
-                    setUsername(user?.username ?? "");
-                    setIsEditing(false);
-                  }}
+            <View className="min-w-0 flex-1">
+              <Text className="text-base font-semibold text-foreground">Units</Text>
+              <Text className="mt-1 text-sm leading-5 text-muted-foreground">
+                Metric uses °C, km, and km/h. Imperial uses °F, miles, and mph. Applies to weather and distance on Explore, map, and place details.
+              </Text>
+              <View className="mt-4 flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
+                <TabChip
+                  label="Metric"
+                  active={unitSystem === "metric"}
+                  onPress={() => onUnitsChange("metric")}
+                />
+                <TabChip
+                  label="Imperial"
+                  active={unitSystem === "imperial"}
+                  onPress={() => onUnitsChange("imperial")}
                 />
               </View>
-              <View className="flex-1">
-                <Button
-                  label="Save"
-                  onPress={() => updateMutation.mutate()}
-                  loading={updateMutation.isPending}
-                  disabled={!name.trim()}
-                />
-              </View>
+              <Text className="mt-2 text-xs text-muted-foreground">
+                {unitSystem === "metric" ? "°C · km · km/h" : "°F · mi · mph"}
+              </Text>
             </View>
           </View>
-        </Pressable>
+        </View>
 
         <View className="rounded-2xl border border-border bg-card p-2">
           <Pressable
@@ -156,18 +140,26 @@ export default function SettingsScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => router.push("/messages/c-1" as never)}
+            onPress={() => router.push("/messages" as never)}
             className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
           >
             <View className="flex-row items-center gap-2">
               <MessageCircle size={18} color={resolvedIcon} />
-              <Text className="text-base text-foreground">Messaging</Text>
+              <Text className="text-base text-foreground">Messages</Text>
             </View>
             <ChevronRight size={18} color={resolvedIcon} />
           </Pressable>
         </View>
 
-        {/* Sign out */}
+        <View className="rounded-2xl border border-border bg-card p-4">
+          <Text className="text-sm font-medium text-muted-foreground">Signed in as</Text>
+          <Text className="mt-1 text-base font-semibold text-foreground">{user?.name ?? "Traveler"}</Text>
+          <Text className="mt-0.5 text-sm text-muted-foreground">{user?.email}</Text>
+          {user?.username ? (
+            <Text className="mt-1 text-sm text-muted-foreground">@{user.username}</Text>
+          ) : null}
+        </View>
+
         <Button
           label="Sign Out"
           variant="secondary"

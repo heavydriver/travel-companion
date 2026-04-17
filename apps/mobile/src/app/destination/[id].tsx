@@ -20,8 +20,10 @@ import { ActivityIndicator, Dimensions, Pressable, ScrollView, Text, View } from
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
 import { showAppToast } from "@/components/shared/AppToast";
+import { formatTempFromC } from "@/lib/units";
 import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDestinationFavorites } from "@/features/destination/favorites";
+import { usePreferencesStore } from "@/store/preferencesStore";
 import { hasEligibleTripForDestination, type Trip } from "@/store/tripStore";
 import { useMapSessionStore, type MapSessionPlace } from "@/store/mapSessionStore";
 
@@ -288,6 +290,7 @@ export default function DestinationDetailsScreen() {
   const { isFavorite, toggleFavorite } = useDestinationFavorites();
   const primaryVar = useUnstableNativeVariable("--primary");
   const accentColor = primaryVar ? `hsl(${primaryVar})` : "#3B82F6";
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
 
   const [now, setNow] = useState(() => new Date());
   const [timeMode, setTimeMode] = useState<"local" | "gmt">("local");
@@ -560,7 +563,7 @@ export default function DestinationDetailsScreen() {
           >
             <Thermometer size={20} color={accentColor} />
             <Text className="text-center text-[11px] font-medium text-foreground">
-              {peekTempC != null ? `${peekTempC.toFixed(0)}°C` : "—"}
+              {formatTempFromC(peekTempC, unitSystem)}
             </Text>
           </Pressable>
           <Pressable

@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "travel-companion",
+    "name": "Roamie",
     "slug": "travel-companion",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/ic_launcher_round.png",
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -14,13 +14,12 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/ic_launcher_foreground.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.mobile",
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "pan",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -45,6 +44,13 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/ic_launcher_round.png",
+          "color": "#208AEF"
         }
       ]
     ],

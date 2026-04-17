@@ -47,8 +47,10 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDebounce } from "@/hooks/useDebounce";
+import { formatDistanceFromKm } from "@/lib/units";
 import { THEME } from "@/lib/theme";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
+import { usePreferencesStore } from "@/store/preferencesStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 import { pinColorForCategory } from "./categoryPinColor";
 import { ensureMapboxToken } from "./ensureMapboxToken";
@@ -197,6 +199,7 @@ type PlaceDetail = {
 };
 
 export function InteractiveMapScreen() {
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -1356,13 +1359,15 @@ export function InteractiveMapScreen() {
                       {userCoord ? (
                         <Text className="text-sm text-muted-foreground">
                           ·{" "}
-                          {distanceKm(
-                            userCoord[1],
-                            userCoord[0],
-                            placeDetail.latitude,
-                            placeDetail.longitude,
-                          ).toFixed(1)}{" "}
-                          km
+                          {formatDistanceFromKm(
+                            distanceKm(
+                              userCoord[1],
+                              userCoord[0],
+                              placeDetail.latitude,
+                              placeDetail.longitude,
+                            ),
+                            unitSystem,
+                          )}
                         </Text>
                       ) : null}
                     </View>
