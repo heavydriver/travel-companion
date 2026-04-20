@@ -47,8 +47,8 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDebounce } from "@/hooks/useDebounce";
-import { formatDistanceFromKm } from "@/lib/units";
 import { THEME } from "@/lib/theme";
+import { formatDistanceFromKm } from "@/lib/units";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
@@ -56,6 +56,9 @@ import { pinColorForCategory } from "./categoryPinColor";
 import { ensureMapboxToken } from "./ensureMapboxToken";
 import { applyMapFilters, deriveCategories, type MapFilterControls } from "./filterMapPlaces";
 import { MapPinMarker } from "./MapPinMarker";
+
+const DARK_MAP_STYLE = "mapbox://styles/varun-11/cmo7dh5kl001001qshs9chyef";
+const LIGHT_MAP_STYLE = "mapbox://styles/varun-11/cmo7dnxyi003001ql58s51upl";
 
 function toRad(n: number) {
   return (n * Math.PI) / 180;
@@ -897,7 +900,7 @@ export function InteractiveMapScreen() {
     openPlace(filteredPlaces[0].id);
   }, [search, pickedDestination, destinationSearchHits.length, filteredPlaces, openPlace]);
 
-  const mapStyle = colorScheme === "dark" ? StyleURL.Dark : StyleURL.Street;
+  const mapStyle = colorScheme === "dark" ? DARK_MAP_STYLE : LIGHT_MAP_STYLE;
 
   if (!tokenOk) {
     return (
