@@ -1,23 +1,52 @@
 import { prisma } from "@repo/db";
 import { AppError } from "../../middleware/errorHandler";
 
+async function friendCount(userId: string): Promise<number> {
+  return prisma.connection.count({
+    where: {
+      status: "ACCEPTED",
+      OR: [{ requesterId: userId }, { receiverId: userId }],
+    },
+  });
+}
+
 export const userService = {
   async getProfile(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, username: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        avatarUrl: true,
+        bio: true,
+        socialOptIn: true,
+        _count: {
+          select: {
+            trips: { where: { deletedAt: null } },
+          },
+        },
+      },
     });
 
     if (!user) {
       throw new AppError(404, "NOT_FOUND", "User not found");
     }
 
-    return user;
+    const friends = await friendCount(userId);
+
+    const { _count, ...rest } = user;
+    return {
+      ...rest,
+      friendCount: friends,
+      tripCount: _count.trips,
+    };
   },
 
   async updateProfile(
     userId: string,
-    data: { name?: string; username?: string }
+    data: { name?: string; username?: string; bio?: string | null; socialOptIn?: boolean; avatarUrl?: string | null }
   ) {
     if (data.username) {
       const existing = await prisma.user.findUnique({
@@ -34,10 +63,46 @@ export const userService = {
       data: {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.username !== undefined && { username: data.username }),
+        ...(data.bio !== undefined && { bio: data.bio }),
+        ...(data.socialOptIn !== undefined && { socialOptIn: data.socialOptIn }),
+        ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
       },
-      select: { id: true, email: true, name: true, username: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        avatarUrl: true,
+        bio: true,
+        socialOptIn: true,
+        _count: {
+          select: {
+            trips: { where: { deletedAt: null } },
+          },
+        },
+      },
     });
 
-    return user;
+    const friends = await friendCount(userId);
+    const { _count, ...rest } = user;
+    return {
+      ...rest,
+      friendCount: friends,
+      tripCount: _count.trips,
+    };
+  },
+
+  async registerPushToken(userId: string, expoToken: string) {
+    if (!expoToken.trim()) {
+      throw new AppError(400, "VALIDATION_ERROR", "Missing push token");
+    }
+
+    await prisma.pushDevice.upsert({
+      where: { expoToken },
+      create: { userId, expoToken },
+      update: { userId, updatedAt: new Date() },
+    });
+
+    return { ok: true as const };
   },
 };

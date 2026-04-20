@@ -57,8 +57,22 @@ function groupByDate(items: ItineraryItem[]) {
   return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
 }
 
+function oneParam(v: string | string[] | undefined): string | undefined {
+  if (v == null) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
 export default function TripDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    openAdd?: string | string[];
+    prefillTitle?: string | string[];
+    prefillPlaceId?: string | string[];
+  }>();
+  const id = oneParam(params.id);
+  const openAddParam = oneParam(params.openAdd);
+  const prefillTitleParam = oneParam(params.prefillTitle);
+  const prefillPlaceIdParam = oneParam(params.prefillPlaceId);
   const router = useRouter();
   const queryClient = useQueryClient();
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
@@ -71,6 +85,10 @@ export default function TripDetailScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState<ItineraryItem | null>(null);
   const [addDate, setAddDate] = useState<Date>(new Date());
+  const [addModalPrefill, setAddModalPrefill] = useState<{
+    title: string;
+    placeId: string | null;
+  } | null>(null);
 
   const tripQuery = useQuery({
     queryKey: ["trip", id],
@@ -81,6 +99,23 @@ export default function TripDetailScreen() {
     },
     enabled: !!id,
   });
+
+  const trip = tripQuery.data?.trip;
+
+  useEffect(() => {
+    if (openAddParam !== "1" || !tripQuery.isSuccess || !trip) return;
+    setAddModalPrefill({
+      title: prefillTitleParam ?? "",
+      placeId: prefillPlaceIdParam ?? null,
+    });
+    setAddDate(new Date(trip.startDate));
+    setShowAddModal(true);
+    router.setParams({
+      openAdd: undefined,
+      prefillTitle: undefined,
+      prefillPlaceId: undefined,
+    });
+  }, [openAddParam, prefillTitleParam, prefillPlaceIdParam, tripQuery.isSuccess, trip, router]);
 
   const itemsQuery = useQuery({
     queryKey: ["itinerary", id],
@@ -124,7 +159,6 @@ export default function TripDetailScreen() {
     },
   });
 
-  const trip = tripQuery.data?.trip;
   const items = (itemsQuery.data?.items ?? []) as ItineraryItem[];
   const grouped = groupByDate(items);
   const doneCount = items.filter((i) => i.isDone).length;
@@ -405,9 +439,15 @@ export default function TripDetailScreen() {
         defaultDate={addDate}
         tripStartDate={trip ? new Date(trip.startDate) : undefined}
         tripEndDate={trip ? new Date(trip.endDate) : undefined}
-        onClose={() => setShowAddModal(false)}
+        initialTitle={addModalPrefill?.title}
+        initialPlaceId={addModalPrefill?.placeId ?? null}
+        onClose={() => {
+          setShowAddModal(false);
+          setAddModalPrefill(null);
+        }}
         onSuccess={() => {
           setShowAddModal(false);
+          setAddModalPrefill(null);
           queryClient.invalidateQueries({ queryKey: ["itinerary", id] });
         }}
       />
@@ -451,6 +491,8 @@ function AddItemModal({
   defaultDate,
   tripStartDate,
   tripEndDate,
+  initialTitle,
+  initialPlaceId,
   onClose,
   onSuccess,
 }: {
@@ -459,6 +501,8 @@ function AddItemModal({
   defaultDate: Date;
   tripStartDate?: Date;
   tripEndDate?: Date;
+  initialTitle?: string;
+  initialPlaceId?: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -471,6 +515,7 @@ function AddItemModal({
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [startTimeDate, setStartTimeDate] = useState<Date | null>(null);
   const [endTimeDate, setEndTimeDate] = useState<Date | null>(null);
+  const [linkedPlaceId, setLinkedPlaceId] = useState<string | null>(null);
 
   const { control, handleSubmit, reset } = useForm({
     defaultValues: {
@@ -478,6 +523,18 @@ function AddItemModal({
       notes: "",
     },
   });
+
+  useEffect(() => {
+    if (!visible) return;
+    setSelectedDate(defaultDate);
+    reset({
+      title: (initialTitle ?? "").trim() ? (initialTitle ?? "") : "",
+      notes: "",
+    });
+    setLinkedPlaceId(initialPlaceId ?? null);
+    setStartTimeDate(null);
+    setEndTimeDate(null);
+  }, [visible, defaultDate, initialTitle, initialPlaceId, reset]);
 
   const formatTime = (d: Date) =>
     d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -491,6 +548,7 @@ function AddItemModal({
         ...(startTimeDate && { startTime: formatTime(startTimeDate) }),
         ...(endTimeDate && { endTime: formatTime(endTimeDate) }),
         ...(values.notes && { notes: values.notes }),
+        ...(linkedPlaceId ? { placeId: linkedPlaceId } : {}),
       });
       if (res.error) throw new Error("Failed to add item");
       return res.data;
@@ -500,6 +558,7 @@ function AddItemModal({
       setStartTimeDate(null);
       setEndTimeDate(null);
       setSelectedDate(defaultDate);
+      setLinkedPlaceId(null);
       onSuccess();
     },
   });
@@ -509,6 +568,7 @@ function AddItemModal({
     setStartTimeDate(null);
     setEndTimeDate(null);
     setSelectedDate(defaultDate);
+    setLinkedPlaceId(null);
     onClose();
   };
 

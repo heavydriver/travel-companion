@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Calendar, MapPin, Plus, Settings, User } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Animated, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
@@ -110,7 +110,6 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const setTrips = useTripStore((s) => s.setTrips);
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const foreground = useUnstableNativeVariable("--foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
@@ -164,14 +163,24 @@ export default function HomeScreen() {
                   : `${trips.length} ${trips.length === 1 ? "trip" : "trips"} planned`}
               </Text>
             </View>
-            <Pressable
-              onPress={() => router.push("/settings" as never)}
-              className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-            >
-              <Settings size={20} color={iconColor} />
-            </Pressable>
+            <View className="flex-row items-center gap-2">
+              <Pressable
+                onPress={() => router.push("/profile" as never)}
+                className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
+                accessibilityRole="button"
+                accessibilityLabel="Profile"
+              >
+                <User size={20} color={iconColor} />
+              </Pressable>
+              <Pressable
+                onPress={() => router.push("/settings" as never)}
+                className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
+                accessibilityRole="button"
+                accessibilityLabel="Settings"
+              >
+                <Settings size={20} color={iconColor} />
+              </Pressable>
+            </View>
           </View>
 
           {/* Create trip button */}

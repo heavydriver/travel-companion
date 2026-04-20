@@ -39,11 +39,16 @@ type LanguageGuideParams = {
   languageId?: string;
   languageIso?: string;
   countryCode?: string;
+  destinationId?: string;
 };
 
 export default function LanguageGuideScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<LanguageGuideParams>();
+  const scopedDestinationId =
+    typeof params.destinationId === "string" && params.destinationId.length > 0
+      ? params.destinationId
+      : undefined;
   const [activeCategory, setActiveCategory] = useState<CategoryFilter | null>(null);
   const [selectedLanguageId, setSelectedLanguageId] = useState<string | null>(null);
   const [languageTriggerWidth, setLanguageTriggerWidth] = useState(0);
@@ -98,7 +103,10 @@ export default function LanguageGuideScreen() {
     }
   }, [languages, params.countryCode, params.languageId, params.languageIso, selectedLanguageId]);
 
-  const phrasesQuery = useLanguagePhrasesInfiniteQuery(selectedLanguageId);
+  const phrasesQuery = useLanguagePhrasesInfiniteQuery(
+    selectedLanguageId,
+    scopedDestinationId,
+  );
   const allPhrases = useMemo(
     () => phrasesQuery.data?.pages.flatMap((page) => page.phrases) ?? [],
     [phrasesQuery.data?.pages],

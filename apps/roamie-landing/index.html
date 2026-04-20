@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Roamie — offline-first travel companion: maps, itinerary, recommendations, on-device assistant, and traveler connections."
+    />
+    <title>Roamie — Travel companion</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" type="image/png" href="./logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
+    <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="#top">
+          <img src="./logo.png" width="112" height="112" alt="Roamie app icon" />
+          <span>Roamie</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#features">Features</a>
+          <a href="#faq">FAQ</a>
+          <a href="#download">Download</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <h1 id="hero-title">Your trip, one app — even when the signal disappears</h1>
+          <p class="lead">
+            Roamie brings itinerary planning, interactive maps, local picks, language help, an on-device travel
+            assistant, and optional connections with other travelers into a single light, offline-friendly
+            experience.
+          </p>
+          <div class="cta-row" id="download">
+            <a
+              class="store-badge store-badge--google js-pending-download"
+              href=""
+              title="Coming soon"
+              aria-label="Get Roamie on Google Play (link coming soon)"
+            >
+              <img
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/1280px-Google_Play_Store_badge_EN.svg.png"
+                alt="Get it on Google Play"
+                width="646"
+                height="250"
+                loading="lazy"
+              />
+            </a>
+            <a
+              class="store-badge store-badge--apple js-pending-download"
+              href=""
+              title="Coming soon"
+              aria-label="Download on the App Store (link coming soon)"
+            >
+              <img
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/1280px-Download_on_the_App_Store_Badge.svg.png"
+                alt="Download on the App Store"
+                width="100"
+                height="100"
+                loading="lazy"
+              />
+            </a>
+          </div>
+        </div>
+        <div class="hero-art">
+          <figure>
+            <img src="./logo.png" alt="Roamie logo: globe with letter R and airplane" width="512" height="512" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="features" aria-labelledby="features-title">
+        <h2 id="features-title">Built for real travel</h2>
+        <p class="section-intro">
+          Everything you need before and during a trip, aligned with how people actually move through cities and
+          airports.
+        </p>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <div class="icon" aria-hidden="true">
+              <!-- biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+            </div>
+            <h3>Offline-first maps &amp; places</h3>
+            <p>
+              Explore with pins, categories, and context for your destination. Core map experiences stay usable
+              when connectivity drops.
+            </p>
+          </article>
+          <article class="feature-card">
+            <div class="icon" aria-hidden="true">
+              <!-- biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M3 10h18M8 4v16" />
+              </svg>
+            </div>
+            <h3>Itinerary that travels with you</h3>
+            <p>
+              Plan by day, reorder stops, and keep the schedule you care about in your pocket — synced when you are
+              back online.
+            </p>
+          </article>
+          <article class="feature-card">
+            <div class="icon" aria-hidden="true">
+              <!-- biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <h3>Curated local recommendations</h3>
+            <p>Discover food, sights, and practical spots tailored to your trip instead of generic search noise.</p>
+          </article>
+          <article class="feature-card">
+            <div class="icon" aria-hidden="true">
+              <!-- biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" />
+              </svg>
+            </div>
+            <h3>Language cheat sheet</h3>
+            <p>Quick phrases and references so ordering, directions, and emergencies feel less stressful abroad.</p>
+          </article>
+          <article class="feature-card">
+            <div class="icon" aria-hidden="true">
+              <!-- biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8z" />
+              </svg>
+            </div>
+            <h3>On-device travel assistant</h3>
+            <p>
+              Ask questions and brainstorm plans with an assistant that runs on your phone — no round-trips to a
+              cloud model required for core use.
+            </p>
+          </article>
+          <article class="feature-card">
+            <div class="icon" aria-hidden="true">
+              <!-- biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <h3>Connect with travelers</h3>
+            <p>Optional social layer to meet people at your destination, message, and coordinate when you want
+              company.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section section-muted" id="faq" aria-labelledby="faq-title">
+        <h2 id="faq-title">Questions</h2>
+        <div class="faq-layout">
+          <div class="faq-triggers">
+            <button
+              type="button"
+              hx-get="./fragments/faq-offline.html"
+              hx-target="#faq-answer"
+              hx-swap="innerHTML"
+              aria-controls="faq-answer"
+            >
+              Offline &amp; sync
+              <span class="htmx-indicator" aria-hidden="true"> …</span>
+            </button>
+            <button
+              type="button"
+              hx-get="./fragments/faq-ai.html"
+              hx-target="#faq-answer"
+              hx-swap="innerHTML"
+              aria-controls="faq-answer"
+            >
+              On-device assistant
+              <span class="htmx-indicator" aria-hidden="true"> …</span>
+            </button>
+            <button
+              type="button"
+              hx-get="./fragments/faq-social.html"
+              hx-target="#faq-answer"
+              hx-swap="innerHTML"
+              aria-controls="faq-answer"
+            >
+              Social &amp; messaging
+              <span class="htmx-indicator" aria-hidden="true"> …</span>
+            </button>
+            <button
+              type="button"
+              hx-get="./fragments/faq-stores.html"
+              hx-target="#faq-answer"
+              hx-swap="innerHTML"
+              aria-controls="faq-answer"
+            >
+              App Store, Play &amp; APK
+              <span class="htmx-indicator" aria-hidden="true"> …</span>
+            </button>
+          </div>
+          <div id="faq-answer" class="faq-panel" role="region" aria-live="polite">
+            <p class="hint">Choose a question to see details here.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section download-strip" aria-labelledby="download-title">
+        <h2 id="download-title" class="visually-hidden">Download</h2>
+        <p class="section-intro" style="margin-bottom: 1.25rem">Get Roamie on your device when links are ready.</p>
+        <div class="cta-row">
+          <a
+            class="store-badge store-badge--google js-pending-download"
+            href=""
+            title="Coming soon"
+            aria-label="Google Play (coming soon)"
+          >
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/1280px-Google_Play_Store_badge_EN.svg.png"
+              alt="Get it on Google Play"
+              width="646"
+              height="250"
+              loading="lazy"
+            />
+          </a>
+          <a
+            class="store-badge store-badge--apple js-pending-download"
+            href=""
+            title="Coming soon"
+            aria-label="App Store (coming soon)"
+          >
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/1280px-Download_on_the_App_Store_Badge.svg.png"
+              alt="Download on the App Store"
+              width="100"
+              height="100"
+              loading="lazy"
+            />
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p><strong>Roamie</strong> — travel companion</p>
+      <p>&copy; <span id="y"></span></p>
+    </footer>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>

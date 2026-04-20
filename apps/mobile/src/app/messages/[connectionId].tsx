@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Send } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -16,8 +16,9 @@ import { client } from "@/api/client";
 import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-type MessageItem = {
+type ApiMessage = {
   id: string;
   senderId: string;
   receiverId: string;
@@ -83,13 +84,14 @@ export default function MessageThreadScreen() {
   };
 
   return (
-    <Screen contentClassName="pb-0">
+    <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-background">
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        className="flex-1"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
       >
-        <View className="flex-1">
-          <Pressable onPress={() => router.back()} className="active:opacity-80">
+        <View className="flex-row items-center border-b border-border px-2 py-2">
+          <Pressable onPress={() => router.back()} className="px-2 py-2 active:opacity-80">
             <Text className="text-base font-medium text-primary">Back</Text>
           </Pressable>
 
@@ -101,6 +103,7 @@ export default function MessageThreadScreen() {
               </Text>
             )}
           </View>
+        </View>
 
           {messagesQuery.isLoading && (
             <View className="flex-1 items-center justify-center">
@@ -177,6 +180,6 @@ export default function MessageThreadScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Screen>
+    </SafeAreaView>
   );
 }

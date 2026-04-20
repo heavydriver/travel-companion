@@ -1,5 +1,6 @@
 import { prisma } from "@repo/db";
 import { AppError } from "../../middleware/errorHandler";
+import { notifyUserPush } from "../../utils/notifyUserPush";
 
 const publicUserSelect = {
   id: true,
@@ -15,12 +16,6 @@ type PublicUser = {
   username: string;
   avatarUrl: string | null;
   bio: string | null;
-};
-
-type PublicUserAvatar = {
-  id: string;
-  name: string;
-  avatarUrl: string | null;
 };
 
 function daysRemaining(endDate: Date, now: Date): number {
@@ -171,6 +166,53 @@ export const socialService = {
 };
 
 export const connectionService = {
+  async listPending(userId: string) {
+    const rows = await prisma.connection.findMany({
+      where: {
+        status: "PENDING",
+        OR: [{ requesterId: userId }, { receiverId: userId }],
+      },
+      include: {
+        requester: { select: publicUserSelect },
+        receiver: { select: publicUserSelect },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const incoming: Array<{
+      id: string;
+      status: "PENDING";
+      createdAt: string;
+      peer: PublicUser;
+    }> = [];
+    const outgoing: Array<{
+      id: string;
+      status: "PENDING";
+      createdAt: string;
+      peer: PublicUser;
+    }> = [];
+
+    for (const c of rows) {
+      const peer: PublicUser = c.receiverId === userId ? c.requester : c.receiver;
+      const row = {
+        id: c.id,
+        status: "PENDING" as const,
+        createdAt: c.createdAt.toISOString(),
+        peer: {
+          id: peer.id,
+          name: peer.name,
+          username: peer.username,
+          avatarUrl: peer.avatarUrl,
+          bio: peer.bio,
+        },
+      };
+      if (c.receiverId === userId) incoming.push(row);
+      else outgoing.push(row);
+    }
+
+    return { incoming, outgoing };
+  },
+
   async list(userId: string) {
     const acceptedConnections = await prisma.connection.findMany({
       where: {
@@ -184,19 +226,49 @@ export const connectionService = {
       orderBy: { updatedAt: "desc" },
     });
 
-    const connections = acceptedConnections.map((c) => {
-      const peer: PublicUser = c.requesterId === userId ? c.receiver : c.requester;
-      const user: PublicUserAvatar = {
-        id: peer.id,
-        name: peer.name,
-        avatarUrl: peer.avatarUrl,
-      };
+    const connections = await Promise.all(
+      acceptedConnections.map(async (c) => {
+        const peer: PublicUser = c.requesterId === userId ? c.receiver : c.requester;
+        const otherUserId = peer.id;
 
-      return {
-        id: c.id,
-        user,
-      };
-    });
+        const [lastMessage, unreadCount] = await Promise.all([
+          prisma.message.findFirst({
+            where: {
+              OR: [
+                { senderId: userId, receiverId: otherUserId },
+                { senderId: otherUserId, receiverId: userId },
+              ],
+            },
+            orderBy: { createdAt: "desc" },
+          }),
+          prisma.message.count({
+            where: {
+              senderId: otherUserId,
+              receiverId: userId,
+              readAt: null,
+            },
+          }),
+        ]);
+
+        return {
+          id: c.id,
+          user: {
+            id: peer.id,
+            name: peer.name,
+            username: peer.username,
+            avatarUrl: peer.avatarUrl,
+          },
+          lastMessage: lastMessage
+            ? {
+                content: lastMessage.content,
+                createdAt: lastMessage.createdAt.toISOString(),
+                senderId: lastMessage.senderId,
+              }
+            : null,
+          unreadCount,
+        };
+      })
+    );
 
     return { connections };
   },
@@ -262,6 +334,18 @@ export const connectionService = {
     const created = await prisma.connection.create({
       data: { requesterId: userId, receiverId },
     });
+
+    const requester = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+    void notifyUserPush(
+      receiverId,
+      "New connection request",
+      `${requester?.name ?? "A traveler"} wants to connect`,
+      { type: "connection_request", connectionId: created.id }
+    );
+
     return formatConnection(created);
   },
 
@@ -283,6 +367,20 @@ export const connectionService = {
       where: { id: connectionId },
       data: { status },
     });
+
+    if (status === "ACCEPTED") {
+      const accepter = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+      void notifyUserPush(
+        updated.requesterId,
+        "Connection accepted",
+        `${accepter?.name ?? "Your connection"} accepted your request`,
+        { type: "connection_accepted", connectionId: updated.id }
+      );
+    }
+
     return formatConnection(updated);
   },
 };

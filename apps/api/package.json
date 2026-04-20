@@ -1,6 +1,6 @@
 {
   "name": "@repo/api",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "",
   "main": "./src/index.ts",
   "type": "module",
@@ -23,6 +23,7 @@
     "@sinclair/typebox": "^0.34.48",
     "bcryptjs": "^3.0.3",
     "elysia": "^1.4.26",
+    "expo-server-sdk": "^4.0.0",
     "google-auth-library": "^10.6.2",
     "jose": "^6.2.0"
   },

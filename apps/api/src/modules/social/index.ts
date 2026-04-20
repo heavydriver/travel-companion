@@ -6,6 +6,7 @@ import {
   CreateConnectionBody,
   NearbyTravelersResponse,
   PatchConnectionBody,
+  PendingConnectionsResponse,
 } from "./model";
 import { connectionService, socialService } from "./service";
 
@@ -17,6 +18,9 @@ export const socialModule = new Elysia({ prefix: "/social" })
 
 export const connectionModule = new Elysia({ prefix: "/connections" })
   .use(authGuard)
+  .get("/pending", async ({ userId }) => connectionService.listPending(userId), {
+    response: PendingConnectionsResponse,
+  })
   .get("/", async ({ userId }) => connectionService.list(userId), {
     response: ConnectionsListResponse,
   })

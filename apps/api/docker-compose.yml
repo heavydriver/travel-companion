@@ -30,6 +30,7 @@ services:
       - caddy_config:/config
     networks:
       - backend_net
+      - signoz-net
 
 volumes:
   caddy_data:
@@ -37,3 +38,5 @@ volumes:
 
 networks:
   backend_net:
+  signoz-net:
+    external: true

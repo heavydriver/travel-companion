@@ -1,5 +1,9 @@
 import { t } from "elysia";
 
+export const TripListQuery = t.Object({
+  destinationId: t.Optional(t.String()),
+});
+
 export const CreateTripBody = t.Object({
   destinationId: t.String(),
   title: t.String({ minLength: 1, maxLength: 100 }),

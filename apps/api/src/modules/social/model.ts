@@ -40,7 +40,14 @@ export const ConnectionRow = t.Object({
 const connectionUserPreview = t.Object({
   id: t.String(),
   name: t.String(),
+  username: t.String(),
   avatarUrl: t.Union([t.String(), t.Null()]),
+});
+
+const lastMessagePreview = t.Object({
+  content: t.String(),
+  createdAt: t.String(),
+  senderId: t.String(),
 });
 
 export const ConnectionsListResponse = t.Object({
@@ -48,8 +55,15 @@ export const ConnectionsListResponse = t.Object({
     t.Object({
       id: t.String(),
       user: connectionUserPreview,
+      lastMessage: t.Union([lastMessagePreview, t.Null()]),
+      unreadCount: t.Integer({ minimum: 0 }),
     }),
   ),
+});
+
+export const PendingConnectionsResponse = t.Object({
+  incoming: t.Array(ConnectionRow),
+  outgoing: t.Array(ConnectionRow),
 });
 
 export const CreateConnectionBody = t.Object({

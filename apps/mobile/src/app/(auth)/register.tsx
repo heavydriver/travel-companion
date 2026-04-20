@@ -58,6 +58,7 @@ export default function RegisterScreen() {
       await login({
         user: data.user,
         accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
       });
       router.replace("/(tabs)" as never);
     } catch (e) {
