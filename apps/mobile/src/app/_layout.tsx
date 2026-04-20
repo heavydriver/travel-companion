@@ -16,7 +16,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { client, EdenProvider } from "@/api/client";
-import { queryClient } from "@/lib/queryClient";
+// import { queryClient } from "@/lib/queryClient";
 import { appToastConfig } from "@/components/shared/AppToast";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { DestinationFavoritesProvider } from "@/features/destination/favorites";

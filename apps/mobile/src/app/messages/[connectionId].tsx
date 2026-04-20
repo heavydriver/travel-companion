@@ -178,7 +178,6 @@ export default function MessageThreadScreen() {
               </Pressable>
             </View>
           </View>
-        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
