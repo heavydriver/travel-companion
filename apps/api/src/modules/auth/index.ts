@@ -5,6 +5,7 @@ import {
   GoogleBody,
   AppleBody,
   AuthResponse,
+  RefreshRequest,
   RefreshResponse,
   MessageResponse,
 } from "./model";
@@ -50,7 +51,7 @@ export const authModule = new Elysia({ prefix: "/auth" })
 
       setRefreshCookie(cookie, refreshToken);
       set.status = 201;
-      return { user, accessToken };
+      return { user, accessToken, refreshToken };
     },
     { body: RegisterBody, response: { 201: AuthResponse } }
   )
@@ -63,7 +64,7 @@ export const authModule = new Elysia({ prefix: "/auth" })
       );
 
       setRefreshCookie(cookie, refreshToken);
-      return { user, accessToken };
+      return { user, accessToken, refreshToken };
     },
     { body: LoginBody, response: AuthResponse }
   )
@@ -74,7 +75,7 @@ export const authModule = new Elysia({ prefix: "/auth" })
         body.idToken
       );
       setRefreshCookie(cookie, refreshToken);
-      return { user, accessToken };
+      return { user, accessToken, refreshToken };
     },
     { body: GoogleBody, response: AuthResponse }
   )
@@ -86,20 +87,27 @@ export const authModule = new Elysia({ prefix: "/auth" })
         body.name
       );
       setRefreshCookie(cookie, refreshToken);
-      return { user, accessToken };
+      return { user, accessToken, refreshToken };
     },
     { body: AppleBody, response: AuthResponse }
   )
   .post(
     "/refresh",
-    async ({ cookie }) => {
-      const token = cookie.refreshToken?.value;
-      if (!token || typeof token !== "string") {
+    async ({ cookie, body }) => {
+      const fromCookie = cookie.refreshToken?.value;
+      const fromBody = body?.refreshToken;
+      const token =
+        typeof fromCookie === "string" && fromCookie.length > 0
+          ? fromCookie
+          : typeof fromBody === "string" && fromBody.length > 0
+            ? fromBody
+            : null;
+      if (!token) {
         throw new AppError(401, "UNAUTHORIZED", "Missing refresh token");
       }
       return authService.refresh(token);
     },
-    { response: RefreshResponse }
+    { body: RefreshRequest, response: RefreshResponse }
   )
   .post(
     "/logout",

@@ -2,9 +2,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import { Heart, LocateFixed, Search, Star } from "lucide-react-native";
+import { Heart, LocateFixed, MapPin, Search, Star } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatDistanceFromKm } from "@/lib/units";
+import { useMapSessionStore } from "@/store/mapSessionStore";
+import { usePreferencesStore } from "@/store/preferencesStore";
 import {
   ActivityIndicator,
   Pressable,
@@ -83,24 +86,95 @@ function PopularDestinationCard({
 
 function NearbyFavoriteCard({ place }: { place: NearbyPlace }) {
   const router = useRouter();
+  const setMapSession = useMapSessionStore((s) => s.setSession);
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+
+  const openOnMap = useCallback(async () => {
+    const placeRes = await client.api.v1.places({ id: place.id }).get();
+    if (placeRes.error || !placeRes.data?.place) return;
+    const p = placeRes.data.place as {
+      id: string;
+      destinationId: string;
+      name: string;
+      category: string;
+      description: string | null;
+      latitude: number;
+      longitude: number;
+      imageUrl: string | null;
+      rating: number | null;
+      reviewCount: number | null;
+      isCurated: boolean;
+      openingHours?: unknown;
+    };
+    const destRes = await client.api.v1.destinations({ destId: p.destinationId }).get();
+    if (destRes.error || !destRes.data?.destination) return;
+    const d = destRes.data.destination as {
+      id: string;
+      name: string;
+      latitude: number;
+      longitude: number;
+      timezone?: string;
+    };
+    setMapSession({
+      destinationId: d.id,
+      destinationName: d.name,
+      latitude: d.latitude,
+      longitude: d.longitude,
+      timezone: d.timezone?.trim() ?? null,
+      returnHref: "/(tabs)/explore",
+      places: [
+        {
+          id: p.id,
+          destinationId: p.destinationId,
+          name: p.name,
+          category: p.category,
+          description: p.description,
+          latitude: p.latitude,
+          longitude: p.longitude,
+          imageUrl: p.imageUrl,
+          rating: p.rating,
+          reviewCount: p.reviewCount,
+          isCurated: p.isCurated,
+          isFeatured: false,
+          openingHours: p.openingHours ?? null,
+        },
+      ],
+      focusLatitude: p.latitude,
+      focusLongitude: p.longitude,
+      focusZoomLevel: 15,
+    });
+    router.push("/(tabs)/map" as never);
+  }, [place.id, router, setMapSession]);
+
+  const goPlace = useCallback(() => {
+    router.push(`/place/${place.id}` as never);
+  }, [place.id, router]);
+
   return (
-    <Pressable
-      onPress={() => router.push(`/place/${place.id}` as never)}
-      className="mr-3 w-52 overflow-hidden rounded-2xl border border-border bg-card active:opacity-90"
-    >
-      <View className="h-28 bg-muted">
-        {place.imageUrl ? (
-          <Image
-            source={{ uri: place.imageUrl }}
-            style={{ width: "100%", height: "100%" }}
-            contentFit="cover"
-            transition={150}
-          />
-        ) : (
-          <View className="h-full w-full bg-muted" />
-        )}
+    <View className="mr-3 w-52 overflow-hidden rounded-2xl border border-border bg-card">
+      <View className="relative h-28 bg-muted">
+        <Pressable onPress={goPlace} className="absolute inset-0 active:opacity-95">
+          {place.imageUrl ? (
+            <Image
+              source={{ uri: place.imageUrl }}
+              style={{ width: "100%", height: "100%" }}
+              contentFit="cover"
+              transition={150}
+            />
+          ) : (
+            <View className="h-full w-full bg-muted" />
+          )}
+        </Pressable>
+        <Pressable
+          onPress={() => void openOnMap()}
+          hitSlop={8}
+          accessibilityLabel="Open on map"
+          className="absolute right-2 top-2 z-10 h-9 w-9 items-center justify-center rounded-full bg-black/55 active:opacity-90"
+        >
+          <MapPin size={16} color="#fff" />
+        </Pressable>
       </View>
-      <View className="gap-1 p-3">
+      <Pressable onPress={goPlace} className="gap-1 p-3 active:opacity-90">
         <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
           {place.name}
         </Text>
@@ -115,12 +189,12 @@ function NearbyFavoriteCard({ place }: { place: NearbyPlace }) {
           )}
           {typeof place.distanceKm === "number" ? (
             <Text className="text-xs text-muted-foreground">
-              · {place.distanceKm.toFixed(1)} km
+              · {formatDistanceFromKm(place.distanceKm, unitSystem)}
             </Text>
           ) : null}
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
@@ -197,6 +271,7 @@ export default function ExploreScreen() {
       return res.data;
     },
     staleTime: POPULAR_DESTINATIONS_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   });
 
   const nearbyQuery = useQuery({
@@ -208,10 +283,18 @@ export default function ExploreScreen() {
     enabled: !!locationCoords,
   });
 
-  const popularDestinations = (popularQuery.data?.destinations ?? []) as PopularDestination[];
+  const popularDestinations = useMemo(
+    () => (popularQuery.data?.destinations ?? []) as PopularDestination[],
+    [popularQuery.data?.destinations],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dataUpdatedAt triggers reshuffle after refetch when TanStack keeps same destinations ref
   useEffect(() => {
-    setShuffledPopularDestinations(popularDestinations);
-  }, [popularDestinations]);
+    if (popularDestinations.length === 0) {
+      setShuffledPopularDestinations([]);
+      return;
+    }
+    setShuffledPopularDestinations(shuffleDestinations(popularDestinations));
+  }, [popularQuery.dataUpdatedAt, popularDestinations]);
 
   const visiblePopularDestinations = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase();
@@ -227,17 +310,19 @@ export default function ExploreScreen() {
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    setShuffledPopularDestinations((current) =>
-      shuffleDestinations(current.length > 0 ? current : popularDestinations),
-    );
     try {
-      const coords = await loadCurrentLocation();
-      if (coords) {
-        await queryClient.fetchQuery({
-          queryKey: ["nearby-favorites", coords.lat, coords.lng],
-          queryFn: () => fetchNearbyFavorites(coords),
-        });
-      }
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: POPULAR_DESTINATIONS_QUERY_KEY }),
+        (async () => {
+          const coords = await loadCurrentLocation();
+          if (coords) {
+            await queryClient.fetchQuery({
+              queryKey: ["nearby-favorites", coords.lat, coords.lng],
+              queryFn: () => fetchNearbyFavorites(coords),
+            });
+          }
+        })(),
+      ]);
     } finally {
       setIsRefreshing(false);
     }

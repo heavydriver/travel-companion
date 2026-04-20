@@ -37,6 +37,9 @@ describe("userService", () => {
     const profile = await userService.getProfile(result.user.id);
     expect(profile.email).toBe(`${runId}_get@test.local`);
     expect(profile.name).toBe("Profile User");
+    expect(profile.friendCount).toBe(0);
+    expect(profile.tripCount).toBe(0);
+    expect(profile.socialOptIn).toBe(false);
   });
 
   test("updateProfile changes name and username", async () => {

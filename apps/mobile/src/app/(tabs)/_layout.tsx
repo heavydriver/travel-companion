@@ -1,14 +1,14 @@
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import { BottomTabBar } from "@/components/shared/BottomTabBar";
-import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { usePackVersionCheck } from "@/hooks/usePackVersionCheck";
+import { useAuthStore } from "@/store/authStore";
 
 export default function TabsLayout() {
-  const isAuthenticated = useAuthGuard();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   usePackVersionCheck();
 
   if (!isAuthenticated) {
-    return null;
+    return <Redirect href="/(auth)/login" />;
   }
 
   return (

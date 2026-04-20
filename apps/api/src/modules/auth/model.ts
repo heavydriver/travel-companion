@@ -27,8 +27,17 @@ export const AuthResponse = t.Object({
     email: t.String(),
     name: t.String(),
     username: t.String(),
+    avatarUrl: t.Union([t.String(), t.Null()]),
+    bio: t.Union([t.String(), t.Null()]),
+    socialOptIn: t.Boolean(),
   }),
   accessToken: t.String(),
+  /** Also set as HttpOnly cookie for web; required in JSON for React Native (no cookie jar). */
+  refreshToken: t.String(),
+});
+
+export const RefreshRequest = t.Object({
+  refreshToken: t.Optional(t.String()),
 });
 
 export const RefreshResponse = t.Object({

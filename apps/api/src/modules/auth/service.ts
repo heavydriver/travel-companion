@@ -82,7 +82,15 @@ export const authService = {
 
     const user = await prisma.user.create({
       data: { email, passwordHash, name, username },
-      select: { id: true, email: true, name: true, username: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        avatarUrl: true,
+        bio: true,
+        socialOptIn: true,
+      },
     });
 
     const accessToken = await generateAccessToken(user.id);
@@ -128,7 +136,16 @@ export const authService = {
       },
       select: {
         user: {
-          select: { id: true, email: true, name: true, username: true, isActive: true },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            username: true,
+            avatarUrl: true,
+            bio: true,
+            socialOptIn: true,
+            isActive: true,
+          },
         },
       },
     });
@@ -147,7 +164,16 @@ export const authService = {
     const { user } = await prisma.$transaction(async (tx) => {
       const userByEmail = await tx.user.findUnique({
         where: { email },
-        select: { id: true, email: true, name: true, username: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          username: true,
+          avatarUrl: true,
+          bio: true,
+          socialOptIn: true,
+          isActive: true,
+        },
       });
 
       if (userByEmail) {
@@ -174,7 +200,16 @@ export const authService = {
           name,
           username,
         },
-        select: { id: true, email: true, name: true, username: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          username: true,
+          avatarUrl: true,
+          bio: true,
+          socialOptIn: true,
+          isActive: true,
+        },
       });
 
       await tx.oAuthAccount.create({
@@ -231,7 +266,16 @@ export const authService = {
       },
       select: {
         user: {
-          select: { id: true, email: true, name: true, username: true, isActive: true },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            username: true,
+            avatarUrl: true,
+            bio: true,
+            socialOptIn: true,
+            isActive: true,
+          },
         },
       },
     });
@@ -250,7 +294,16 @@ export const authService = {
     const { user } = await prisma.$transaction(async (tx) => {
       const userByEmail = await tx.user.findUnique({
         where: { email },
-        select: { id: true, email: true, name: true, username: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          username: true,
+          avatarUrl: true,
+          bio: true,
+          socialOptIn: true,
+          isActive: true,
+        },
       });
 
       if (userByEmail) {
@@ -277,7 +330,16 @@ export const authService = {
           name: displayName,
           username,
         },
-        select: { id: true, email: true, name: true, username: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          username: true,
+          avatarUrl: true,
+          bio: true,
+          socialOptIn: true,
+          isActive: true,
+        },
       });
 
       await tx.oAuthAccount.create({
@@ -305,6 +367,9 @@ export const authService = {
         email: true,
         name: true,
         username: true,
+        avatarUrl: true,
+        bio: true,
+        socialOptIn: true,
         passwordHash: true,
         isActive: true,
       },
