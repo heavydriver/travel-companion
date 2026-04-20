@@ -1,5 +1,10 @@
 import "./global.css";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
 import { ThemeProvider } from "@react-navigation/native";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { QueryClient, onlineManager } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { PortalHost } from "@rn-primitives/portal";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
@@ -21,6 +26,31 @@ import { usePushRegistration } from "@/hooks/usePushRegistration";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
+
+onlineManager.setEventListener((setOnline) =>
+  NetInfo.addEventListener((state) => {
+    setOnline(!!state.isConnected);
+  })
+);
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24,
+      staleTime: 1000 * 60 * 5,
+      networkMode: "offlineFirst",
+      retry: 2,
+    },
+    mutations: {
+      networkMode: "online",
+    },
+  },
+});
+
+const asyncPersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "travel_companion_query_cache",
+});
 
 function RootToast() {
   const insets = useSafeAreaInsets();
@@ -53,20 +83,25 @@ function RootLayoutInner() {
   }, [startListening, hydrateOffline, hydratePreferences]);
 
   return (
-    <EdenProvider client={client} queryClient={queryClient}>
-      <DestinationFavoritesProvider>
-        <KeyboardProvider>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-              <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-              <OfflineBanner />
-              <Stack screenOptions={{ headerShown: false }} />
-              <PortalHost />
-              <RootToast />
-            </ThemeProvider>
-          </GestureHandlerRootView>
-        </KeyboardProvider>
-      </DestinationFavoritesProvider>
-    </EdenProvider>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 }}
+    >
+      <EdenProvider client={client} queryClient={queryClient}>
+        <DestinationFavoritesProvider>
+          <KeyboardProvider>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+                <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+                <OfflineBanner />
+                <Stack screenOptions={{ headerShown: false }} />
+                <PortalHost />
+                <RootToast />
+              </ThemeProvider>
+            </GestureHandlerRootView>
+          </KeyboardProvider>
+        </DestinationFavoritesProvider>
+      </EdenProvider>
+    </PersistQueryClientProvider>
   );
 }

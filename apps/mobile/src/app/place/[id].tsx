@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   Text,
