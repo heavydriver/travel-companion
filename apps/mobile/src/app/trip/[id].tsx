@@ -29,6 +29,7 @@ import {
 } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
+import { IOSDateTimePickerModal } from "@/components/shared/IOSDateTimePickerModal";
 import { Screen } from "@/components/shared/Screen";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { formatDate, toDateOnly } from "@/lib/utils";
@@ -60,6 +61,11 @@ function groupByDate(items: ItineraryItem[]) {
 function oneParam(v: string | string[] | undefined): string | undefined {
   if (v == null) return undefined;
   return Array.isArray(v) ? v[0] : v;
+}
+
+function hasInvalidTimeRange(startTime: Date | null, endTime: Date | null) {
+  if (!startTime || !endTime) return false;
+  return startTime.getTime() >= endTime.getTime();
 }
 
 export default function TripDetailScreen() {
@@ -538,9 +544,13 @@ function AddItemModal({
 
   const formatTime = (d: Date) =>
     d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const invalidTimeRange = hasInvalidTimeRange(startTimeDate, endTimeDate);
 
   const addMutation = useMutation({
     mutationFn: async (values: { title: string; notes: string }) => {
+      if (hasInvalidTimeRange(startTimeDate, endTimeDate)) {
+        throw new Error("Start time must be earlier than end time");
+      }
       const dateStr = toDateOnly(selectedDate);
       const res = await client.api.v1.trips({ tripId })["itinerary-items"].post({
         title: values.title,
@@ -609,15 +619,30 @@ function AddItemModal({
                 <Calendar size={16} color={mutedColor} />
                 <Text className="text-base text-foreground">{formatDate(selectedDate)}</Text>
               </Pressable>
-              {showDatePicker && (
+              {showDatePicker && Platform.OS === "ios" && (
+                <IOSDateTimePickerModal
+                  visible={showDatePicker}
+                  title="Item Date"
+                  value={selectedDate}
+                  mode="date"
+                  minimumDate={tripStartDate}
+                  maximumDate={tripEndDate}
+                  onCancel={() => setShowDatePicker(false)}
+                  onConfirm={(date) => {
+                    setShowDatePicker(false);
+                    setSelectedDate(date);
+                  }}
+                />
+              )}
+              {showDatePicker && Platform.OS !== "ios" && (
                 <DateTimePicker
                   value={selectedDate}
                   mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  display="default"
                   minimumDate={tripStartDate}
                   maximumDate={tripEndDate}
                   onChange={(_, date) => {
-                    setShowDatePicker(Platform.OS === "ios");
+                    setShowDatePicker(false);
                     if (date) setSelectedDate(date);
                   }}
                 />
@@ -639,14 +664,28 @@ function AddItemModal({
                     {startTimeDate ? formatTime(startTimeDate) : "Optional"}
                   </Text>
                 </Pressable>
-                {showStartTimePicker && (
+                {showStartTimePicker && Platform.OS === "ios" && (
+                  <IOSDateTimePickerModal
+                    visible={showStartTimePicker}
+                    title="Start Time"
+                    value={startTimeDate ?? new Date()}
+                    mode="time"
+                    is24Hour
+                    onCancel={() => setShowStartTimePicker(false)}
+                    onConfirm={(date) => {
+                      setShowStartTimePicker(false);
+                      setStartTimeDate(date);
+                    }}
+                  />
+                )}
+                {showStartTimePicker && Platform.OS !== "ios" && (
                   <DateTimePicker
                     value={startTimeDate ?? new Date()}
                     mode="time"
                     is24Hour
-                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    display="default"
                     onChange={(_, date) => {
-                      setShowStartTimePicker(Platform.OS === "ios");
+                      setShowStartTimePicker(false);
                       if (date) setStartTimeDate(date);
                     }}
                   />
@@ -665,20 +704,40 @@ function AddItemModal({
                     {endTimeDate ? formatTime(endTimeDate) : "Optional"}
                   </Text>
                 </Pressable>
-                {showEndTimePicker && (
+                {showEndTimePicker && Platform.OS === "ios" && (
+                  <IOSDateTimePickerModal
+                    visible={showEndTimePicker}
+                    title="End Time"
+                    value={endTimeDate ?? new Date()}
+                    mode="time"
+                    is24Hour
+                    onCancel={() => setShowEndTimePicker(false)}
+                    onConfirm={(date) => {
+                      setShowEndTimePicker(false);
+                      setEndTimeDate(date);
+                    }}
+                  />
+                )}
+                {showEndTimePicker && Platform.OS !== "ios" && (
                   <DateTimePicker
                     value={endTimeDate ?? new Date()}
                     mode="time"
                     is24Hour
-                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    display="default"
                     onChange={(_, date) => {
-                      setShowEndTimePicker(Platform.OS === "ios");
+                      setShowEndTimePicker(false);
                       if (date) setEndTimeDate(date);
                     }}
                   />
                 )}
               </View>
             </View>
+
+            {invalidTimeRange && (
+              <Text className="text-sm text-destructive">
+                Start time must be earlier than end time
+              </Text>
+            )}
 
             <Controller
               control={control}
@@ -701,6 +760,7 @@ function AddItemModal({
               label="Add to Itinerary"
               onPress={() => void handleSubmit((v) => addMutation.mutate(v))()}
               loading={addMutation.isPending}
+              disabled={invalidTimeRange}
             />
           </View>
         </View>
@@ -789,13 +849,27 @@ function EditTripModal({
                   <Calendar size={16} color={mutedColor} />
                   <Text className="text-base text-foreground">{formatDate(startDate)}</Text>
                 </Pressable>
-                {showStartPicker && (
+                {showStartPicker && Platform.OS === "ios" && (
+                  <IOSDateTimePickerModal
+                    visible={showStartPicker}
+                    title="Start Date"
+                    value={startDate}
+                    mode="date"
+                    onCancel={() => setShowStartPicker(false)}
+                    onConfirm={(date) => {
+                      setShowStartPicker(false);
+                      setStartDate(date);
+                      if (date > endDate) setEndDate(date);
+                    }}
+                  />
+                )}
+                {showStartPicker && Platform.OS !== "ios" && (
                   <DateTimePicker
                     value={startDate}
                     mode="date"
-                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    display="default"
                     onChange={(_, date) => {
-                      setShowStartPicker(Platform.OS === "ios");
+                      setShowStartPicker(false);
                       if (date) {
                         setStartDate(date);
                         if (date > endDate) setEndDate(date);
@@ -813,14 +887,28 @@ function EditTripModal({
                   <Calendar size={16} color={mutedColor} />
                   <Text className="text-base text-foreground">{formatDate(endDate)}</Text>
                 </Pressable>
-                {showEndPicker && (
+                {showEndPicker && Platform.OS === "ios" && (
+                  <IOSDateTimePickerModal
+                    visible={showEndPicker}
+                    title="End Date"
+                    value={endDate}
+                    mode="date"
+                    minimumDate={startDate}
+                    onCancel={() => setShowEndPicker(false)}
+                    onConfirm={(date) => {
+                      setShowEndPicker(false);
+                      setEndDate(date);
+                    }}
+                  />
+                )}
+                {showEndPicker && Platform.OS !== "ios" && (
                   <DateTimePicker
                     value={endDate}
                     mode="date"
                     minimumDate={startDate}
-                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    display="default"
                     onChange={(_, date) => {
-                      setShowEndPicker(Platform.OS === "ios");
+                      setShowEndPicker(false);
                       if (date) setEndDate(date);
                     }}
                   />
@@ -887,9 +975,13 @@ function EditItemModal({
 
   const fmtTime = (d: Date) =>
     d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const invalidTimeRange = hasInvalidTimeRange(startTimeDate, endTimeDate);
 
   const editMutation = useMutation({
     mutationFn: async () => {
+      if (hasInvalidTimeRange(startTimeDate, endTimeDate)) {
+        throw new Error("Start time must be earlier than end time");
+      }
       const res = await client.api.v1["itinerary-items"]({ id: item.id }).patch({
         title,
         date: selectedDate.toISOString(),
@@ -932,15 +1024,30 @@ function EditItemModal({
                 <Calendar size={16} color={mutedColor} />
                 <Text className="text-base text-foreground">{formatDate(selectedDate)}</Text>
               </Pressable>
-              {showDatePicker && (
+              {showDatePicker && Platform.OS === "ios" && (
+                <IOSDateTimePickerModal
+                  visible={showDatePicker}
+                  title="Item Date"
+                  value={selectedDate}
+                  mode="date"
+                  minimumDate={tripStartDate}
+                  maximumDate={tripEndDate}
+                  onCancel={() => setShowDatePicker(false)}
+                  onConfirm={(date) => {
+                    setShowDatePicker(false);
+                    setSelectedDate(date);
+                  }}
+                />
+              )}
+              {showDatePicker && Platform.OS !== "ios" && (
                 <DateTimePicker
                   value={selectedDate}
                   mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  display="default"
                   minimumDate={tripStartDate}
                   maximumDate={tripEndDate}
                   onChange={(_, date) => {
-                    setShowDatePicker(Platform.OS === "ios");
+                    setShowDatePicker(false);
                     if (date) setSelectedDate(date);
                   }}
                 />
@@ -961,14 +1068,28 @@ function EditItemModal({
                     {startTimeDate ? fmtTime(startTimeDate) : "Optional"}
                   </Text>
                 </Pressable>
-                {showStartTimePicker && (
+                {showStartTimePicker && Platform.OS === "ios" && (
+                  <IOSDateTimePickerModal
+                    visible={showStartTimePicker}
+                    title="Start Time"
+                    value={startTimeDate ?? new Date()}
+                    mode="time"
+                    is24Hour
+                    onCancel={() => setShowStartTimePicker(false)}
+                    onConfirm={(date) => {
+                      setShowStartTimePicker(false);
+                      setStartTimeDate(date);
+                    }}
+                  />
+                )}
+                {showStartTimePicker && Platform.OS !== "ios" && (
                   <DateTimePicker
                     value={startTimeDate ?? new Date()}
                     mode="time"
                     is24Hour
-                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    display="default"
                     onChange={(_, date) => {
-                      setShowStartTimePicker(Platform.OS === "ios");
+                      setShowStartTimePicker(false);
                       if (date) setStartTimeDate(date);
                     }}
                   />
@@ -987,20 +1108,40 @@ function EditItemModal({
                     {endTimeDate ? fmtTime(endTimeDate) : "Optional"}
                   </Text>
                 </Pressable>
-                {showEndTimePicker && (
+                {showEndTimePicker && Platform.OS === "ios" && (
+                  <IOSDateTimePickerModal
+                    visible={showEndTimePicker}
+                    title="End Time"
+                    value={endTimeDate ?? new Date()}
+                    mode="time"
+                    is24Hour
+                    onCancel={() => setShowEndTimePicker(false)}
+                    onConfirm={(date) => {
+                      setShowEndTimePicker(false);
+                      setEndTimeDate(date);
+                    }}
+                  />
+                )}
+                {showEndTimePicker && Platform.OS !== "ios" && (
                   <DateTimePicker
                     value={endTimeDate ?? new Date()}
                     mode="time"
                     is24Hour
-                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    display="default"
                     onChange={(_, date) => {
-                      setShowEndTimePicker(Platform.OS === "ios");
+                      setShowEndTimePicker(false);
                       if (date) setEndTimeDate(date);
                     }}
                   />
                 )}
               </View>
             </View>
+
+            {invalidTimeRange && (
+              <Text className="text-sm text-destructive">
+                Start time must be earlier than end time
+              </Text>
+            )}
 
             <TextInput
               className="rounded-xl border border-border bg-card px-4 py-3 text-base text-foreground"
@@ -1017,7 +1158,7 @@ function EditItemModal({
               label="Save Changes"
               onPress={() => editMutation.mutate()}
               loading={editMutation.isPending}
-              disabled={!title.trim()}
+              disabled={!title.trim() || invalidTimeRange}
             />
           </View>
         </View>

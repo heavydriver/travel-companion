@@ -11,6 +11,7 @@ import { z } from "zod";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
+import { IOSDateTimePickerModal } from "@/components/shared/IOSDateTimePickerModal";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { Screen } from "@/components/shared/Screen";
@@ -259,14 +260,31 @@ export default function NewTripScreen() {
                 {startDate ? formatDate(startDate) : "Select"}
               </Text>
             </Pressable>
-            {showStartPicker && (
+            {showStartPicker && Platform.OS === "ios" && (
+              <IOSDateTimePickerModal
+                visible={showStartPicker}
+                title="Start Date"
+                value={startDate ?? new Date()}
+                mode="date"
+                minimumDate={new Date()}
+                onCancel={() => setShowStartPicker(false)}
+                onConfirm={(date) => {
+                  setShowStartPicker(false);
+                  setValue("startDate", date, { shouldValidate: true });
+                  if (endDate && date > endDate) {
+                    setValue("endDate", date, { shouldValidate: true });
+                  }
+                }}
+              />
+            )}
+            {showStartPicker && Platform.OS !== "ios" && (
               <DateTimePicker
                 value={startDate ?? new Date()}
                 mode="date"
                 minimumDate={new Date()}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
+                display="default"
                 onChange={(_, date) => {
-                  setShowStartPicker(Platform.OS === "ios");
+                  setShowStartPicker(false);
                   if (date) {
                     setValue("startDate", date, { shouldValidate: true });
                     if (endDate && date > endDate) {
@@ -294,14 +312,28 @@ export default function NewTripScreen() {
                 {endDate ? formatDate(endDate) : "Select"}
               </Text>
             </Pressable>
-            {showEndPicker && (
+            {showEndPicker && Platform.OS === "ios" && (
+              <IOSDateTimePickerModal
+                visible={showEndPicker}
+                title="End Date"
+                value={endDate ?? startDate ?? new Date()}
+                mode="date"
+                minimumDate={startDate ?? new Date()}
+                onCancel={() => setShowEndPicker(false)}
+                onConfirm={(date) => {
+                  setShowEndPicker(false);
+                  setValue("endDate", date, { shouldValidate: true });
+                }}
+              />
+            )}
+            {showEndPicker && Platform.OS !== "ios" && (
               <DateTimePicker
                 value={endDate ?? startDate ?? new Date()}
                 mode="date"
                 minimumDate={startDate ?? new Date()}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
+                display="default"
                 onChange={(_, date) => {
-                  setShowEndPicker(Platform.OS === "ios");
+                  setShowEndPicker(false);
                   if (date) {
                     setValue("endDate", date, { shouldValidate: true });
                   }
