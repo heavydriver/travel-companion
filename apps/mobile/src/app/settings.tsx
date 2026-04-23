@@ -1,13 +1,22 @@
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, MessageCircle, Ruler, User, Users } from "lucide-react-native";
-import { useUnstableNativeVariable } from "nativewind";
-import { Alert, Pressable, Text, View } from "react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MessageCircle,
+  MoonStar,
+  Ruler,
+  User,
+  Users,
+} from "lucide-react-native";
+import { useColorScheme, useUnstableNativeVariable } from "nativewind";
+import { Alert, Pressable, Text, useColorScheme as useSystemColorScheme, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { clearQueryCache } from "@/lib/queryClient";
 import type { UnitSystem } from "@/lib/units";
 import { useAuthStore } from "@/store/authStore";
+import type { ThemePreference } from "@/store/preferencesStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 
 function TabChip({
@@ -35,13 +44,20 @@ function TabChip({
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { colorScheme } = useColorScheme();
+  const systemColorScheme = useSystemColorScheme();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const themePreference = usePreferencesStore((s) => s.themePreference);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
+  const setThemePreference = usePreferencesStore((s) => s.setThemePreference);
 
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : undefined;
+  const isDarkMode = colorScheme === "dark";
+  const isFollowingSystem = themePreference === "system";
+  const resolvedSystemMode = systemColorScheme === "dark" ? "Dark" : "Light";
 
   const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -65,6 +81,10 @@ export default function SettingsScreen() {
 
   const onUnitsChange = (next: UnitSystem) => {
     void setUnitSystem(next);
+  };
+
+  const onThemePreferenceChange = (next: ThemePreference) => {
+    void setThemePreference(next);
   };
 
   return (
@@ -91,12 +111,45 @@ export default function SettingsScreen() {
           </View>
           <View className="flex-1">
             <Text className="text-base font-semibold text-foreground">Profile & social</Text>
-            <Text className="mt-0.5 text-sm text-muted-foreground" numberOfLines={2}>
-              Photo, bio, nearby travelers, and connection requests
-            </Text>
           </View>
           <ChevronRight size={18} color={resolvedIcon} />
         </Pressable>
+
+        <View className="rounded-2xl border border-border bg-card p-4">
+          <View className="flex-row items-start gap-3">
+            <View className="mt-0.5 rounded-full bg-primary/15 p-2">
+              <MoonStar size={18} color={resolvedIcon} />
+            </View>
+            <View className="min-w-0 flex-1 gap-4">
+              <View>
+                <Text className="text-base font-semibold text-foreground">Appearance</Text>
+                <Text className="mt-1 text-sm text-muted-foreground">
+                  {isFollowingSystem
+                    ? `Following system (${resolvedSystemMode})`
+                    : `Manual ${isDarkMode ? "dark" : "light"} mode`}
+                </Text>
+              </View>
+
+              <View className="flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
+                <TabChip
+                  label="System"
+                  active={themePreference === "system"}
+                  onPress={() => onThemePreferenceChange("system")}
+                />
+                <TabChip
+                  label="Light"
+                  active={themePreference === "light"}
+                  onPress={() => onThemePreferenceChange("light")}
+                />
+                <TabChip
+                  label="Dark"
+                  active={themePreference === "dark"}
+                  onPress={() => onThemePreferenceChange("dark")}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
 
         <View className="rounded-2xl border border-border bg-card p-4">
           <View className="flex-row items-start gap-3">
@@ -105,9 +158,6 @@ export default function SettingsScreen() {
             </View>
             <View className="min-w-0 flex-1">
               <Text className="text-base font-semibold text-foreground">Units</Text>
-              <Text className="mt-1 text-sm leading-5 text-muted-foreground">
-                Metric uses °C, km, and km/h. Imperial uses °F, miles, and mph. Applies to weather and distance on Explore, map, and place details.
-              </Text>
               <View className="mt-4 flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
                 <TabChip
                   label="Metric"
@@ -153,8 +203,12 @@ export default function SettingsScreen() {
 
         <View className="rounded-2xl border border-border bg-card p-4">
           <Text className="text-sm font-medium text-muted-foreground">Signed in as</Text>
-          <Text className="mt-1 text-base font-semibold text-foreground">{user?.name ?? "Traveler"}</Text>
-          <Text className="mt-0.5 text-sm text-muted-foreground">{user?.email}</Text>
+          <Text className="mt-1 text-base font-semibold text-foreground">
+            {user?.name ?? "Traveler"}
+          </Text>
+          {user?.email ? (
+            <Text className="mt-0.5 text-sm text-muted-foreground">{user.email}</Text>
+          ) : null}
           {user?.username ? (
             <Text className="mt-1 text-sm text-muted-foreground">@{user.username}</Text>
           ) : null}
