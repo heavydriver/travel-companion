@@ -1,22 +1,13 @@
 import { useRouter } from "expo-router";
-import {
-  ChevronLeft,
-  ChevronRight,
-  MessageCircle,
-  MoonStar,
-  Ruler,
-  User,
-  Users,
-} from "lucide-react-native";
-import { useColorScheme, useUnstableNativeVariable } from "nativewind";
-import { Alert, Pressable, Text, useColorScheme as useSystemColorScheme, View } from "react-native";
+import { ChevronLeft, ChevronRight, MessageCircle, Ruler, User } from "lucide-react-native";
+import { useUnstableNativeVariable } from "nativewind";
+import { Alert, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { clearQueryCache } from "@/lib/queryClient";
 import type { UnitSystem } from "@/lib/units";
 import { useAuthStore } from "@/store/authStore";
-import type { ThemePreference } from "@/store/preferencesStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 
 function TabChip({
@@ -44,20 +35,13 @@ function TabChip({
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { colorScheme } = useColorScheme();
-  const systemColorScheme = useSystemColorScheme();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
-  const themePreference = usePreferencesStore((s) => s.themePreference);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
-  const setThemePreference = usePreferencesStore((s) => s.setThemePreference);
 
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : undefined;
-  const isDarkMode = colorScheme === "dark";
-  const isFollowingSystem = themePreference === "system";
-  const resolvedSystemMode = systemColorScheme === "dark" ? "Dark" : "Light";
 
   const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -81,10 +65,6 @@ export default function SettingsScreen() {
 
   const onUnitsChange = (next: UnitSystem) => {
     void setUnitSystem(next);
-  };
-
-  const onThemePreferenceChange = (next: ThemePreference) => {
-    void setThemePreference(next);
   };
 
   return (
@@ -118,42 +98,6 @@ export default function SettingsScreen() {
         <View className="rounded-2xl border border-border bg-card p-4">
           <View className="flex-row items-start gap-3">
             <View className="mt-0.5 rounded-full bg-primary/15 p-2">
-              <MoonStar size={18} color={resolvedIcon} />
-            </View>
-            <View className="min-w-0 flex-1 gap-4">
-              <View>
-                <Text className="text-base font-semibold text-foreground">Appearance</Text>
-                <Text className="mt-1 text-sm text-muted-foreground">
-                  {isFollowingSystem
-                    ? `Following system (${resolvedSystemMode})`
-                    : `Manual ${isDarkMode ? "dark" : "light"} mode`}
-                </Text>
-              </View>
-
-              <View className="flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
-                <TabChip
-                  label="System"
-                  active={themePreference === "system"}
-                  onPress={() => onThemePreferenceChange("system")}
-                />
-                <TabChip
-                  label="Light"
-                  active={themePreference === "light"}
-                  onPress={() => onThemePreferenceChange("light")}
-                />
-                <TabChip
-                  label="Dark"
-                  active={themePreference === "dark"}
-                  onPress={() => onThemePreferenceChange("dark")}
-                />
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View className="rounded-2xl border border-border bg-card p-4">
-          <View className="flex-row items-start gap-3">
-            <View className="mt-0.5 rounded-full bg-primary/15 p-2">
               <Ruler size={18} color={resolvedIcon} />
             </View>
             <View className="min-w-0 flex-1">
@@ -178,17 +122,6 @@ export default function SettingsScreen() {
         </View>
 
         <View className="rounded-2xl border border-border bg-card p-2">
-          <Pressable
-            onPress={() => router.push("/social-connect" as never)}
-            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
-          >
-            <View className="flex-row items-center gap-2">
-              <Users size={18} color={resolvedIcon} />
-              <Text className="text-base text-foreground">Social Connect</Text>
-            </View>
-            <ChevronRight size={18} color={resolvedIcon} />
-          </Pressable>
-
           <Pressable
             onPress={() => router.push("/messages" as never)}
             className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"

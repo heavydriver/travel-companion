@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Send } from "lucide-react-native";
-import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -12,13 +12,12 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
-import { SafeAreaView } from "react-native-safe-area-context";
 
-type ApiMessage = {
+type MessageItem = {
   id: string;
   senderId: string;
   receiverId: string;
@@ -65,6 +64,7 @@ export default function MessageThreadScreen() {
     },
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (!connectionId) return;
     client.api.v1.messages["mark-read"].patch({ connectionId }).catch(() => {});
@@ -105,79 +105,75 @@ export default function MessageThreadScreen() {
           </View>
         </View>
 
-          {messagesQuery.isLoading && (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator />
-            </View>
-          )}
+        {messagesQuery.isLoading && (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator />
+          </View>
+        )}
 
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            contentContainerClassName="gap-2 py-4"
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-            renderItem={({ item }) => {
-              const isMe = item.senderId === currentUserId;
-              return (
-                <View
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    isMe
-                      ? "self-end bg-primary"
-                      : "self-start border border-border bg-card"
-                  }`}
-                >
-                  <Text className={isMe ? "text-primary-foreground" : "text-foreground"}>
-                    {item.content}
-                  </Text>
-                  <View className="mt-1 flex-row items-center gap-1">
-                    <Text
-                      className={`text-[11px] ${
-                        isMe ? "text-primary-foreground/80" : "text-muted-foreground"
-                      }`}
-                    >
-                      {formatTime(item.createdAt)}
-                    </Text>
-                    {isMe && item.readAt && (
-                      <Text className="text-[11px] text-primary-foreground/80">· Read</Text>
-                    )}
-                  </View>
-                </View>
-              );
-            }}
-            ListEmptyComponent={
-              !messagesQuery.isLoading ? (
-                <View className="items-center py-12">
-                  <Text className="text-sm text-muted-foreground">
-                    No messages yet. Say hello!
-                  </Text>
-                </View>
-              ) : null
-            }
-          />
-
-          <View className="border-t border-border bg-background pb-5 pt-3">
-            <View className="flex-row items-center gap-2">
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                placeholder={isConnected ? "Type your message" : "You're offline"}
-                placeholderTextColor="hsl(218 11% 65%)"
-                editable={isConnected}
-                className="min-h-12 flex-1 rounded-xl border border-border bg-card px-4 text-foreground"
-                onSubmitEditing={handleSend}
-              />
-              <Pressable
-                onPress={handleSend}
-                disabled={!canSend}
-                className={`h-12 w-12 items-center justify-center rounded-xl ${
-                  canSend ? "bg-primary" : "bg-muted"
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          contentContainerClassName="gap-2 py-4"
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          renderItem={({ item }) => {
+            const isMe = item.senderId === currentUserId;
+            return (
+              <View
+                className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                  isMe ? "self-end bg-primary" : "self-start border border-border bg-card"
                 }`}
               >
-                <Send size={18} color={canSend ? "white" : "hsl(218 11% 65%)"} />
-              </Pressable>
-            </View>
+                <Text className={isMe ? "text-primary-foreground" : "text-foreground"}>
+                  {item.content}
+                </Text>
+                <View className="mt-1 flex-row items-center gap-1">
+                  <Text
+                    className={`text-[11px] ${
+                      isMe ? "text-primary-foreground/80" : "text-muted-foreground"
+                    }`}
+                  >
+                    {formatTime(item.createdAt)}
+                  </Text>
+                  {isMe && item.readAt && (
+                    <Text className="text-[11px] text-primary-foreground/80">· Read</Text>
+                  )}
+                </View>
+              </View>
+            );
+          }}
+          ListEmptyComponent={
+            !messagesQuery.isLoading ? (
+              <View className="items-center py-12">
+                <Text className="text-sm text-muted-foreground">No messages yet. Say hello!</Text>
+              </View>
+            ) : null
+          }
+        />
+
+        <View className="border-t border-border bg-background pb-5 pt-3">
+          <View className="flex-row items-center gap-2">
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={isConnected ? "Type your message" : "You're offline"}
+              placeholderTextColor="hsl(218 11% 65%)"
+              editable={isConnected}
+              className="min-h-12 flex-1 rounded-xl border border-border bg-card px-4 text-foreground"
+              onSubmitEditing={handleSend}
+            />
+            <Pressable
+              onPress={handleSend}
+              disabled={!canSend}
+              className={`h-12 w-12 items-center justify-center rounded-xl ${
+                canSend ? "bg-primary" : "bg-muted"
+              }`}
+            >
+              <Send size={18} color={canSend ? "white" : "hsl(218 11% 65%)"} />
+            </Pressable>
           </View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
