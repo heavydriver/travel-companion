@@ -101,9 +101,9 @@ function TripSummaryCard({
             </Text>
           </View>
           <Progress
-            value={Math.max(0, Math.min(100, progress * 100))}
-            className="h-2.5 bg-muted"
-            indicatorClassName="bg-chart-2"
+              value={Math.max(0, Math.min(100, progress * 100))}
+              className="h-2.5 bg-muted"
+              indicatorClassName="bg-green-500"
           />
         </View>
       </View>
@@ -288,7 +288,7 @@ export default function ItineraryTabScreen() {
             <Progress
               value={Math.max(0, Math.min(100, progress * 100))}
               className="h-2.5 bg-muted"
-              indicatorClassName="bg-chart-2"
+              indicatorClassName="bg-green-500"
             />
           </View>
         )}

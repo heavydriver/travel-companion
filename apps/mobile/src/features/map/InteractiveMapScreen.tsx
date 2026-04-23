@@ -1376,12 +1376,11 @@ export function InteractiveMapScreen() {
                     </View>
                     <View className="flex-row">
                       <Pressable
-                        className="text-sm font-light text-muted-foreground m-0 p-0 underline"
                         onPress={() => {
                           if (selectedPlaceId) router.push(`/place/${selectedPlaceId}` as never);
                         }}
                       >
-                        <Text style={{ textDecorationLine: "underline" }}>Details</Text>
+                        <Text className="text-sm font-light text-muted-foreground m-0 p-0 underline" style={{ textDecorationLine: "underline" }}>Details</Text>
                       </Pressable>
                     </View>
                   </View>

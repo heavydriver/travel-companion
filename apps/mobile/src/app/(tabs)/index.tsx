@@ -22,8 +22,8 @@ function getTripStatus(trip: Trip) {
     const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     return {
       badge: "Active",
-      badgeClass: "bg-chart-2/20",
-      textClass: "text-chart-2",
+      badgeClass: "bg-green-600/30",
+      textClass: "text-green-600",
       subtitle: `Day ${dayNum} of ${totalDays}`,
     };
   }
@@ -217,7 +217,7 @@ export default function HomeScreen() {
           {/* Active trips */}
           {activeTrips.length > 0 && (
             <View className="gap-3">
-              <Text className="text-sm font-semibold text-chart-2">ACTIVE NOW</Text>
+              <Text className="text-sm text-foreground font-semibold text-chart-2">ACTIVE NOW</Text>
               {activeTrips.map((trip) => (
                 <TripCard
                   key={trip.id}

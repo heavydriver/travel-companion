@@ -25,6 +25,7 @@ import { Screen } from "@/components/shared/Screen";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { formatDate, toDateOnly } from "@/lib/utils";
 import { useOfflineStore } from "@/store/offlineStore";
+import { Progress } from "@/components/ui/progress";
 
 type ItineraryItem = {
   id: string;
@@ -286,12 +287,11 @@ export default function TripDetailScreen() {
                 {doneCount}/{items.length} completed
               </Text>
             </View>
-            <View className="h-2.5 overflow-hidden rounded-full bg-muted">
-              <View
-                className="h-full rounded-full bg-chart-2"
-                style={{ width: `${progress * 100}%` }}
-              />
-            </View>
+            <Progress
+              value={Math.max(0, Math.min(100, progress * 100))}
+              className="h-2.5 bg-muted"
+              indicatorClassName="bg-green-500"
+            />
           </View>
         )}
 
