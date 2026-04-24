@@ -11,7 +11,6 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { useEffect } from "react";
-import { Appearance } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -69,11 +68,10 @@ export default function RootLayout() {
 }
 
 function RootLayoutInner() {
-  const { colorScheme: currentColorScheme } = useColorScheme();
+  const { colorScheme } = useColorScheme();
   const startListening = useNetworkStore((s) => s.startListening);
   const hydrateOffline = useOfflineStore((s) => s.hydrate);
   const hydratePreferences = usePreferencesStore((s) => s.hydrateFromStorage);
-  const themePreference = usePreferencesStore((s) => s.themePreference);
   usePushRegistration();
   useInAppSocialMessageSignals();
 
@@ -84,10 +82,6 @@ function RootLayoutInner() {
     return unsubscribe;
   }, [startListening, hydrateOffline, hydratePreferences]);
 
-  useEffect(() => {
-    Appearance.setColorScheme(themePreference === "system" ? "unspecified" : themePreference);
-  }, [themePreference]);
-
   return (
     <PersistQueryClientProvider
       client={queryClient}
@@ -97,8 +91,8 @@ function RootLayoutInner() {
         <DestinationFavoritesProvider>
           <KeyboardProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
-              <ThemeProvider value={NAV_THEME[currentColorScheme ?? "light"]}>
-                <StatusBar style={currentColorScheme === "dark" ? "light" : "dark"} />
+              <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+                <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
                 <OfflineBanner />
                 <Stack screenOptions={{ headerShown: false }} />
                 <PortalHost />
