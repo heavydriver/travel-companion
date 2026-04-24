@@ -2,7 +2,6 @@ import { treaty } from "@elysiajs/eden";
 import type { App } from "@repo/api/src/app";
 import { createEdenTanStackQuery } from "eden-tanstack-react-query";
 import type { AuthUser } from "@/types/auth";
-import { clearQueryCache } from "@/lib/queryClient";
 import { useAuthStore } from "@/store/authStore";
 
 export const apiBaseUrl =
@@ -96,7 +95,6 @@ function createAuthAwareFetch(): typeof globalThis.fetch {
     const newToken = await tryRefreshToken();
     if (!newToken) {
       await useAuthStore.getState().logout();
-      clearQueryCache();
       return response;
     }
 

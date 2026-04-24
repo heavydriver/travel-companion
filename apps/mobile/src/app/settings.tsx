@@ -5,7 +5,6 @@ import { Alert, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
-import { clearQueryCache } from "@/lib/queryClient";
 import type { UnitSystem } from "@/lib/units";
 import { useAuthStore } from "@/store/authStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
@@ -56,7 +55,6 @@ export default function SettingsScreen() {
             // Best-effort
           }
           await logout();
-          clearQueryCache();
           router.replace("/(auth)/login" as never);
         },
       },
@@ -95,39 +93,39 @@ export default function SettingsScreen() {
           <ChevronRight size={18} color={resolvedIcon} />
         </Pressable>
 
-        <View className="rounded-2xl border border-border bg-card p-4">
-          <View className="flex-row items-start gap-3">
-            <View className="mt-0.5 rounded-full bg-primary/15 p-2">
+        <View className="rounded-2xl border border-border bg-card p-4 gap-2">
+          <View className="flex-row items-center gap-3">
+            <View className="rounded-full bg-primary/15 p-2">
               <Ruler size={18} color={resolvedIcon} />
             </View>
-            <View className="min-w-0 flex-1">
-              <Text className="text-base font-semibold text-foreground">Units</Text>
-              <View className="mt-4 flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
-                <TabChip
-                  label="Metric"
-                  active={unitSystem === "metric"}
-                  onPress={() => onUnitsChange("metric")}
-                />
-                <TabChip
-                  label="Imperial"
-                  active={unitSystem === "imperial"}
-                  onPress={() => onUnitsChange("imperial")}
-                />
-              </View>
-              <Text className="mt-2 text-xs text-muted-foreground">
-                {unitSystem === "metric" ? "°C · km · km/h" : "°F · mi · mph"}
-              </Text>
-            </View>
+            <Text className="text-base font-semibold text-foreground">Units</Text>
           </View>
+          <View className="flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
+            <TabChip
+              label="Metric"
+              active={unitSystem === "metric"}
+              onPress={() => onUnitsChange("metric")}
+            />
+            <TabChip
+              label="Imperial"
+              active={unitSystem === "imperial"}
+              onPress={() => onUnitsChange("imperial")}
+            />
+          </View>
+          <Text className="text-xs text-muted-foreground">
+            {unitSystem === "metric" ? "°C · km · km/h" : "°F · mi · mph"}
+          </Text>
         </View>
 
         <View className="rounded-2xl border border-border bg-card p-2">
           <Pressable
             onPress={() => router.push("/messages" as never)}
-            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
+            className="flex-row items-center justify-between rounded-xl px-2 py-2 active:opacity-80"
           >
             <View className="flex-row items-center gap-2">
-              <MessageCircle size={18} color={resolvedIcon} />
+              <View className="rounded-full bg-primary/15 p-2">
+                <MessageCircle size={18} color={resolvedIcon} />
+              </View>
               <Text className="text-base text-foreground">Messages</Text>
             </View>
             <ChevronRight size={18} color={resolvedIcon} />
