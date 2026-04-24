@@ -10,6 +10,8 @@ const MeUser = t.Object({
   avatarUrl: t.Union([t.String(), t.Null()]),
   bio: t.Union([t.String(), t.Null()]),
   socialOptIn: t.Boolean(),
+  notifyMessages: t.Boolean(),
+  notifyConnections: t.Boolean(),
   friendCount: t.Integer({ minimum: 0 }),
   tripCount: t.Integer({ minimum: 0 }),
 });
@@ -24,6 +26,8 @@ const UpdateProfileBody = t.Object({
   bio: t.Optional(t.Union([t.String({ maxLength: 300 }), t.Null()])),
   socialOptIn: t.Optional(t.Boolean()),
   avatarUrl: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
+  notifyMessages: t.Optional(t.Boolean()),
+  notifyConnections: t.Optional(t.Boolean()),
 });
 
 const PushTokenBody = t.Object({

@@ -37,6 +37,8 @@ model User {
   homeCountry         String? // ISO country code
   preferredLanguageId String?
   socialOptIn         Boolean @default(false)
+  notifyMessages      Boolean @default(true)
+  notifyConnections   Boolean @default(true)
 
   isVerified Boolean @default(false)
   isActive   Boolean @default(true)
