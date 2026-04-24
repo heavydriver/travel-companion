@@ -34,6 +34,34 @@ const PushTokenResponse = t.Object({
   ok: t.Literal(true),
 });
 
+const PublicProfileUser = t.Object({
+  id: t.String(),
+  name: t.String(),
+  username: t.String(),
+  avatarUrl: t.Union([t.String(), t.Null()]),
+  bio: t.Union([t.String(), t.Null()]),
+  friendCount: t.Integer({ minimum: 0 }),
+  tripCount: t.Integer({ minimum: 0 }),
+});
+
+const ViewerConnection = t.Union([
+  t.Null(),
+  t.Object({
+    id: t.String(),
+    status: t.Union([
+      t.Literal("PENDING"),
+      t.Literal("ACCEPTED"),
+      t.Literal("REJECTED"),
+    ]),
+    direction: t.Union([t.Literal("incoming"), t.Literal("outgoing")]),
+  }),
+]);
+
+const PublicProfileResponse = t.Object({
+  user: PublicProfileUser,
+  connection: ViewerConnection,
+});
+
 export const userModule = new Elysia({ prefix: "/users" })
   .use(authGuard)
   .get(
@@ -58,4 +86,12 @@ export const userModule = new Elysia({ prefix: "/users" })
       return userService.registerPushToken(userId, body.expoToken.trim());
     },
     { body: PushTokenBody, response: PushTokenResponse }
+  )
+  .get(
+    "/:id",
+    async ({ userId, params }) => userService.getPublicProfileForViewer(userId, params.id),
+    {
+      params: t.Object({ id: t.String() }),
+      response: PublicProfileResponse,
+    }
   );

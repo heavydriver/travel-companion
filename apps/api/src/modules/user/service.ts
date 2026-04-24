@@ -44,6 +44,68 @@ export const userService = {
     };
   },
 
+  /**
+   * Public profile for another member (or yourself). Omits email. Includes relationship to viewer.
+   */
+  async getPublicProfileForViewer(viewerId: string, targetUserId: string) {
+    if (viewerId === targetUserId) {
+      const full = await this.getProfile(viewerId);
+      const { email: _e, socialOptIn: _so, ...user } = full;
+      return { user, connection: null };
+    }
+
+    const row = await prisma.user.findFirst({
+      where: { id: targetUserId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        avatarUrl: true,
+        bio: true,
+        _count: {
+          select: {
+            trips: { where: { deletedAt: null } },
+          },
+        },
+      },
+    });
+
+    if (!row) {
+      throw new AppError(404, "NOT_FOUND", "User not found");
+    }
+
+    const friends = await friendCount(targetUserId);
+    const { _count, ...rest } = row;
+
+    const conn = await prisma.connection.findFirst({
+      where: {
+        OR: [
+          { requesterId: viewerId, receiverId: targetUserId },
+          { requesterId: targetUserId, receiverId: viewerId },
+        ],
+      },
+    });
+
+    const connection = conn
+      ? {
+          id: conn.id,
+          status: conn.status as "PENDING" | "ACCEPTED" | "REJECTED",
+          direction: (conn.requesterId === viewerId ? "outgoing" : "incoming") as
+            | "outgoing"
+            | "incoming",
+        }
+      : null;
+
+    return {
+      user: {
+        ...rest,
+        friendCount: friends,
+        tripCount: _count.trips,
+      },
+      connection,
+    };
+  },
+
   async updateProfile(
     userId: string,
     data: { name?: string; username?: string; bio?: string | null; socialOptIn?: boolean; avatarUrl?: string | null }

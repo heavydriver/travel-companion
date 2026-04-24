@@ -1,7 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { MessageCircle, Pencil, UserCheck, User as UserIcon, Users } from "lucide-react-native";
+import {
+  ChevronLeft,
+  Luggage,
+  MessageCircle,
+  Pencil,
+  UserCheck,
+  User as UserIcon,
+  Users,
+} from "lucide-react-native";
+import { useUnstableNativeVariable } from "nativewind";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,7 +42,7 @@ function TabChip({
   return (
     <Pressable
       onPress={onPress}
-      className={`flex-1 rounded-xl px-3 py-2.5 ${active ? "bg-primary" : "bg-card"}`}
+      className={`flex-1 items-center justify-center rounded-xl px-3 py-2.5 ${active ? "bg-primary" : "bg-card"}`}
     >
       <Text
         className={`text-center text-sm font-semibold ${active ? "text-primary-foreground" : "text-foreground"}`}
@@ -41,15 +50,6 @@ function TabChip({
         {label}
       </Text>
     </Pressable>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <View className="flex-1 rounded-2xl border border-border bg-background/90 px-4 py-3">
-      <Text className="text-xl font-bold text-foreground">{value}</Text>
-      <Text className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{label}</Text>
-    </View>
   );
 }
 
@@ -69,6 +69,8 @@ export default function ProfileScreen() {
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [socialOptIn, setSocialOptIn] = useState(false);
+  const iconColor = useUnstableNativeVariable("--foreground");
+  const resolvedIcon = iconColor ? `hsl(${iconColor})` : undefined;
 
   useEffect(() => {
     const nextTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
@@ -210,10 +212,19 @@ export default function ProfileScreen() {
     (item) => item.connection?.status === "PENDING" && item.connection.direction === "incoming",
   ).length;
 
+  const openUserProfile = (otherUserId: string) => {
+    if (!user || otherUserId === user.id) return;
+    router.push(`/user/${otherUserId}` as never);
+  };
+
   return (
     <Screen scrollable contentClassName="pb-10">
       <View className="gap-5">
-        <Pressable onPress={() => router.back()} className="active:opacity-80">
+        <Pressable
+          onPress={() => router.back()}
+          className="flex-row items-center gap-1 active:opacity-80"
+        >
+          <ChevronLeft size={20} color={resolvedIcon} />
           <Text className="text-base font-medium text-primary">Back</Text>
         </Pressable>
 
@@ -277,10 +288,30 @@ export default function ProfileScreen() {
                   </View>
                 </View>
 
-                <View className="mt-5 flex-row gap-3">
-                  <StatCard label="Friends" value={user?.friendCount ?? 0} />
-                  <StatCard label="Trips" value={user?.tripCount ?? 0} />
-                  <StatCard label="Requests" value={incomingCount} />
+                <View className="mt-4 w-full flex-row overflow-hidden rounded-2xl border border-border/80 bg-background/85">
+                  <View className="min-w-0 flex-1 flex-row items-center gap-3 px-4 py-3.5">
+                    <View className="rounded-xl bg-primary/15 p-2">
+                      <Users size={18} color="hsl(217 91% 60%)" />
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-xl font-bold tabular-nums text-foreground">
+                        {user?.friendCount ?? 0}
+                      </Text>
+                      <Text className="text-xs font-medium text-muted-foreground">Friends</Text>
+                    </View>
+                  </View>
+                  <View className="my-3 w-px shrink-0 bg-border" />
+                  <View className="min-w-0 flex-1 flex-row items-center gap-3 px-4 py-3.5">
+                    <View className="rounded-xl bg-primary/15 p-2">
+                      <Luggage size={18} color="hsl(217 91% 60%)" />
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-xl font-bold tabular-nums text-foreground">
+                        {user?.tripCount ?? 0}
+                      </Text>
+                      <Text className="text-xs font-medium text-muted-foreground">Trips</Text>
+                    </View>
+                  </View>
                 </View>
               </View>
 
@@ -309,49 +340,50 @@ export default function ProfileScreen() {
                 </View>
 
                 <View className="flex-row flex-wrap gap-2">
-                  <Pressable
-                    onPress={() => router.push("/messages" as never)}
-                    className="flex-1 min-w-[140px] flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-background py-3 active:opacity-90"
-                  >
-                    <MessageCircle size={18} color="hsl(217 91% 60%)" />
-                    <Text className="text-sm font-semibold text-foreground">Messages</Text>
-                  </Pressable>
-
                   {editing ? (
                     <>
-                      <View className="flex-1 min-w-[120px]">
-                        <Button
-                          label="Cancel"
-                          variant="secondary"
-                          onPress={() => {
-                            setEditing(false);
-                            if (user) {
-                              setName(user.name);
-                              setBio(user.bio ?? "");
-                              setSocialOptIn(Boolean(user.socialOptIn));
-                            }
-                          }}
-                        />
-                      </View>
-                      <View className="flex-1 min-w-[120px]">
-                        <Button
-                          label="Save"
-                          onPress={() => saveMutation.mutate()}
-                          loading={saveMutation.isPending}
-                          disabled={!name.trim()}
-                        />
-                      </View>
+                      <Button
+                        label="Cancel"
+                        variant="secondary"
+                        onPress={() => {
+                          setEditing(false);
+                          if (user) {
+                            setName(user.name);
+                            setBio(user.bio ?? "");
+                            setSocialOptIn(Boolean(user.socialOptIn));
+                          }
+                        }}
+                        className="flex-1 min-w-[140px] flex-row items-center justify-center gap-2 rounded-2xl border border-border active:opacity-90"
+                      />
+
+                      <Button
+                        label="Save"
+                        onPress={() => saveMutation.mutate()}
+                        loading={saveMutation.isPending}
+                        disabled={!name.trim()}
+                        className="flex-1 min-w-[140px] flex-row items-center justify-center gap-2 rounded-2xl border border-border active:opacity-90"
+                      />
                     </>
                   ) : (
-                    <Pressable
-                      onPress={() => setEditing(true)}
-                      className="flex-1 min-w-[140px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-3 active:opacity-90"
-                    >
-                      <Pencil size={16} color="white" />
-                      <Text className="text-sm font-semibold text-primary-foreground">
-                        Edit profile
-                      </Text>
-                    </Pressable>
+                    <>
+                      <Pressable
+                        onPress={() => router.push("/messages" as never)}
+                        className="flex-1 min-w-[140px] flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-background py-2 active:opacity-90"
+                      >
+                        <MessageCircle size={18} color="hsl(217 91% 60%)" />
+                        <Text className="text-sm font-semibold text-foreground">Messages</Text>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => setEditing(true)}
+                        className="flex-1 min-w-[140px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-2 active:opacity-90"
+                      >
+                        <Pencil size={16} color="white" />
+                        <Text className="text-sm font-semibold text-primary-foreground">
+                          Edit profile
+                        </Text>
+                      </Pressable>
+                    </>
                   )}
                 </View>
 
@@ -369,20 +401,9 @@ export default function ProfileScreen() {
                       <Switch value={socialOptIn} onValueChange={setSocialOptIn} />
                     </View>
                   </View>
-                ) : (
-                  <View className="rounded-2xl border border-border bg-background px-4 py-3">
-                    <Text className="text-sm font-semibold text-foreground">
-                      {socialOptIn ? "Social discovery on" : "Social discovery off"}
-                    </Text>
-                    <Text className="mt-1 text-sm text-muted-foreground">
-                      {socialOptIn
-                        ? "Nearby travelers can find you while trip is active."
-                        : "Turn discovery on from Edit profile to start making connections."}
-                    </Text>
-                  </View>
-                )}
+                ) : null}
 
-                {!editing ? (
+                {editing ? (
                   <Text className="text-xs text-muted-foreground">
                     Username is permanent and cannot be changed from app.
                   </Text>
@@ -393,9 +414,6 @@ export default function ProfileScreen() {
             <View className="rounded-[28px] border border-border bg-card p-4">
               <View className="mb-4">
                 <Text className="text-lg font-bold text-foreground">Travel network</Text>
-                <Text className="mt-1 text-sm text-muted-foreground">
-                  Meet people nearby, review requests, keep conversations going.
-                </Text>
               </View>
 
               <View className="flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
@@ -412,8 +430,8 @@ export default function ProfileScreen() {
                 <TabChip
                   label={
                     acceptedConnections.length > 0
-                      ? `Connections (${acceptedConnections.length})`
-                      : "Connections"
+                      ? `Friends (${acceptedConnections.length})`
+                      : "Friends"
                   }
                   active={tab === "connections"}
                   onPress={() => setTab("connections")}
@@ -437,19 +455,12 @@ export default function ProfileScreen() {
                     </View>
                   ) : null}
 
-                  <Text className="text-sm font-semibold text-foreground">Nearby travelers</Text>
-
                   {nearbyQuery.isLoading ? (
                     <ActivityIndicator />
                   ) : travelers.length === 0 ? (
                     <View className="items-center rounded-2xl border border-border bg-background px-6 py-8">
                       <Users size={24} color="hsl(218 11% 65%)" />
-                      <Text className="mt-3 text-sm font-medium text-foreground">
-                        Nobody nearby yet
-                      </Text>
-                      <Text className="mt-1 text-center text-sm text-muted-foreground">
-                        Add active trip at destination and enable discovery to show up here.
-                      </Text>
+                      <Text className="mt-3 text-sm text-muted-foreground">Nobody nearby yet</Text>
                     </View>
                   ) : (
                     <FlatList
@@ -478,32 +489,37 @@ export default function ProfileScreen() {
 
                         return (
                           <View className="w-40 rounded-3xl border border-border bg-background p-4">
-                            <View className="mx-auto mb-3 h-16 w-16 overflow-hidden rounded-full bg-muted">
-                              {item.avatarUrl ? (
-                                <Image
-                                  source={{ uri: item.avatarUrl }}
-                                  style={{ width: 64, height: 64 }}
-                                  contentFit="cover"
-                                />
-                              ) : (
-                                <View className="h-full w-full items-center justify-center">
-                                  <UserIcon size={28} color="hsl(218 11% 65%)" />
-                                </View>
-                              )}
-                            </View>
+                            <Pressable
+                              onPress={() => openUserProfile(item.id)}
+                              className="active:opacity-90"
+                            >
+                              <View className="mx-auto mb-3 h-16 w-16 overflow-hidden rounded-full bg-muted">
+                                {item.avatarUrl ? (
+                                  <Image
+                                    source={{ uri: item.avatarUrl }}
+                                    style={{ width: 64, height: 64 }}
+                                    contentFit="cover"
+                                  />
+                                ) : (
+                                  <View className="h-full w-full items-center justify-center">
+                                    <UserIcon size={28} color="hsl(218 11% 65%)" />
+                                  </View>
+                                )}
+                              </View>
 
-                            <Text
-                              className="text-center text-sm font-semibold text-foreground"
-                              numberOfLines={1}
-                            >
-                              {item.name}
-                            </Text>
-                            <Text
-                              className="mt-1 text-center text-[11px] leading-4 text-muted-foreground"
-                              numberOfLines={3}
-                            >
-                              {item.bio ?? "Traveler nearby"}
-                            </Text>
+                              <Text
+                                className="text-center text-sm font-semibold text-foreground"
+                                numberOfLines={1}
+                              >
+                                {item.name}
+                              </Text>
+                              <Text
+                                className="mt-1 text-center text-[11px] leading-4 text-muted-foreground"
+                                numberOfLines={3}
+                              >
+                                {item.bio ?? "Traveler nearby"}
+                              </Text>
+                            </Pressable>
 
                             <View className="mt-3">
                               <Button
@@ -557,30 +573,35 @@ export default function ProfileScreen() {
                         key={req.id}
                         className="rounded-2xl border border-border bg-background p-4"
                       >
-                        <View className="flex-row items-center gap-3">
-                          <View className="h-12 w-12 overflow-hidden rounded-full bg-muted">
-                            {req.peer.avatarUrl ? (
-                              <Image
-                                source={{ uri: req.peer.avatarUrl }}
-                                style={{ width: 48, height: 48 }}
-                                contentFit="cover"
-                              />
-                            ) : (
-                              <View className="h-full w-full items-center justify-center">
-                                <UserIcon size={22} color="hsl(218 11% 65%)" />
-                              </View>
-                            )}
-                          </View>
+                        <Pressable
+                          onPress={() => openUserProfile(req.peer.id)}
+                          className="active:opacity-90"
+                        >
+                          <View className="flex-row items-center gap-3">
+                            <View className="h-12 w-12 overflow-hidden rounded-full bg-muted">
+                              {req.peer.avatarUrl ? (
+                                <Image
+                                  source={{ uri: req.peer.avatarUrl }}
+                                  style={{ width: 48, height: 48 }}
+                                  contentFit="cover"
+                                />
+                              ) : (
+                                <View className="h-full w-full items-center justify-center">
+                                  <UserIcon size={22} color="hsl(218 11% 65%)" />
+                                </View>
+                              )}
+                            </View>
 
-                          <View className="min-w-0 flex-1">
-                            <Text className="text-base font-semibold text-foreground">
-                              {req.peer.name}
-                            </Text>
-                            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                              @{req.peer.username}
-                            </Text>
+                            <View className="min-w-0 flex-1">
+                              <Text className="text-base font-semibold text-foreground">
+                                {req.peer.name}
+                              </Text>
+                              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                                @{req.peer.username}
+                              </Text>
+                            </View>
                           </View>
-                        </View>
+                        </Pressable>
 
                         <View className="mt-4 flex-row gap-2">
                           <Button
@@ -628,7 +649,10 @@ export default function ProfileScreen() {
                         className="rounded-2xl border border-border bg-background p-4"
                       >
                         <View className="flex-row items-center justify-between gap-3">
-                          <View className="flex-row items-center gap-3">
+                          <Pressable
+                            onPress={() => openUserProfile(connection.user.id)}
+                            className="min-w-0 flex-1 flex-row items-center gap-3 active:opacity-90"
+                          >
                             <View className="h-12 w-12 overflow-hidden rounded-full bg-muted">
                               {connection.user.avatarUrl ? (
                                 <Image
@@ -642,10 +666,13 @@ export default function ProfileScreen() {
                                 </View>
                               )}
                             </View>
-                            <Text className="text-base font-semibold text-foreground">
+                            <Text
+                              className="min-w-0 flex-1 text-base font-semibold text-foreground"
+                              numberOfLines={1}
+                            >
                               {connection.user.name}
                             </Text>
-                          </View>
+                          </Pressable>
 
                           <Pressable
                             onPress={() => router.push(`/messages/${connection.id}` as never)}
