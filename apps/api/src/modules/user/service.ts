@@ -1,5 +1,10 @@
 import { prisma } from "@repo/db";
+import sharp from "sharp";
 import { AppError } from "../../middleware/errorHandler";
+import { resolvedAvatarUrl } from "../../utils/avatarUrl";
+import { getObjectStorageClient, putProfilePictureJpeg } from "../../utils/profilePictureObjectStorage";
+
+const PROFILE_PIC_MAX_BYTES = 10 * 1024 * 1024;
 
 async function friendCount(userId: string): Promise<number> {
   return prisma.connection.count({
@@ -19,7 +24,7 @@ export const userService = {
         email: true,
         name: true,
         username: true,
-        avatarUrl: true,
+        profilePicUpdatedAt: true,
         bio: true,
         socialOptIn: true,
         _count: {
@@ -36,9 +41,10 @@ export const userService = {
 
     const friends = await friendCount(userId);
 
-    const { _count, ...rest } = user;
+    const { _count, profilePicUpdatedAt, ...rest } = user;
     return {
       ...rest,
+      avatarUrl: resolvedAvatarUrl({ id: user.id, profilePicUpdatedAt }),
       friendCount: friends,
       tripCount: _count.trips,
     };
@@ -60,7 +66,7 @@ export const userService = {
         id: true,
         name: true,
         username: true,
-        avatarUrl: true,
+        profilePicUpdatedAt: true,
         bio: true,
         _count: {
           select: {
@@ -75,7 +81,7 @@ export const userService = {
     }
 
     const friends = await friendCount(targetUserId);
-    const { _count, ...rest } = row;
+    const { _count, profilePicUpdatedAt, ...rest } = row;
 
     const conn = await prisma.connection.findFirst({
       where: {
@@ -99,6 +105,7 @@ export const userService = {
     return {
       user: {
         ...rest,
+        avatarUrl: resolvedAvatarUrl({ id: row.id, profilePicUpdatedAt }),
         friendCount: friends,
         tripCount: _count.trips,
       },
@@ -108,7 +115,7 @@ export const userService = {
 
   async updateProfile(
     userId: string,
-    data: { name?: string; username?: string; bio?: string | null; socialOptIn?: boolean; avatarUrl?: string | null }
+    data: { name?: string; username?: string; bio?: string | null; socialOptIn?: boolean }
   ) {
     if (data.username) {
       const existing = await prisma.user.findUnique({
@@ -127,14 +134,13 @@ export const userService = {
         ...(data.username !== undefined && { username: data.username }),
         ...(data.bio !== undefined && { bio: data.bio }),
         ...(data.socialOptIn !== undefined && { socialOptIn: data.socialOptIn }),
-        ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
       },
       select: {
         id: true,
         email: true,
         name: true,
         username: true,
-        avatarUrl: true,
+        profilePicUpdatedAt: true,
         bio: true,
         socialOptIn: true,
         _count: {
@@ -146,12 +152,49 @@ export const userService = {
     });
 
     const friends = await friendCount(userId);
-    const { _count, ...rest } = user;
+    const { _count, profilePicUpdatedAt, ...rest } = user;
     return {
       ...rest,
+      avatarUrl: resolvedAvatarUrl({ id: user.id, profilePicUpdatedAt }),
       friendCount: friends,
       tripCount: _count.trips,
     };
+  },
+
+  async uploadProfilePicture(userId: string, file: Blob) {
+    if (!(file instanceof Blob)) {
+      throw new AppError(400, "VALIDATION_ERROR", "Missing image file");
+    }
+    if (file.size === 0) {
+      throw new AppError(400, "VALIDATION_ERROR", "Choose an image to upload");
+    }
+    if (file.size > PROFILE_PIC_MAX_BYTES) {
+      throw new AppError(400, "VALIDATION_ERROR", "Image must be 10 MB or smaller");
+    }
+    if (!getObjectStorageClient()) {
+      throw new AppError(
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Profile picture upload is not configured on the server"
+      );
+    }
+
+    const raw = Buffer.from(await file.arrayBuffer());
+    let jpeg: Buffer;
+    try {
+      jpeg = await sharp(raw).rotate().jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    } catch {
+      throw new AppError(400, "VALIDATION_ERROR", "File must be a valid image");
+    }
+
+    await putProfilePictureJpeg(userId, jpeg);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { profilePicUpdatedAt: new Date() },
+    });
+
+    return this.getProfile(userId);
   },
 
   async registerPushToken(userId: string, expoToken: string) {

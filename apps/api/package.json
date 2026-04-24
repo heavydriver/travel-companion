@@ -16,6 +16,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.2",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1036.0",
     "@elysiajs/cors": "^1.4.1",
     "@elysiajs/eden": "^1.4.8",
     "@repo/db": "workspace:*",
@@ -25,7 +26,8 @@
     "elysia": "^1.4.26",
     "expo-server-sdk": "^4.0.0",
     "google-auth-library": "^10.6.2",
-    "jose": "^6.2.0"
+    "jose": "^6.2.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@tsconfig/bun": "^1.0.10",

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ChevronLeft,
@@ -11,7 +12,7 @@ import {
   Users,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -21,7 +22,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { client } from "@/api/client";
+import { apiBaseUrl, authAwareFetch, authHeadersForMultipart, client } from "@/api/client";
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
@@ -29,6 +30,8 @@ import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 
 type ProfileTab = "nearby" | "requests" | "connections";
+
+const PROFILE_PIC_MAX_BYTES = 10 * 1024 * 1024;
 
 function TabChip({
   label,
@@ -128,6 +131,118 @@ export default function ProfileScreen() {
     },
     enabled: Boolean(accessToken) && tab === "connections",
   });
+
+  const { mutate: uploadProfilePicture, isPending: isUploadingProfilePicture } = useMutation({
+    mutationFn: async (asset: ImagePicker.ImagePickerAsset) => {
+      if (asset.fileSize != null && asset.fileSize > PROFILE_PIC_MAX_BYTES) {
+        throw new Error("too_large");
+      }
+      const token = useAuthStore.getState().accessToken;
+      if (!token) {
+        throw new Error("not_authenticated");
+      }
+
+      const form = new FormData();
+      form.append("file", {
+        uri: asset.uri,
+        name: "photo.jpg",
+        type: asset.mimeType ?? "image/jpeg",
+      } as unknown as Blob);
+
+      const base = apiBaseUrl.replace(/\/$/, "");
+      const res = await authAwareFetch(`${base}/api/v1/users/me/profile-picture`, {
+        method: "POST",
+        headers: authHeadersForMultipart(),
+        body: form,
+      });
+      if (!res.ok) {
+        let message = "upload_failed";
+        try {
+          const j = (await res.json()) as { error?: { message?: string } };
+          if (j?.error?.message) message = j.error.message;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(message);
+      }
+      return (await res.json()) as {
+        user: {
+          id: string;
+          email: string;
+          name: string;
+          username: string;
+          avatarUrl: string | null;
+          bio: string | null;
+          socialOptIn: boolean;
+          friendCount: number;
+          tripCount: number;
+        };
+      };
+    },
+    onSuccess: (data) => {
+      if (data?.user && accessToken) {
+        login({
+          user: {
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.name,
+            username: data.user.username,
+            avatarUrl: data.user.avatarUrl,
+            bio: data.user.bio,
+            socialOptIn: data.user.socialOptIn,
+          },
+          accessToken,
+        });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["users-me"] });
+      void queryClient.invalidateQueries({ queryKey: ["social-nearby"] });
+      void queryClient.invalidateQueries({ queryKey: ["connections-pending"] });
+      void queryClient.invalidateQueries({ queryKey: ["connections-accepted"] });
+      showAppToast({ variant: "success", title: "Profile photo updated" });
+    },
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "too_large") {
+        showAppToast({ variant: "error", title: "Image must be under 10 MB" });
+        return;
+      }
+      if (msg === "not_authenticated") {
+        showAppToast({ variant: "error", title: "Sign in again to update your photo" });
+        return;
+      }
+      showAppToast({
+        variant: "error",
+        title: msg && msg !== "upload_failed" ? msg : "Could not update photo",
+      });
+    },
+  });
+
+  const pickProfilePhoto = useCallback(async () => {
+    if (!isConnected) {
+      showAppToast({ variant: "warning", title: "You are offline" });
+      return;
+    }
+    if (isUploadingProfilePicture) return;
+
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      showAppToast({
+        variant: "warning",
+        title: "Photo library access is needed to change your picture",
+      });
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.92,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+    uploadProfilePicture(result.assets[0]);
+  }, [isConnected, isUploadingProfilePicture, uploadProfilePicture]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -247,7 +362,15 @@ export default function ProfileScreen() {
             <View className="overflow-hidden rounded-[28px] border border-border bg-card">
               <View className="bg-primary/10 px-5 pb-5 pt-6">
                 <View className="flex-row gap-4">
-                  <View className="h-24 w-24 shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted">
+                  <Pressable
+                    accessibilityLabel={editing ? "Change profile photo" : undefined}
+                    accessibilityRole={editing ? "button" : undefined}
+                    onPress={() => {
+                      if (editing) void pickProfilePhoto();
+                    }}
+                    disabled={!editing}
+                    className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted active:opacity-90"
+                  >
                     {user?.avatarUrl ? (
                       <Image
                         source={{ uri: user.avatarUrl }}
@@ -259,7 +382,22 @@ export default function ProfileScreen() {
                         <UserIcon size={40} color="hsl(217 91% 60%)" />
                       </View>
                     )}
-                  </View>
+                    {editing ? (
+                      <View
+                        pointerEvents="none"
+                        className="absolute inset-0 items-center justify-center bg-black/25"
+                      >
+                        <Text className="px-1 text-center text-[10px] font-semibold text-white">
+                          Tap to change
+                        </Text>
+                      </View>
+                    ) : null}
+                    {isUploadingProfilePicture ? (
+                      <View className="absolute inset-0 items-center justify-center bg-background/75">
+                        <ActivityIndicator />
+                      </View>
+                    ) : null}
+                  </Pressable>
 
                   <View className="min-w-0 flex-1 justify-center gap-2">
                     <View className="self-start rounded-full bg-background/90 px-3 py-1">

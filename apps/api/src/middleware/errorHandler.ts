@@ -43,6 +43,24 @@ export const errorHandler = new Elysia({ name: "errorHandler" }).onError(
       };
     }
 
+    /** Prisma: column/table does not exist — usually pending `prisma migrate deploy`. */
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      ((error as { code: string }).code === "P2022" ||
+        (error as { code: string }).code === "P2021")
+    ) {
+      set.status = 503;
+      return {
+        error: {
+          code: "DATABASE_SCHEMA_MISMATCH",
+          message:
+            "Database schema is out of date. From the repo root run: pnpm --filter @repo/db exec prisma migrate deploy",
+        },
+      };
+    }
+
     const msg = error instanceof Error ? error.message : "Unknown error";
     const stack = error instanceof Error ? error.stack : undefined;
     logger.error("Unhandled error", { message: msg, stack });

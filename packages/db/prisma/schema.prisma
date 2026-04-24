@@ -32,6 +32,8 @@ model User {
   name         String
   username     String  @unique
   avatarUrl    String?
+  /// Set when the user uploads a profile picture to object storage; used to build public avatar URL.
+  profilePicUpdatedAt DateTime?
   bio          String? @db.VarChar(300)
 
   homeCountry         String? // ISO country code

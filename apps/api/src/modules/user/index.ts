@@ -1,5 +1,6 @@
 import Elysia, { t } from "elysia";
 import { authGuard } from "../../middleware/auth";
+import { AppError } from "../../middleware/errorHandler";
 import { userService } from "./service";
 
 const MeUser = t.Object({
@@ -23,7 +24,6 @@ const UpdateProfileBody = t.Object({
   username: t.Optional(t.String({ minLength: 3, maxLength: 30 })),
   bio: t.Optional(t.Union([t.String({ maxLength: 300 }), t.Null()])),
   socialOptIn: t.Optional(t.Boolean()),
-  avatarUrl: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
 });
 
 const PushTokenBody = t.Object({
@@ -70,7 +70,7 @@ export const userModule = new Elysia({ prefix: "/users" })
       const user = await userService.getProfile(userId);
       return { user };
     },
-    { response: MeResponse }
+    { response: MeResponse },
   )
   .patch(
     "/me",
@@ -78,20 +78,36 @@ export const userModule = new Elysia({ prefix: "/users" })
       const user = await userService.updateProfile(userId, body);
       return { user };
     },
-    { body: UpdateProfileBody, response: MeResponse }
+    { body: UpdateProfileBody, response: MeResponse },
+  )
+  .post(
+    "/me/profile-picture",
+    async ({ request, userId }) => {
+      const form = await request.formData();
+      const entry = (form as unknown as { get: (name: string) => unknown }).get(
+        "file",
+      );
+      if (!(entry instanceof Blob)) {
+        throw new AppError(400, "VALIDATION_ERROR", "Missing image file");
+      }
+      const user = await userService.uploadProfilePicture(userId, entry);
+      return { user };
+    },
+    { response: MeResponse },
   )
   .post(
     "/me/push-token",
     async ({ userId, body }) => {
       return userService.registerPushToken(userId, body.expoToken.trim());
     },
-    { body: PushTokenBody, response: PushTokenResponse }
+    { body: PushTokenBody, response: PushTokenResponse },
   )
   .get(
     "/:id",
-    async ({ userId, params }) => userService.getPublicProfileForViewer(userId, params.id),
+    async ({ userId, params }) =>
+      userService.getPublicProfileForViewer(userId, params.id),
     {
       params: t.Object({ id: t.String() }),
       response: PublicProfileResponse,
-    }
+    },
   );

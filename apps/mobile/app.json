@@ -52,6 +52,12 @@
           "icon": "./assets/images/ic_launcher_round.png",
           "color": "#208AEF"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos to update your profile picture."
+        }
       ]
     ],
     "experiments": {

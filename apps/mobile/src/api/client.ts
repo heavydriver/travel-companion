@@ -1,8 +1,8 @@
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@repo/api/src/app";
 import { createEdenTanStackQuery } from "eden-tanstack-react-query";
-import type { AuthUser } from "@/types/auth";
 import { useAuthStore } from "@/store/authStore";
+import type { AuthUser } from "@/types/auth";
 
 export const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:3000";
@@ -64,7 +64,7 @@ function isAuthPublicPath(url: string): boolean {
   }
 }
 
-function createAuthAwareFetch(): typeof globalThis.fetch {
+export function createAuthAwareFetch(): typeof globalThis.fetch {
   const impl = async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await fetch(input, init);
     if (response.status !== 401) {
@@ -110,8 +110,27 @@ function createAuthAwareFetch(): typeof globalThis.fetch {
   return impl as typeof globalThis.fetch;
 }
 
+/** Use for non-Eden requests (e.g. multipart uploads) so refresh + auth headers match the API client. */
+export const authAwareFetch = createAuthAwareFetch();
+
+/**
+ * Bearer (and ngrok interstitial bypass) for raw `fetch` calls.
+ * Do not set `Content-Type` when sending `FormData` — the runtime must add the multipart boundary.
+ */
+export function authHeadersForMultipart(): Record<string, string> {
+  const token = useAuthStore.getState().accessToken;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
+  }
+  if (apiBaseUrl.includes("ngrok")) {
+    headers["ngrok-skip-browser-warning"] = "69420";
+  }
+  return headers;
+}
+
 export const client = treaty<App>(apiBaseUrl, {
-  fetcher: createAuthAwareFetch(),
+  fetcher: authAwareFetch,
   headers() {
     const token = useAuthStore.getState().accessToken;
     if (token) {
