@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, User as UserIcon } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
+import { invalidateSocialGraphQueries } from "@/lib/socialQueries";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 
@@ -28,6 +29,14 @@ export default function UserProfileScreen() {
       router.replace("/profile" as never);
     }
   }, [userId, me?.id, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!accessToken || !userId || userId === me?.id) return;
+      void queryClient.invalidateQueries({ queryKey: ["user-public", userId] });
+      void invalidateSocialGraphQueries(queryClient);
+    }, [accessToken, me?.id, queryClient, userId]),
+  );
 
   const profileQuery = useQuery({
     queryKey: ["user-public", userId],
@@ -49,9 +58,7 @@ export default function UserProfileScreen() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["user-public", userId] });
-      void queryClient.invalidateQueries({ queryKey: ["social-nearby"] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-pending"] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-accepted"] });
+      void invalidateSocialGraphQueries(queryClient);
       showAppToast({ variant: "success", title: "Request sent" });
     },
     onError: () => {
@@ -69,9 +76,7 @@ export default function UserProfileScreen() {
     },
     onSuccess: (_, status) => {
       void queryClient.invalidateQueries({ queryKey: ["user-public", userId] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-pending"] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-accepted"] });
-      void queryClient.invalidateQueries({ queryKey: ["social-nearby"] });
+      void invalidateSocialGraphQueries(queryClient);
       showAppToast({
         variant: status === "ACCEPTED" ? "success" : "info",
         title: status === "ACCEPTED" ? "You are connected" : "Request declined",

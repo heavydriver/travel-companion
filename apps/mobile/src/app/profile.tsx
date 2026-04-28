@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ChevronLeft,
   Luggage,
@@ -26,6 +26,7 @@ import { apiBaseUrl, authAwareFetch, authHeadersForMultipart, client } from "@/a
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
+import { invalidateSocialGraphQueries } from "@/lib/socialQueries";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 
@@ -81,6 +82,14 @@ export default function ProfileScreen() {
       setTab(nextTab);
     }
   }, [params.tab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!accessToken) return;
+      void queryClient.invalidateQueries({ queryKey: ["users-me"] });
+      void invalidateSocialGraphQueries(queryClient);
+    }, [accessToken, queryClient]),
+  );
 
   const meQuery = useQuery({
     queryKey: ["users-me"],
@@ -195,9 +204,7 @@ export default function ProfileScreen() {
         });
       }
       void queryClient.invalidateQueries({ queryKey: ["users-me"] });
-      void queryClient.invalidateQueries({ queryKey: ["social-nearby"] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-pending"] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-accepted"] });
+      void invalidateSocialGraphQueries(queryClient);
       showAppToast({ variant: "success", title: "Profile photo updated" });
     },
     onError: (e) => {
@@ -286,8 +293,7 @@ export default function ProfileScreen() {
       return res.data;
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["social-nearby"] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-pending"] });
+      void invalidateSocialGraphQueries(queryClient);
       showAppToast({ variant: "success", title: "Request sent" });
     },
     onError: () => {
@@ -304,9 +310,20 @@ export default function ProfileScreen() {
       return res.data;
     },
     onSuccess: (_, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["connections-pending"] });
-      void queryClient.invalidateQueries({ queryKey: ["connections-accepted"] });
-      void queryClient.invalidateQueries({ queryKey: ["social-nearby"] });
+      if (variables.status === "ACCEPTED") {
+        queryClient.setQueryData<{ user: typeof user }>(["users-me"], (current) => {
+          if (!current?.user) return current;
+          return {
+            ...current,
+            user: {
+              ...current.user,
+              friendCount: current.user.friendCount + 1,
+            },
+          };
+        });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["users-me"] });
+      void invalidateSocialGraphQueries(queryClient);
       showAppToast({
         variant: variables.status === "ACCEPTED" ? "success" : "info",
         title: variables.status === "ACCEPTED" ? "Request accepted" : "Request declined",

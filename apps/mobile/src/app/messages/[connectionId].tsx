@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Check, CheckCheck, ChevronLeft, Send, User as UserIcon } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Pressable,
   Text,
@@ -15,6 +16,7 @@ import {
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { invalidateMessageQueries } from "@/lib/socialQueries";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 
@@ -35,7 +37,20 @@ type ConnectionInboxRow = {
     username: string;
     avatarUrl: string | null;
   };
+  lastMessage: {
+    content: string;
+    createdAt: string;
+    senderId: string;
+  } | null;
   unreadCount: number;
+};
+
+type MessagesResponse = {
+  messages: MessageItem[];
+};
+
+type ConnectionsResponse = {
+  connections: ConnectionInboxRow[];
 };
 
 function formatMessageDay(iso: string) {
@@ -59,6 +74,7 @@ export default function MessageThreadScreen() {
   const isConnected = useNetworkStore((s) => s.isConnected);
   const [draft, setDraft] = useState("");
   const flatListRef = useRef<FlatList>(null);
+  const lastMarkedMessageIdRef = useRef<string | null>(null);
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : "hsl(220 20% 10%)";
 
@@ -72,8 +88,12 @@ export default function MessageThreadScreen() {
       return res.data;
     },
     enabled: !!connectionId,
-    refetchInterval: 5000,
   });
+  const {
+    data: messagesData,
+    isLoading: isMessagesLoading,
+    refetch: refetchMessages,
+  } = messagesQuery;
 
   const connectionQuery = useQuery({
     queryKey: ["connections-accepted"],
@@ -84,6 +104,13 @@ export default function MessageThreadScreen() {
     },
     enabled: !!connectionId,
   });
+  const { data: connectionData, refetch: refetchConnections } = connectionQuery;
+
+  const syncThread = useCallback(() => {
+    if (!connectionId) return;
+    void refetchMessages();
+    void refetchConnections();
+  }, [connectionId, refetchConnections, refetchMessages]);
 
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -94,23 +121,71 @@ export default function MessageThreadScreen() {
       if (res.error) throw new Error("Failed to send message");
       return res.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["messages", connectionId] });
-      queryClient.invalidateQueries({ queryKey: ["connections-accepted"] });
+    onSuccess: ({ message }) => {
+      queryClient.setQueryData<MessagesResponse>(["messages", connectionId], (current) => ({
+        messages: [...(current?.messages ?? []), message],
+      }));
+      queryClient.setQueryData<ConnectionsResponse>(["connections-accepted"], (current) => {
+        if (!current) return current;
+        return {
+          connections: current.connections.map((row) =>
+            row.id === connectionId
+              ? {
+                  ...row,
+                  lastMessage: {
+                    content: message.content,
+                    createdAt: message.createdAt,
+                    senderId: message.senderId,
+                  },
+                }
+              : row,
+          ),
+        };
+      });
+      void refetchConnections();
       setDraft("");
     },
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    if (!connectionId) return;
-    client.api.v1.messages["mark-read"].patch({ connectionId }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["connections-accepted"] });
-    }).catch(() => {});
-  }, [connectionId, messagesQuery.data]);
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        syncThread();
+      }
+    });
 
-  const messages = (messagesQuery.data?.messages ?? []) as MessageItem[];
-  const connection = (connectionQuery.data?.connections ?? []).find(
+    return () => sub.remove();
+  }, [syncThread]);
+
+  useFocusEffect(
+    useCallback(() => {
+      syncThread();
+    }, [syncThread]),
+  );
+
+  useEffect(() => {
+    if (!connectionId || !currentUserId) return;
+
+    const unreadIncoming = (messagesData?.messages ?? []).filter(
+      (message) => message.senderId !== currentUserId && !message.readAt,
+    );
+    const latestUnread = unreadIncoming.at(-1);
+    if (!latestUnread) return;
+    if (lastMarkedMessageIdRef.current === latestUnread.id) return;
+
+    lastMarkedMessageIdRef.current = latestUnread.id;
+    client.api.v1.messages["mark-read"]
+      .patch({ connectionId })
+      .then(() => {
+        void invalidateMessageQueries(queryClient, connectionId);
+      })
+      .catch(() => {
+        lastMarkedMessageIdRef.current = null;
+      });
+  }, [connectionId, currentUserId, messagesData?.messages, queryClient]);
+
+  const messages = (messagesData?.messages ?? []) as MessageItem[];
+  const connection = (connectionData?.connections ?? []).find(
     (row: ConnectionInboxRow) => row.id === connectionId,
   ) as ConnectionInboxRow | undefined;
   const canSend = draft.trim().length > 0 && !sendMutation.isPending && isConnected;
@@ -147,7 +222,11 @@ export default function MessageThreadScreen() {
 
             <View className="h-12 w-12 overflow-hidden rounded-full border border-primary/10 bg-muted">
               {connection?.user.avatarUrl ? (
-                <Image source={{ uri: connection.user.avatarUrl }} style={{ width: 48, height: 48 }} contentFit="cover" />
+                <Image
+                  source={{ uri: connection.user.avatarUrl }}
+                  style={{ width: 48, height: 48 }}
+                  contentFit="cover"
+                />
               ) : (
                 <View className="h-full w-full items-center justify-center">
                   <UserIcon size={22} color="hsl(218 11% 65%)" />
@@ -159,14 +238,16 @@ export default function MessageThreadScreen() {
               <Text className="text-lg font-semibold text-foreground" numberOfLines={1}>
                 {connection?.user.name ?? "Messages"}
               </Text>
-              <Text className={`mt-0.5 text-sm ${isConnected ? "text-muted-foreground" : "text-destructive"}`}>
+              <Text
+                className={`mt-0.5 text-sm ${isConnected ? "text-muted-foreground" : "text-destructive"}`}
+              >
                 {isConnected ? "Active conversation" : "Offline - reconnect to sync"}
               </Text>
             </View>
           </View>
         </View>
 
-        {messagesQuery.isLoading && (
+        {isMessagesLoading && (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator />
           </View>
@@ -205,7 +286,9 @@ export default function MessageThreadScreen() {
                         : "rounded-[22px] rounded-bl-md border border-border/70 bg-card"
                     }`}
                   >
-                    <Text className={`text-[15px] leading-5 ${isMe ? "text-primary-foreground" : "text-foreground"}`}>
+                    <Text
+                      className={`text-[15px] leading-5 ${isMe ? "text-primary-foreground" : "text-foreground"}`}
+                    >
                       {item.content}
                     </Text>
                     <View className="mt-1.5 flex-row items-center justify-end gap-1">
@@ -224,7 +307,7 @@ export default function MessageThreadScreen() {
             );
           }}
           ListEmptyComponent={
-            !messagesQuery.isLoading ? (
+            !isMessagesLoading ? (
               <View className="flex-1 items-center justify-center px-8 py-16">
                 <View className="rounded-[28px] border border-border bg-card px-6 py-8">
                   <Text className="text-center text-base font-semibold text-foreground">

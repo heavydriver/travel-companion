@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { ChevronLeft, MessageCircle, User as UserIcon } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
+import { useCallback } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
@@ -56,6 +57,13 @@ export default function MessagesInboxScreen() {
       return res.data;
     },
   });
+  const { refetch } = query;
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
 
   const rows = [...((query.data?.connections ?? []) as InboxRow[])].sort((a, b) => {
     const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
