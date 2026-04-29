@@ -6,6 +6,7 @@ import * as SelectPrimitive from '@rn-primitives/select';
 import { Check, ChevronDown, ChevronDownIcon, ChevronUpIcon } from 'lucide-react-native';
 import * as React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { FadeIn, FadeOut } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
@@ -232,9 +233,22 @@ function SelectScrollDownButton({
   );
 }
 
-
+/**
+ * @platform Native only — on web, renders children without an extra scroll container.
+ * Use inside `SelectContent` when the option list is long (see reactnativereusables select scrollable).
+ */
+function NativeSelectScrollView({
+  className,
+  ...props
+}: React.ComponentProps<typeof ScrollView>) {
+  if (Platform.OS === 'web') {
+    return <>{props.children}</>;
+  }
+  return <ScrollView className={cn('max-h-52', className)} {...props} />;
+}
 
 export {
+  NativeSelectScrollView,
   Select,
   SelectContent,
   SelectGroup,

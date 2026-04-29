@@ -3,6 +3,7 @@ import { authGuard } from "../../middleware/auth";
 import {
   CreateTripBody,
   MessageResponse,
+  TripListQuery,
   TripListResponse,
   TripResponse,
   UpdateTripBody,
@@ -13,11 +14,13 @@ export const tripModule = new Elysia({ prefix: "/trips" })
   .use(authGuard)
   .get(
     "/",
-    async ({ userId }) => {
-      const trips = await tripService.list(userId);
+    async ({ userId, query }) => {
+      const trips = await tripService.list(userId, {
+        destinationId: query.destinationId,
+      });
       return { trips };
     },
-    { response: TripListResponse },
+    { query: TripListQuery, response: TripListResponse },
   )
   .post(
     "/",

@@ -1,136 +1,171 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Send } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { client } from "@/api/client";
 import { Screen } from "@/components/shared/Screen";
+import { useAuthStore } from "@/store/authStore";
+import { useNetworkStore } from "@/store/networkStore";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-type MessageItem = {
+type ApiMessage = {
   id: string;
-  sender: "me" | "them";
-  body: string;
-  sentAt: string;
-  readAt?: string;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  readAt: string | null;
+  createdAt: string;
 };
-
-const INITIAL_MESSAGES: MessageItem[] = [
-  {
-    id: "m-1",
-    sender: "them",
-    body: "Hey! Are you free to explore the market tonight?",
-    sentAt: "10:04",
-    readAt: "10:06",
-  },
-  {
-    id: "m-2",
-    sender: "me",
-    body: "Yes, sounds great. 7pm works for me.",
-    sentAt: "10:06",
-    readAt: "10:07",
-  },
-];
 
 export default function MessageThreadScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const params = useLocalSearchParams<{ connectionId?: string }>();
+  const connectionId = params.connectionId ?? "";
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const isConnected = useNetworkStore((s) => s.isConnected);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
-  const [lastPolledAt, setLastPolledAt] = useState<Date | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+
+  const messagesQuery = useQuery({
+    queryKey: ["messages", connectionId],
+    queryFn: async () => {
+      const res = await client.api.v1.messages.get({
+        query: { connectionId },
+      });
+      if (res.error) throw new Error("Failed to load messages");
+      return res.data;
+    },
+    enabled: !!connectionId,
+    refetchInterval: 5000,
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const res = await client.api.v1.messages.post({
+        connectionId,
+        content,
+      });
+      if (res.error) throw new Error("Failed to send message");
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages", connectionId] });
+      setDraft("");
+    },
+  });
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setLastPolledAt(new Date());
-    }, 10000);
+    if (!connectionId) return;
+    client.api.v1.messages["mark-read"].patch({ connectionId }).catch(() => {});
+  }, [connectionId, messagesQuery.data]);
 
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    setMessages((prev) =>
-      prev.map((message) =>
-        message.sender === "them" && !message.readAt
-          ? {
-              ...message,
-              readAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            }
-          : message,
-      ),
-    );
-  }, []);
-
-  const canSend = draft.trim().length > 0;
-  const readLabel = useMemo(() => {
-    const mine = [...messages].reverse().find((message) => message.sender === "me");
-    if (!mine) return "";
-    return mine.readAt ? "Read" : "Sent";
-  }, [messages]);
+  const messages = (messagesQuery.data?.messages ?? []) as MessageItem[];
+  const canSend = draft.trim().length > 0 && !sendMutation.isPending && isConnected;
 
   const handleSend = () => {
     if (!canSend) return;
-    const next: MessageItem = {
-      id: `m-${messages.length + 1}`,
-      sender: "me",
-      body: draft.trim(),
-      sentAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessages((prev) => [...prev, next]);
-    setDraft("");
+    sendMutation.mutate(draft.trim());
+  };
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   return (
-    <Screen contentClassName="pb-0">
+    <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-background">
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        className="flex-1"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
       >
-        <View className="flex-1">
-          <Pressable onPress={() => router.back()} className="active:opacity-80">
+        <View className="flex-row items-center border-b border-border px-2 py-2">
+          <Pressable onPress={() => router.back()} className="px-2 py-2 active:opacity-80">
             <Text className="text-base font-medium text-primary">Back</Text>
           </Pressable>
 
-          <View className="mt-4 rounded-2xl border border-border bg-card p-4">
-            <Text className="text-lg font-semibold text-foreground">Message Thread</Text>
-            <Text className="mt-1 text-xs text-muted-foreground">
-              Connection: {params.connectionId ?? "unknown"}
-            </Text>
-            <Text className="mt-1 text-xs text-muted-foreground">
-              Polling every 10s {lastPolledAt ? `· last checked ${lastPolledAt.toLocaleTimeString()}` : ""}
-            </Text>
+          <View className="mt-3 rounded-2xl border border-border bg-card px-4 py-3">
+            <Text className="text-lg font-semibold text-foreground">Messages</Text>
+            {!isConnected && (
+              <Text className="mt-1 text-xs text-destructive">
+                Offline — messages will load when you reconnect
+              </Text>
+            )}
           </View>
+        </View>
 
-          <View className="mt-4 flex-1 gap-2">
-            {messages.map((message) => (
-              <View
-                key={message.id}
-                className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                  message.sender === "me"
-                    ? "self-end bg-primary"
-                    : "self-start border border-border bg-card"
-                }`}
-              >
-                <Text
-                  className={message.sender === "me" ? "text-primary-foreground" : "text-foreground"}
-                >
-                  {message.body}
-                </Text>
-                <Text
-                  className={`mt-1 text-[11px] ${
-                    message.sender === "me" ? "text-primary-foreground/80" : "text-muted-foreground"
+          {messagesQuery.isLoading && (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator />
+            </View>
+          )}
+
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            contentContainerClassName="gap-2 py-4"
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+            renderItem={({ item }) => {
+              const isMe = item.senderId === currentUserId;
+              return (
+                <View
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    isMe
+                      ? "self-end bg-primary"
+                      : "self-start border border-border bg-card"
                   }`}
                 >
-                  {message.sentAt}
-                </Text>
-              </View>
-            ))}
-          </View>
+                  <Text className={isMe ? "text-primary-foreground" : "text-foreground"}>
+                    {item.content}
+                  </Text>
+                  <View className="mt-1 flex-row items-center gap-1">
+                    <Text
+                      className={`text-[11px] ${
+                        isMe ? "text-primary-foreground/80" : "text-muted-foreground"
+                      }`}
+                    >
+                      {formatTime(item.createdAt)}
+                    </Text>
+                    {isMe && item.readAt && (
+                      <Text className="text-[11px] text-primary-foreground/80">· Read</Text>
+                    )}
+                  </View>
+                </View>
+              );
+            }}
+            ListEmptyComponent={
+              !messagesQuery.isLoading ? (
+                <View className="items-center py-12">
+                  <Text className="text-sm text-muted-foreground">
+                    No messages yet. Say hello!
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
 
           <View className="border-t border-border bg-background pb-5 pt-3">
             <View className="flex-row items-center gap-2">
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
-                placeholder="Type your message"
+                placeholder={isConnected ? "Type your message" : "You're offline"}
                 placeholderTextColor="hsl(218 11% 65%)"
+                editable={isConnected}
                 className="min-h-12 flex-1 rounded-xl border border-border bg-card px-4 text-foreground"
+                onSubmitEditing={handleSend}
               />
               <Pressable
                 onPress={handleSend}
@@ -142,10 +177,8 @@ export default function MessageThreadScreen() {
                 <Send size={18} color={canSend ? "white" : "hsl(218 11% 65%)"} />
               </Pressable>
             </View>
-            <Text className="mt-2 text-right text-xs text-muted-foreground">{readLabel}</Text>
           </View>
-        </View>
       </KeyboardAvoidingView>
-    </Screen>
+    </SafeAreaView>
   );
 }

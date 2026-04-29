@@ -14,16 +14,22 @@ export function useLanguagesQuery() {
   });
 }
 
-export function useLanguagePhrasesInfiniteQuery(languageId: string | null) {
+export function useLanguagePhrasesInfiniteQuery(
+  languageId: string | null,
+  destinationId?: string | null,
+) {
   return useInfiniteQuery({
-    queryKey: ["languages", "phrases", languageId],
+    queryKey: ["languages", "phrases", languageId, destinationId ?? ""],
     enabled: Boolean(languageId),
     initialPageParam: 1,
     queryFn: async ({ pageParam }) => {
       if (!languageId) throw new Error("Language is required");
       const page = typeof pageParam === "number" ? pageParam : 1;
       const res = await client.api.v1.languages({ languageId }).phrases.get({
-        query: { page },
+        query: {
+          page,
+          ...(destinationId ? { destinationId } : {}),
+        },
       });
       if (res.error) throw new Error("Failed to load phrases");
       return res.data as PhraseListResponse;

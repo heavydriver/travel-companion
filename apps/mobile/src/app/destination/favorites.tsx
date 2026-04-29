@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDestinationFavorites } from "@/features/destination/favorites";
 
 export default function FavoriteDestinationsScreen() {
@@ -32,24 +33,27 @@ export default function FavoriteDestinationsScreen() {
             </View>
           ) : (
             <View className="gap-3">
-              {favoriteDestinations.map((destination) => (
-                <Pressable
-                  key={destination.id}
-                  onPress={() => router.push(`/destination/${destination.id}` as never)}
-                  className="rounded-2xl border border-border bg-card px-4 py-3 active:opacity-85"
-                >
-                  <Text className="text-lg font-semibold text-foreground">
-                    {destination.country &&
-                    destination.name.trim().toLowerCase() !==
-                      destination.country.trim().toLowerCase()
-                      ? `${destination.name}, ${destination.country}`
-                      : destination.name}
-                  </Text>
-                  {destination.region ? (
-                    <Text className="mt-1 text-sm text-muted-foreground">{destination.region}</Text>
-                  ) : null}
-                </Pressable>
-              ))}
+              {favoriteDestinations.map((destination) => {
+                const title =
+                  destination.country &&
+                  destination.name.trim().toLowerCase() !==
+                    destination.country.trim().toLowerCase()
+                    ? `${destination.name}, ${destination.country}`
+                    : destination.name;
+                const subtitle =
+                  title === destination.name && destination.country.trim().length > 0
+                    ? destination.country
+                    : null;
+                return (
+                  <PlaceCard
+                    key={destination.id}
+                    title={title}
+                    subtitle={subtitle}
+                    imageUrl={destination.imageUrl}
+                    onPress={() => router.push(`/destination/${destination.id}` as never)}
+                  />
+                );
+              })}
             </View>
           )}
         </View>

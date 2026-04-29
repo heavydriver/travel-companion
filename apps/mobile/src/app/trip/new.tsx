@@ -1,23 +1,18 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { zodResolver } from "@hookform/resolvers/zod";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Calendar, ChevronLeft, MapPin, Search, X } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useEffect, useState } from "react";
-import { useForm, Controller } from "react-hook-form";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Controller, useForm } from "react-hook-form";
+import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
 import { z } from "zod";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
+import { useDebounce } from "@/hooks/useDebounce";
+import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { Screen } from "@/components/shared/Screen";
 import { formatDate } from "@/lib/utils";
 
@@ -110,7 +105,8 @@ export default function NewTripScreen() {
     },
   });
 
-  const onSubmit = handleSubmit((values) => createMutation.mutate(values));
+  const { guardAction } = useOfflineGuard();
+  const onSubmit = handleSubmit((values) => guardAction(() => createMutation.mutate(values)));
 
   const selectDestination = (dest: Destination) => {
     setSelectedDest(dest);
@@ -155,9 +151,7 @@ export default function NewTripScreen() {
             <ChevronLeft size={20} color={iconColor} />
             <Text className="text-base font-medium text-primary">Cancel</Text>
           </Pressable>
-          <Text className="flex-1 text-center text-lg font-bold text-foreground">
-            New Trip
-          </Text>
+          <Text className="flex-1 text-center text-lg font-bold text-foreground">New Trip</Text>
           <View className="w-14" />
         </View>
 
@@ -170,12 +164,8 @@ export default function NewTripScreen() {
             <View className="flex-row items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3">
               <MapPin size={18} color={iconColor} />
               <View className="flex-1">
-                <Text className="text-base font-semibold text-foreground">
-                  {selectedDest.name}
-                </Text>
-                <Text className="text-sm text-muted-foreground">
-                  {selectedDest.country}
-                </Text>
+                <Text className="text-base font-semibold text-foreground">{selectedDest.name}</Text>
+                <Text className="text-sm text-muted-foreground">{selectedDest.country}</Text>
               </View>
               <Pressable onPress={clearDestination} className="active:opacity-80">
                 <X size={18} color={mutedColor} />
@@ -199,9 +189,7 @@ export default function NewTripScreen() {
               />
             </View>
             {errors.destinationId && (
-              <Text className="text-sm text-destructive">
-                {errors.destinationId.message}
-              </Text>
+              <Text className="text-sm text-destructive">{errors.destinationId.message}</Text>
             )}
 
             {showResults && searchQuery.length >= 2 && (
@@ -219,9 +207,7 @@ export default function NewTripScreen() {
                   >
                     <MapPin size={18} color={mutedColor} />
                     <View>
-                      <Text className="text-base font-medium text-foreground">
-                        {dest.name}
-                      </Text>
+                      <Text className="text-base font-medium text-foreground">{dest.name}</Text>
                       <Text className="text-sm text-muted-foreground">
                         {(dest as Destination).country}
                       </Text>
@@ -255,9 +241,7 @@ export default function NewTripScreen() {
               />
             )}
           />
-          {errors.title && (
-            <Text className="text-sm text-destructive">{errors.title.message}</Text>
-          )}
+          {errors.title && <Text className="text-sm text-destructive">{errors.title.message}</Text>}
         </View>
 
         {/* Dates */}
@@ -269,7 +253,9 @@ export default function NewTripScreen() {
               className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
             >
               <Calendar size={16} color={mutedColor} />
-              <Text className={`text-base ${startDate ? "text-foreground" : "text-muted-foreground"}`}>
+              <Text
+                className={`text-base ${startDate ? "text-foreground" : "text-muted-foreground"}`}
+              >
                 {startDate ? formatDate(startDate) : "Select"}
               </Text>
             </Pressable>
@@ -291,9 +277,7 @@ export default function NewTripScreen() {
               />
             )}
             {errors.startDate && (
-              <Text className="text-sm text-destructive">
-                {errors.startDate.message}
-              </Text>
+              <Text className="text-sm text-destructive">{errors.startDate.message}</Text>
             )}
           </View>
 
@@ -304,7 +288,9 @@ export default function NewTripScreen() {
               className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
             >
               <Calendar size={16} color={mutedColor} />
-              <Text className={`text-base ${endDate ? "text-foreground" : "text-muted-foreground"}`}>
+              <Text
+                className={`text-base ${endDate ? "text-foreground" : "text-muted-foreground"}`}
+              >
                 {endDate ? formatDate(endDate) : "Select"}
               </Text>
             </Pressable>
@@ -323,9 +309,7 @@ export default function NewTripScreen() {
               />
             )}
             {errors.endDate && (
-              <Text className="text-sm text-destructive">
-                {errors.endDate.message}
-              </Text>
+              <Text className="text-sm text-destructive">{errors.endDate.message}</Text>
             )}
           </View>
         </View>
@@ -334,8 +318,8 @@ export default function NewTripScreen() {
         {selectedDest && startDate && endDate && (
           <View className="rounded-xl border border-border bg-card/50 px-4 py-3">
             <Text className="text-sm text-muted-foreground">
-              {Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1} days
-              {" "}in {selectedDest.name}, {selectedDest.country}
+              {Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1}{" "}
+              days in {selectedDest.name}, {selectedDest.country}
             </Text>
           </View>
         )}

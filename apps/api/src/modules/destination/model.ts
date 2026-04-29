@@ -42,6 +42,17 @@ export const PopularDestinationsResponse = t.Object({
   destinations: t.Array(PopularDestinationSummaryShape),
 });
 
+export const DestinationLanguageLinkShape = t.Object({
+  id: t.String(),
+  isPrimary: t.Boolean(),
+  language: t.Object({
+    id: t.String(),
+    name: t.String(),
+    isoCode: t.String(),
+    nativeName: t.String(),
+  }),
+});
+
 export const DestinationDetailResponse = t.Object({
   destination: t.Object({
     id: t.String(),
@@ -64,6 +75,7 @@ export const DestinationDetailResponse = t.Object({
     adminCode: t.Nullable(t.String()),
     m49Code: t.Nullable(t.String()),
     searchAliases: t.Nullable(t.Any()),
+    languages: t.Array(DestinationLanguageLinkShape),
   }),
   curatedPlaces: t.Array(
     t.Object({
@@ -83,6 +95,7 @@ export const DestinationDetailResponse = t.Object({
       priceLevel: t.Nullable(t.Number()),
       address: t.Nullable(t.String()),
       city: t.Nullable(t.String()),
+      openingHours: t.Nullable(t.Any()),
     })
   ),
   otherPlaces: t.Array(
@@ -103,6 +116,7 @@ export const DestinationDetailResponse = t.Object({
       priceLevel: t.Nullable(t.Number()),
       address: t.Nullable(t.String()),
       city: t.Nullable(t.String()),
+      openingHours: t.Nullable(t.Any()),
     })
   ),
 });

@@ -31,9 +31,15 @@ function formatTrip(trip: {
 }
 
 export const tripService = {
-  async list(userId: string) {
+  async list(userId: string, filters?: { destinationId?: string }) {
     const trips = await prisma.trip.findMany({
-      where: { ownerId: userId, deletedAt: null },
+      where: {
+        ownerId: userId,
+        deletedAt: null,
+        ...(filters?.destinationId
+          ? { destinationId: filters.destinationId }
+          : {}),
+      },
       select: tripSelect,
       orderBy: { startDate: "desc" },
     });

@@ -3,3 +3,6 @@ packages:
   - packages/*
 
 nodeLinker: hoisted
+
+patchedDependencies:
+  '@react-navigation/routers@7.5.3': patches/@react-navigation__routers@7.5.3.patch

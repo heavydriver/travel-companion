@@ -1,3 +1,17 @@
+# [1.3.0](https://github.com/heavydriver/travel-companion/compare/api-v1.2.1...api-v1.3.0) (2026-04-20)
+
+
+### Features
+
+* TanStack offline persistence, wire social/messaging to API, offline mutation guards, open in maps ([#33](https://github.com/heavydriver/travel-companion/issues/33)) ([5d5643f](https://github.com/heavydriver/travel-companion/commit/5d5643f5431088f18d15f70930577eda197a6307))
+
+## [1.2.1](https://github.com/heavydriver/travel-companion/compare/api-v1.2.0...api-v1.2.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* imageurl for destination routes ([3251710](https://github.com/heavydriver/travel-companion/commit/32517104e4d12acfd9b112407120ca5dc7f585d3))
+
 # [1.2.0](https://github.com/heavydriver/travel-companion/compare/api-v1.1.2...api-v1.2.0) (2026-04-13)
 
 

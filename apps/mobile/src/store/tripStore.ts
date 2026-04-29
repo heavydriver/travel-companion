@@ -14,15 +14,19 @@ export type Trip = {
   };
 };
 
+/** Trip not fully ended (end instant ≥ now). Includes upcoming-only trips. */
 export function getEligibleTripForDestination(trips: Trip[], destinationId: string) {
-  const today = new Date();
+  const now = new Date();
   return trips
     .filter(
       (trip) =>
-        trip.destination.id === destinationId &&
-        new Date(trip.endDate) >= today,
+        trip.destination.id === destinationId && new Date(trip.endDate).getTime() >= now.getTime(),
     )
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0];
+}
+
+export function hasEligibleTripForDestination(trips: Trip[], destinationId: string): boolean {
+  return getEligibleTripForDestination(trips, destinationId) != null;
 }
 
 type TripState = {
