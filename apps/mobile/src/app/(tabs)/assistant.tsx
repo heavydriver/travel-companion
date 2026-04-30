@@ -1,3 +1,4 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   Bot,
   CircleDashed,
@@ -9,6 +10,7 @@ import {
   Sparkles,
 } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -24,13 +26,21 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { RichTextMessage } from "@/components/assistant/RichTextMessage";
+import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal";
 import { Button } from "@/components/shared/Button";
+import { IOSDateTimePickerModal } from "@/components/shared/IOSDateTimePickerModal";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import {
+  buildAssistantGrounding,
+  buildAssistantReferences,
+  type AssistantReference,
+} from "@/features/assistant/grounding";
+import { client } from "@/api/client";
 import { queryClient } from "@/lib/queryClient";
-import { cn } from "@/lib/utils";
+import { cn, formatDate, formatDateRange } from "@/lib/utils";
 import { runAssistantCompletion } from "@/llm/chatEngine";
 import { pauseModelDownload, resumeModelDownload, startModelDownload } from "@/llm/modelManager";
-import { proposalCanBeConfirmed } from "@/llm/plannerSchema";
+import type { PlannerProposal } from "@/llm/plannerSchema";
 import { queuePlannerProposal, syncPendingPlannerOperations } from "@/llm/plannerSync";
 import type { PendingPlannerOperation } from "@/store/assistantStore";
 import { useAssistantStore } from "@/store/assistantStore";
@@ -69,84 +79,446 @@ function bytesLabel(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(bytes > 1024 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 
+function isCurrencyQuestion(value: string) {
+  const normalized = normalizeForCompare(value);
+  return (
+    normalized.includes("currency") ||
+    normalized.includes("exchange") ||
+    normalized.includes("exchange rate") ||
+    normalized.includes("conversion") ||
+    normalized.includes("convert ") ||
+    normalized.includes("rate ") ||
+    normalized.includes("how much")
+  );
+}
+
+function buildDirectCurrencyReply(summary: string) {
+  return `## Latest Currency Info\n\n${summary}\n\n_Source: live currency data from app backend._`;
+}
+
+function normalizeForCompare(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sameDestinationName(left?: string | null, right?: string | null) {
+  return Boolean(left && right && normalizeForCompare(left) === normalizeForCompare(right));
+}
+
+function parseIsoDate(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateOnlyIso(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function atStartOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function diffDays(from: Date, to: Date) {
+  const fromStart = atStartOfDay(from).getTime();
+  const toStart = atStartOfDay(to).getTime();
+  return Math.round((toStart - fromStart) / (1000 * 60 * 60 * 24));
+}
+
+function deriveProposalRange(proposal: PlannerProposal) {
+  const startDate =
+    parseIsoDate(proposal.startDate) ??
+    proposal.itineraryItems.map((item) => parseIsoDate(item.date)).find(Boolean) ??
+    null;
+  const endDate =
+    parseIsoDate(proposal.endDate) ??
+    [...proposal.itineraryItems]
+      .reverse()
+      .map((item) => parseIsoDate(item.date))
+      .find(Boolean) ??
+    startDate;
+
+  return {
+    startDate,
+    endDate: endDate ?? startDate,
+  };
+}
+
+function applyProposalDateWindow(proposal: PlannerProposal, startDate: Date, endDate: Date) {
+  const originalRange = deriveProposalRange(proposal);
+  const originalStart = originalRange.startDate ?? startDate;
+
+  return {
+    ...proposal,
+    startDate: dateOnlyIso(startDate),
+    endDate: dateOnlyIso(endDate),
+    itineraryItems: proposal.itineraryItems.map((item) => {
+      const originalItemDate = parseIsoDate(item.date);
+      const offsetDays = originalItemDate ? diffDays(originalStart, originalItemDate) : 0;
+      return {
+        ...item,
+        date: dateOnlyIso(addDays(startDate, offsetDays)),
+      };
+    }),
+  };
+}
+
+function tripCoversDateRange(
+  trip: { startDate: string; endDate: string },
+  startDate: Date,
+  endDate: Date,
+) {
+  const tripStart = parseIsoDate(trip.startDate);
+  const tripEnd = parseIsoDate(trip.endDate);
+  if (!tripStart || !tripEnd) return false;
+  return atStartOfDay(startDate) >= atStartOfDay(tripStart) && atStartOfDay(endDate) <= atStartOfDay(tripEnd);
+}
+
+function defaultItineraryDateForTrip(trip: { startDate: string; endDate: string }) {
+  const today = atStartOfDay(new Date());
+  const tripStart = parseIsoDate(trip.startDate);
+  const tripEnd = parseIsoDate(trip.endDate);
+
+  if (!tripStart || !tripEnd) {
+    return today;
+  }
+  if (today < atStartOfDay(tripStart)) {
+    return tripStart;
+  }
+  if (today > atStartOfDay(tripEnd)) {
+    return tripStart;
+  }
+  return today;
+}
+
+function ProposalDateField({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: Date;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-1 rounded-2xl border border-border bg-background px-3 py-3"
+    >
+      <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Text>
+      <Text className="mt-2 text-sm font-semibold text-foreground">{formatDate(value)}</Text>
+    </Pressable>
+  );
+}
+
+function ProposalActionDatePicker({
+  visible,
+  title,
+  value,
+  minimumDate,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  title: string;
+  value: Date;
+  minimumDate?: Date;
+  onCancel: () => void;
+  onConfirm: (date: Date) => void;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  if (Platform.OS === "ios") {
+    return (
+      <IOSDateTimePickerModal
+        visible={visible}
+        title={title}
+        value={value}
+        mode="date"
+        minimumDate={minimumDate}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />
+    );
+  }
+
+  return (
+    <DateTimePicker
+      value={value}
+      mode="date"
+      minimumDate={minimumDate}
+      display="default"
+      onChange={(_, date) => {
+        onCancel();
+        if (date) {
+          onConfirm(date);
+        }
+      }}
+    />
+  );
+}
+
+function PlanProposalCard({
+  proposal,
+  activeTrip,
+  isConnected,
+  creating,
+  addingToItinerary,
+  onCreateTrip,
+  onAddToCurrentTrip,
+}: {
+  proposal: PlannerProposal;
+  activeTrip: { title: string; startDate: string; endDate: string; destination: { name: string } } | null;
+  isConnected: boolean;
+  creating: boolean;
+  addingToItinerary: boolean;
+  onCreateTrip: (proposal: PlannerProposal) => void;
+  onAddToCurrentTrip?: (proposal: PlannerProposal) => void;
+}) {
+  const initialRange = useMemo(() => deriveProposalRange(proposal), [proposal]);
+  const [startDate, setStartDate] = useState<Date>(initialRange.startDate ?? new Date());
+  const [endDate, setEndDate] = useState<Date>(
+    initialRange.endDate ?? initialRange.startDate ?? addDays(new Date(), 2),
+  );
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+
+  useEffect(() => {
+    const nextStart = initialRange.startDate ?? new Date();
+    const nextEnd = initialRange.endDate ?? initialRange.startDate ?? addDays(nextStart, 2);
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+  }, [initialRange.endDate, initialRange.startDate, proposal.destinationName, proposal.title]);
+
+  const adjustedProposal = applyProposalDateWindow(
+    proposal,
+    startDate,
+    endDate < startDate ? startDate : endDate,
+  );
+  const canCreateTrip = Boolean(adjustedProposal.destinationName && adjustedProposal.startDate && adjustedProposal.endDate);
+  const canAddToCurrentTrip =
+    Boolean(activeTrip) &&
+    sameDestinationName(activeTrip?.destination.name, proposal.destinationName) &&
+    tripCoversDateRange(activeTrip!, startDate, endDate);
+
+  return (
+    <View className="mt-3 w-full rounded-3xl border border-border bg-card p-4">
+      <View className="flex-row items-center gap-2">
+        <PlaneTakeoff size={18} color="#208AEF" />
+        <Text className="flex-1 text-base font-semibold text-foreground">{proposal.title}</Text>
+      </View>
+
+      <Text className="mt-2 text-sm text-muted-foreground">
+        {proposal.destinationName}
+        {proposal.country ? ` · ${proposal.country}` : ""}
+      </Text>
+      <Text className="mt-1 text-sm text-muted-foreground">
+        {formatDateRange(startDate, endDate)}
+      </Text>
+      <Text className="mt-3 text-sm leading-6 text-foreground">{proposal.summary}</Text>
+
+      <View className="mt-4 flex-row gap-3">
+        <ProposalDateField label="Start" value={startDate} onPress={() => setShowStartPicker(true)} />
+        <ProposalDateField label="End" value={endDate} onPress={() => setShowEndPicker(true)} />
+      </View>
+
+      <ProposalActionDatePicker
+        visible={showStartPicker}
+        title="Plan Start Date"
+        value={startDate}
+        onCancel={() => setShowStartPicker(false)}
+        onConfirm={(date) => {
+          setShowStartPicker(false);
+          setStartDate(date);
+          if (date > endDate) {
+            setEndDate(date);
+          }
+        }}
+      />
+      <ProposalActionDatePicker
+        visible={showEndPicker}
+        title="Plan End Date"
+        value={endDate}
+        minimumDate={startDate}
+        onCancel={() => setShowEndPicker(false)}
+        onConfirm={(date) => {
+          setShowEndPicker(false);
+          setEndDate(date);
+        }}
+      />
+
+      <View className="mt-4 gap-2">
+        {adjustedProposal.itineraryItems.slice(0, 4).map((item, index) => (
+          <View key={`${item.title}-${index}`} className="rounded-2xl bg-muted/40 px-3 py-3">
+            <Text className="text-sm font-semibold text-foreground">{item.title}</Text>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              {item.date}
+              {item.startTime ? ` · ${item.startTime}` : ""}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {proposal.followUpQuestions.length ? (
+        <View className="mt-4 rounded-2xl bg-background px-3 py-3">
+          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Still Needed
+          </Text>
+          {proposal.followUpQuestions.map((question) => (
+            <Text key={question} className="mt-2 text-sm text-foreground">
+              • {question}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      <Button
+        label={isConnected ? "Create Trip & Itinerary" : "Save Trip Offline"}
+        onPress={() => onCreateTrip(adjustedProposal)}
+        loading={creating}
+        disabled={!canCreateTrip}
+        className="mt-4"
+      />
+
+      {activeTrip ? (
+        <Button
+          label={isConnected ? "Add Items to Current Itinerary" : "Add Items Requires Internet"}
+          onPress={() => onAddToCurrentTrip?.(adjustedProposal)}
+          loading={addingToItinerary}
+          disabled={!isConnected || !canAddToCurrentTrip}
+          variant="secondary"
+          className="mt-3"
+        />
+      ) : null}
+
+      {activeTrip && !canAddToCurrentTrip ? (
+        <Text className="mt-3 text-xs text-muted-foreground">
+          Add-to-itinerary is available when your active trip matches {proposal.destinationName} and covers this date range.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function MessageBubble({
   role,
   content,
   proposal,
-  onConfirmPlan,
-  confirming,
+  references,
+  activeTrip,
+  isConnected,
+  creatingPlan,
+  addingPlanToItinerary,
+  onCreatePlan,
+  onAddPlanToCurrentTrip,
+  onPressReference,
+  onAddReferenceToItinerary,
 }: {
   role: "user" | "assistant";
   content: string;
-  proposal?: any | null;
-  onConfirmPlan?: () => void;
-  confirming?: boolean;
+  proposal?: PlannerProposal | null;
+  references?: AssistantReference[];
+  activeTrip: { title: string; startDate: string; endDate: string; destination: { id: string; name: string } } | null;
+  isConnected: boolean;
+  creatingPlan?: boolean;
+  addingPlanToItinerary?: boolean;
+  onCreatePlan?: (proposal: PlannerProposal) => void;
+  onAddPlanToCurrentTrip?: (proposal: PlannerProposal) => void;
+  onPressReference?: (reference: AssistantReference) => void;
+  onAddReferenceToItinerary?: (reference: AssistantReference) => void;
 }) {
   const isUser = role === "user";
+  const shouldHideTextBubble = !isUser && Boolean(proposal) && content.trim().startsWith("{");
+  const actionablePlaceReferences = (references ?? []).filter(
+    (reference) => reference.type === "place" && reference.destinationId === activeTrip?.destination.id,
+  );
 
   return (
     <View className={cn("mb-3", isUser ? "items-end" : "items-start")}>
-      <View
-        className={cn(
-          "max-w-[88%] rounded-[24px] px-4 py-3.5",
-          isUser ? "bg-primary" : "border border-border bg-card/95",
-        )}
-      >
-        {isUser ? (
-          <Text className="text-[15px] leading-6 text-primary-foreground">{content}</Text>
-        ) : (
-          <RichTextMessage content={content} className="text-foreground" />
-        )}
-      </View>
-
-      {proposal ? (
-        <View className="w-full p-4 mt-3 border rounded-3xl border-border bg-card">
-          <View className="flex-row items-center gap-2">
-            <PlaneTakeoff size={18} color="#208AEF" />
-            <Text className="text-base font-semibold text-foreground">{proposal.title}</Text>
-          </View>
-          <Text className="mt-2 text-sm text-muted-foreground">
-            {proposal.destinationName}
-            {proposal.country ? ` · ${proposal.country}` : ""}
-          </Text>
-          <Text className="mt-1 text-sm text-muted-foreground">
-            {proposal.startDate && proposal.endDate
-              ? `${proposal.startDate} to ${proposal.endDate}`
-              : "Needs dates before it can be confirmed"}
-          </Text>
-          <Text className="mt-3 text-sm leading-6 text-foreground">{proposal.summary}</Text>
-
-          <View className="gap-2 mt-4">
-            {proposal.itineraryItems.slice(0, 4).map((item: any, index: number) => (
-              <View key={`${item.title}-${index}`} className="px-3 py-3 rounded-2xl bg-muted/40">
-                <Text className="text-sm font-semibold text-foreground">{item.title}</Text>
-                <Text className="mt-1 text-xs text-muted-foreground">
-                  {item.date}
-                  {item.startTime ? ` · ${item.startTime}` : ""}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {proposalCanBeConfirmed(proposal) ? (
-            <Button
-              label="Create Trip & Itinerary"
-              onPress={() => onConfirmPlan?.()}
-              loading={confirming}
-              className="mt-4"
-            />
+      {!shouldHideTextBubble ? (
+        <View
+          className={cn(
+            "max-w-[88%] rounded-[24px] px-4 py-3.5",
+            isUser ? "bg-primary" : "border border-border bg-card/95",
+          )}
+        >
+          {isUser ? (
+            <Text className="text-[15px] leading-6 text-primary-foreground">{content}</Text>
           ) : (
-            <Text className="mt-4 text-xs text-muted-foreground">
-              Ask a follow-up with dates or missing trip details before confirming.
-            </Text>
+            <RichTextMessage
+              content={content}
+              className="text-foreground"
+              entities={references}
+              onPressEntity={onPressReference}
+            />
           )}
         </View>
+      ) : null}
+
+      {!proposal && actionablePlaceReferences.length ? (
+        <View className="mt-3 w-full gap-2">
+          {actionablePlaceReferences.slice(0, 3).map((reference) => (
+            <View
+              key={`${reference.type}-${reference.id}`}
+              className="flex-row items-center justify-between gap-3 rounded-2xl border border-border bg-card px-3 py-3"
+            >
+              <Pressable onPress={() => onPressReference?.(reference)} className="flex-1">
+                <Text className="text-sm font-semibold text-foreground">{reference.name}</Text>
+                <Text className="mt-1 text-xs text-muted-foreground">
+                  View details in {activeTrip?.destination.name}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => onAddReferenceToItinerary?.(reference)}
+                className={cn(
+                  "rounded-full px-3 py-2",
+                  isConnected ? "bg-primary" : "bg-muted",
+                )}
+                disabled={!isConnected}
+              >
+                <Text className={cn("text-xs font-semibold", isConnected ? "text-primary-foreground" : "text-muted-foreground")}>
+                  Add to itinerary
+                </Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {proposal ? (
+        <PlanProposalCard
+          proposal={proposal}
+          activeTrip={activeTrip}
+          isConnected={isConnected}
+          creating={Boolean(creatingPlan)}
+          addingToItinerary={Boolean(addingPlanToItinerary)}
+          onCreateTrip={(nextProposal) => onCreatePlan?.(nextProposal)}
+          onAddToCurrentTrip={onAddPlanToCurrentTrip}
+        />
       ) : null}
     </View>
   );
 }
 
 export default function AssistantScreen() {
+  const router = useRouter();
   const scrollRef = useRef<ScrollView | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -154,6 +526,8 @@ export default function AssistantScreen() {
   const [typing, setTyping] = useState(false);
   const [sending, setSending] = useState(false);
   const [confirmingMessageId, setConfirmingMessageId] = useState<string | null>(null);
+  const [addingPlanMessageId, setAddingPlanMessageId] = useState<string | null>(null);
+  const [selectedPlaceReference, setSelectedPlaceReference] = useState<AssistantReference | null>(null);
   const [modeTriggerWidth, setModeTriggerWidth] = useState(0);
 
   const user = useAuthStore((s) => s.user);
@@ -304,6 +678,7 @@ export default function AssistantScreen() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     let streamedText = "";
+    let grounding = null as Awaited<ReturnType<typeof buildAssistantGrounding>> | null;
 
     setInput("");
     appendUserMessage(activeThread.id, nextText);
@@ -313,6 +688,36 @@ export default function AssistantScreen() {
     setModelState({ status: "loading", error: null });
 
     try {
+      let groundingContext = "";
+      try {
+        grounding = await buildAssistantGrounding({
+          message: nextText,
+          isConnected,
+          activeTripDestination: activeTrip?.destination ?? null,
+        });
+        groundingContext = grounding.promptContext;
+      } catch {
+        groundingContext = isConnected
+          ? "Connectivity status: online. No extra grounded app data could be loaded for this turn."
+          : "Connectivity status: offline. No live app data could be loaded for this turn.";
+      }
+
+      if (
+        threadSnapshot.mode === "assist" &&
+        grounding?.currencySummary &&
+        isCurrencyQuestion(nextText)
+      ) {
+        const directReply = buildDirectCurrencyReply(grounding.currencySummary);
+        upsertAssistantMessage(activeThread.id, assistantMessageId, directReply, {
+          references: buildAssistantReferences(directReply, grounding),
+          summary: threadSnapshot.summary,
+        });
+        setTyping(false);
+        setModelState({ status: "ready", error: null, progress: 1 });
+        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+        return;
+      }
+
       const result = await runAssistantCompletion({
         modelPath: modelState.modelUri,
         userName: user?.name,
@@ -333,6 +738,7 @@ export default function AssistantScreen() {
               destination: activeTrip.destination,
             }
           : null,
+        groundingContext,
         itineraryItems,
         onToken: (_, accumulated) => {
           streamedText = accumulated;
@@ -345,6 +751,7 @@ export default function AssistantScreen() {
 
       upsertAssistantMessage(activeThread.id, assistantMessageId, result.text, {
         proposal: result.proposal ?? null,
+        references: buildAssistantReferences(result.text, grounding),
         summary: result.nextSummary,
       });
       setModelState({ status: "ready", error: null, progress: 1 });
@@ -375,7 +782,7 @@ export default function AssistantScreen() {
     }
   }
 
-  async function handleConfirmPlan(messageId: string, proposal: any) {
+  async function handleConfirmPlan(messageId: string, proposal: PlannerProposal) {
     if (!activeThread) {
       return;
     }
@@ -413,6 +820,70 @@ export default function AssistantScreen() {
     } finally {
       setConfirmingMessageId(null);
     }
+  }
+
+  async function handleAddPlanToCurrentTrip(messageId: string, proposal: PlannerProposal) {
+    if (!activeTrip) {
+      return;
+    }
+    if (!isConnected) {
+      Toast.show({
+        type: "error",
+        text1: "Internet required",
+        text2: "Adding AI plan items to an existing itinerary is only available online right now.",
+      });
+      return;
+    }
+
+    setAddingPlanMessageId(messageId);
+    try {
+      for (const item of proposal.itineraryItems) {
+        const res = await client.api.v1.trips({ tripId: activeTrip.id })["itinerary-items"].post({
+          title: item.title,
+          date: item.date,
+          startTime: item.startTime ?? undefined,
+          endTime: item.endTime ?? undefined,
+          notes: item.notes ?? undefined,
+        });
+        if (res.error) {
+          throw new Error(`Could not add "${item.title}" to the itinerary`);
+        }
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip.id] });
+      Toast.show({
+        type: "success",
+        text1: "Itinerary updated",
+        text2: `Added ${proposal.itineraryItems.length} plan item${proposal.itineraryItems.length === 1 ? "" : "s"} to ${activeTrip.title}.`,
+      });
+    } catch (error) {
+      Toast.show({
+        type: "error",
+        text1: "Could not add plan items",
+        text2: error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setAddingPlanMessageId(null);
+    }
+  }
+
+  function handlePressReference(reference: AssistantReference) {
+    router.push(reference.href as never);
+  }
+
+  function handleAddReferenceToItinerary(reference: AssistantReference) {
+    if (!activeTrip || reference.type !== "place") {
+      return;
+    }
+    if (!isConnected) {
+      Toast.show({
+        type: "error",
+        text1: "Internet required",
+        text2: "Adding place suggestions to your itinerary is only available online right now.",
+      });
+      return;
+    }
+    setSelectedPlaceReference(reference);
   }
 
   function handleStopGeneration() {
@@ -564,12 +1035,23 @@ export default function AssistantScreen() {
                       role={message.role}
                       content={message.content}
                       proposal={message.proposal}
-                      confirming={confirmingMessageId === message.id}
-                      onConfirmPlan={
+                      references={message.references}
+                      activeTrip={activeTrip}
+                      isConnected={isConnected}
+                      creatingPlan={confirmingMessageId === message.id}
+                      addingPlanToItinerary={addingPlanMessageId === message.id}
+                      onCreatePlan={
                         message.proposal
-                          ? () => handleConfirmPlan(message.id, message.proposal)
+                          ? (nextProposal) => void handleConfirmPlan(message.id, nextProposal)
                           : undefined
                       }
+                      onAddPlanToCurrentTrip={
+                        message.proposal
+                          ? (nextProposal) => void handleAddPlanToCurrentTrip(message.id, nextProposal)
+                          : undefined
+                      }
+                      onPressReference={handlePressReference}
+                      onAddReferenceToItinerary={handleAddReferenceToItinerary}
                     />
                   ))
                 ) : (
@@ -792,6 +1274,30 @@ export default function AssistantScreen() {
           <Pressable className="flex-1" onPress={() => setDrawerOpen(false)} />
         </View>
       </Modal>
+
+      {selectedPlaceReference && activeTrip ? (
+        <AddItineraryItemModal
+          visible
+          tripId={activeTrip.id}
+          defaultDate={defaultItineraryDateForTrip(activeTrip)}
+          tripStartDate={parseIsoDate(activeTrip.startDate) ?? undefined}
+          tripEndDate={parseIsoDate(activeTrip.endDate) ?? undefined}
+          initialTitle={selectedPlaceReference.name}
+          initialPlaceId={selectedPlaceReference.id}
+          onClose={() => setSelectedPlaceReference(null)}
+          onSuccess={() => {
+            setSelectedPlaceReference(null);
+            void queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip.id] });
+          }}
+          onSuccessMessage={(title) => {
+            Toast.show({
+              type: "success",
+              text1: "Added to itinerary",
+              text2: `${title} was added to ${activeTrip.title}.`,
+            });
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { AssistantReference } from "@/features/assistant/grounding";
 import { storage } from "@/lib/storage";
 import type { PlannerProposal } from "@/llm/plannerSchema";
 import {
@@ -23,6 +24,7 @@ export type AssistantMessage = {
   content: string;
   createdAt: string;
   proposal?: PlannerProposal | null;
+  references?: AssistantReference[];
 };
 
 export type AssistantThread = {
@@ -77,7 +79,11 @@ type AssistantState = PersistedAssistantState & {
     threadId: string,
     messageId: string,
     content: string,
-    extras?: { proposal?: PlannerProposal | null; summary?: string | null },
+    extras?: {
+      proposal?: PlannerProposal | null;
+      references?: AssistantReference[];
+      summary?: string | null;
+    },
   ) => void;
   clearHistory: () => Promise<void>;
   queuePlannerOperation: (operation: PendingPlannerOperation) => Promise<void>;
@@ -275,6 +281,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
         createdAt:
           existingIndex >= 0 ? thread.messages[existingIndex]?.createdAt ?? now : now,
         proposal: extras?.proposal,
+        references: extras?.references,
       };
       const nextMessages =
         existingIndex >= 0

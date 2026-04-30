@@ -41,6 +41,34 @@ describe("plannerSchema", () => {
     expect(proposal.itineraryItems).toHaveLength(1);
   });
 
+  it("extracts planner JSON from a raw JSON-only response", () => {
+    const proposal = extractPlannerProposal(`{
+      "title": "Rome Historic Week",
+      "destinationName": "Rome",
+      "country": "Italy",
+      "countryCode": "IT",
+      "startDate": "2026-06-10",
+      "endDate": "2026-06-14",
+      "budget": 1600,
+      "currencyCode": "EUR",
+      "summary": "A history-forward Rome itinerary with room for slow meals and museum time.",
+      "followUpQuestions": [],
+      "itineraryItems": [
+        {
+          "title": "Colosseum and Forum morning",
+          "date": "2026-06-10"
+        }
+      ]
+    }`);
+
+    expect(proposal).not.toBeNull();
+    expect(proposal).toMatchObject({
+      title: "Rome Historic Week",
+      destinationName: "Rome",
+      countryCode: "IT",
+    });
+  });
+
   it("requires dates and destination before confirmation", () => {
     expect(
       proposalCanBeConfirmed({

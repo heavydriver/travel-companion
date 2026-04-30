@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { View } from "react-native";
+import type { AssistantReference } from "@/features/assistant/grounding";
 import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
 
@@ -160,11 +161,94 @@ function parseBlocks(content: string) {
 function InlineText({
   content,
   className,
+  entities,
+  consumedEntityKeys,
+  onPressEntity,
 }: {
   content: string;
   className?: string;
+  entities?: AssistantReference[];
+  consumedEntityKeys?: Set<string>;
+  onPressEntity?: (entity: AssistantReference) => void;
 }) {
   const segments = parseInline(content);
+
+  const sortedEntities = [...(entities ?? [])].sort((a, b) => b.name.length - a.name.length);
+
+  function renderEntityAwareText(text: string, textClassName?: string) {
+    if (!sortedEntities.length || !text.trim()) {
+      return text;
+    }
+
+    const nodes: React.ReactNode[] = [];
+    let cursor = 0;
+    const lower = text.toLowerCase();
+
+    while (cursor < text.length) {
+      let nextMatch:
+        | {
+            entity: AssistantReference;
+            index: number;
+          }
+        | undefined;
+
+      for (const entity of sortedEntities) {
+        const entityKey = `${entity.type}:${entity.id}`;
+        if (consumedEntityKeys?.has(entityKey)) {
+          continue;
+        }
+        const entityLower = entity.name.toLowerCase();
+        const index = lower.indexOf(entityLower, cursor);
+        if (index < 0) {
+          continue;
+        }
+
+        const before = index === 0 ? "" : lower[index - 1] ?? "";
+        const after = lower[index + entityLower.length] ?? "";
+        const beforeIsBoundary = !before || /[^a-z0-9]/.test(before);
+        const afterIsBoundary = !after || /[^a-z0-9]/.test(after);
+
+        if (!beforeIsBoundary || !afterIsBoundary) {
+          continue;
+        }
+
+        if (!nextMatch || index < nextMatch.index) {
+          nextMatch = { entity, index };
+        }
+      }
+
+      if (!nextMatch) {
+        nodes.push(
+          <Fragment key={`plain-${cursor}`}>{text.slice(cursor)}</Fragment>,
+        );
+        break;
+      }
+
+      if (nextMatch.index > cursor) {
+        nodes.push(
+          <Fragment key={`plain-${cursor}`}>
+            {text.slice(cursor, nextMatch.index)}
+          </Fragment>,
+        );
+      }
+
+      const matchedText = text.slice(nextMatch.index, nextMatch.index + nextMatch.entity.name.length);
+      nodes.push(
+        <Text
+          key={`${nextMatch.entity.type}-${nextMatch.entity.id}-${nextMatch.index}`}
+          className={cn("underline", textClassName)}
+          style={{ textDecorationStyle: "dotted" }}
+          onPress={() => onPressEntity?.(nextMatch.entity)}
+        >
+          {matchedText}
+        </Text>,
+      );
+      consumedEntityKeys?.add(`${nextMatch.entity.type}:${nextMatch.entity.id}`);
+      cursor = nextMatch.index + nextMatch.entity.name.length;
+    }
+
+    return nodes;
+  }
 
   return (
     <>
@@ -172,7 +256,7 @@ function InlineText({
         if (segment.type === "bold") {
           return (
             <Text key={`${segment.type}-${index}`} className={cn("font-semibold", className)}>
-              {segment.content}
+              {renderEntityAwareText(segment.content, className)}
             </Text>
           );
         }
@@ -180,7 +264,7 @@ function InlineText({
         if (segment.type === "italic") {
           return (
             <Text key={`${segment.type}-${index}`} className={cn("italic", className)}>
-              {segment.content}
+              {renderEntityAwareText(segment.content, className)}
             </Text>
           );
         }
@@ -188,7 +272,7 @@ function InlineText({
         if (segment.type === "boldItalic") {
           return (
             <Text key={`${segment.type}-${index}`} className={cn("font-semibold italic", className)}>
-              {segment.content}
+              {renderEntityAwareText(segment.content, className)}
             </Text>
           );
         }
@@ -204,7 +288,11 @@ function InlineText({
           );
         }
 
-        return <Fragment key={`${segment.type}-${index}`}>{segment.content}</Fragment>;
+        return (
+          <Fragment key={`${segment.type}-${index}`}>
+            {renderEntityAwareText(segment.content, className)}
+          </Fragment>
+        );
       })}
     </>
   );
@@ -213,11 +301,16 @@ function InlineText({
 export function RichTextMessage({
   content,
   className,
+  entities,
+  onPressEntity,
 }: {
   content: string;
   className?: string;
+  entities?: AssistantReference[];
+  onPressEntity?: (entity: AssistantReference) => void;
 }) {
   const blocks = parseBlocks(content);
+  const consumedEntityKeys = new Set<string>();
 
   return (
     <View className="gap-2.5">
@@ -232,7 +325,13 @@ export function RichTextMessage({
 
           return (
             <Text key={`heading-${index}`} className={cn(sizeClassName, className)}>
-              <InlineText content={block.text} className={className} />
+              <InlineText
+                content={block.text}
+                className={className}
+                entities={entities}
+                consumedEntityKeys={consumedEntityKeys}
+                onPressEntity={onPressEntity}
+              />
             </Text>
           );
         }
@@ -241,7 +340,13 @@ export function RichTextMessage({
           return (
             <View key={`quote-${index}`} className="rounded-2xl border-l-2 border-primary/50 bg-muted/35 px-3 py-2">
               <Text className={cn("text-[14px] italic leading-6", className)}>
-                <InlineText content={block.text} className={className} />
+                <InlineText
+                  content={block.text}
+                  className={className}
+                  entities={entities}
+                  consumedEntityKeys={consumedEntityKeys}
+                  onPressEntity={onPressEntity}
+                />
               </Text>
             </View>
           );
@@ -256,7 +361,13 @@ export function RichTextMessage({
                     {block.ordered ? `${itemIndex + 1}.` : "•"}
                   </Text>
                   <Text className={cn("min-w-0 flex-1 text-[14px] leading-6", className)}>
-                    <InlineText content={item} className={className} />
+                    <InlineText
+                      content={item}
+                      className={className}
+                      entities={entities}
+                      consumedEntityKeys={consumedEntityKeys}
+                      onPressEntity={onPressEntity}
+                    />
                   </Text>
                 </View>
               ))}
@@ -266,7 +377,13 @@ export function RichTextMessage({
 
         return (
           <Text key={`paragraph-${index}`} className={cn("text-[15px] leading-6", className)}>
-            <InlineText content={block.text} className={className} />
+            <InlineText
+              content={block.text}
+              className={className}
+              entities={entities}
+              consumedEntityKeys={consumedEntityKeys}
+              onPressEntity={onPressEntity}
+            />
           </Text>
         );
       })}

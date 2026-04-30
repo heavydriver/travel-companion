@@ -34,6 +34,7 @@ export async function runAssistantCompletion(input: {
   userMessage: string;
   activeTrip?: ActiveTrip | null;
   itineraryItems?: ItineraryItem[];
+  groundingContext?: string | null;
   onToken?: (token: string, accumulatedText: string) => void;
   abortSignal?: AbortSignal;
 }) {
@@ -43,6 +44,7 @@ export async function runAssistantCompletion(input: {
     threadSummary: input.thread.summary,
     activeTrip: input.activeTrip,
     itineraryItems: input.itineraryItems,
+    groundingContext: input.groundingContext,
   });
 
   const messages = buildPromptMessages({

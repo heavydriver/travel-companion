@@ -29,9 +29,25 @@ describe("promptBuilder", () => {
     expect(prompt).toContain("Traveler name: Varun");
     expect(prompt).toContain("Tokyo Adventure");
     expect(prompt).toContain("Shibuya Sky");
+    expect(prompt).toContain("Respond in Markdown for general travel queries.");
     expect(prompt).toContain(
       `If the user asks for something off-topic, reply exactly with: "I'm your travel companion`,
     );
+  });
+
+  it("makes planner mode JSON-only", () => {
+    const prompt = buildSystemPrompt({
+      mode: "plan",
+      userName: "Varun",
+      threadSummary: "",
+      activeTrip: null,
+      itineraryItems: [],
+      groundingContext: "Connectivity status: online.",
+    });
+
+    expect(prompt).toContain("Return JSON only.");
+    expect(prompt).toContain("followUpQuestions");
+    expect(prompt).not.toContain("<planner_json>");
   });
 
   it("limits history to the last ten messages and summarizes recent user prompts", () => {

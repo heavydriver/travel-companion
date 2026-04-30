@@ -49,12 +49,14 @@ export function buildSystemPrompt(input: {
   threadSummary?: string | null;
   activeTrip?: MinimalTrip | null;
   itineraryItems?: MinimalItineraryItem[];
+  groundingContext?: string | null;
 }) {
   const lines = [
     "You are Roamie, an on-device travel assistant inside a travel companion app.",
     "Only discuss travel, destinations, food, culture, logistics, trip planning, weather, currency, safety, local etiquette, transportation, and itinerary building.",
     `If the user asks for something off-topic, reply exactly with: "${OFF_TOPIC_REPLY}"`,
     "Prefer grounded, practical recommendations. Be explicit when something may be stale or based on general knowledge instead of live data.",
+    "When grounded app data is provided, treat it as more reliable than your general memory.",
     `Traveler name: ${input.userName?.trim() || "Traveler"}`,
   ];
 
@@ -82,16 +84,23 @@ export function buildSystemPrompt(input: {
     lines.push(...itineraryLines);
   }
 
+  if (input.groundingContext?.trim()) {
+    lines.push("Grounded app and API context:");
+    lines.push(input.groundingContext.trim());
+  }
+
   if (input.mode === "plan") {
     lines.push(
-      "When the user asks for a plan, provide a helpful explanation and also include a single JSON object between <planner_json> and </planner_json> tags.",
+      "Return JSON only. Do not add markdown, code fences, prose, or tags.",
       "The JSON must include: title, destinationName, country, countryCode, startDate, endDate, budget, currencyCode, summary, followUpQuestions, itineraryItems[].",
       "Use ISO date strings when possible. Each itinerary item should include title, date, optional startTime, optional endTime, optional notes, and optional placeQuery.",
-      "If you are missing important trip facts like destination or dates, ask concise follow-up questions before finalizing the JSON.",
+      "If you are missing important trip facts like destination or dates, still return valid JSON and put the missing details into followUpQuestions.",
+      "Make the summary user-friendly and itinerary items realistic, date-aware, and easy to turn into a trip.",
     );
   } else {
     lines.push(
-      "Keep answers concise, practical, and focused on helping the user travel well.",
+      "Respond in Markdown for general travel queries.",
+      "Use short headings or bullets when they improve readability, and keep answers practical and focused on helping the user travel well.",
     );
   }
 
