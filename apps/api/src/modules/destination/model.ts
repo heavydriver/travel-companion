@@ -11,9 +11,11 @@ export const DestinationSearchQuery = t.Object({
 
 export const DestinationSummaryShape = t.Object({
   id: t.String(),
+  googlePlaceId: t.Nullable(t.String()),
   name: t.String(),
   country: t.String(),
   countryCode: t.String(),
+  source: t.String(),
   slug: t.String(),
   region: t.Nullable(t.String()),
   imageUrl: t.Nullable(t.String()),
@@ -56,10 +58,12 @@ export const DestinationLanguageLinkShape = t.Object({
 export const DestinationDetailResponse = t.Object({
   destination: t.Object({
     id: t.String(),
+    googlePlaceId: t.Nullable(t.String()),
     name: t.String(),
     slug: t.String(),
     country: t.String(),
     countryCode: t.String(),
+    source: t.String(),
     region: t.Nullable(t.String()),
     description: t.Nullable(t.String()),
     latitude: t.Number(),
@@ -124,4 +128,23 @@ export const DestinationDetailResponse = t.Object({
 export const PackVersionResponse = t.Object({
   packVersion: t.Number(),
   updatedAt: t.String(),
+});
+
+export const ResolveDestinationBody = t.Object({
+  query: t.String({ minLength: 1, maxLength: 200 }),
+  country: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+  countryCode: t.Optional(t.String({ minLength: 2, maxLength: 2 })),
+  latitude: t.Optional(t.Number()),
+  longitude: t.Optional(t.Number()),
+  timezone: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+  currencyCode: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+});
+
+export const ResolveDestinationResponse = t.Object({
+  destination: DestinationSummaryShape,
+  resolvedBy: t.Union([
+    t.Literal("existing"),
+    t.Literal("google"),
+    t.Literal("manual"),
+  ]),
 });

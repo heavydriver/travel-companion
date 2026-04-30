@@ -3,10 +3,14 @@ import { create } from "zustand";
 export type Trip = {
   id: string;
   title: string;
+  description?: string | null;
   startDate: string;
   endDate: string;
+  budget?: number | null;
+  currencyCode?: string | null;
   coverImageUrl: string | null;
   createdAt: string;
+  isLocalOnly?: boolean;
   destination: {
     id: string;
     name: string;

@@ -1,11 +1,13 @@
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, MessageCircle, Ruler, User } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, Download, MessageCircle, Ruler, Trash2, User } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
+import { useEffect } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import type { UnitSystem } from "@/lib/units";
+import { useAssistantStore } from "@/store/assistantStore";
 import { useAuthStore } from "@/store/authStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 
@@ -38,9 +40,21 @@ export default function SettingsScreen() {
   const logout = useAuthStore((s) => s.logout);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
+  const hydrated = useAssistantStore((s) => s.hydrated);
+  const hydrateAssistant = useAssistantStore((s) => s.hydrate);
+  const modelState = useAssistantStore((s) => s.modelState);
+  const threads = useAssistantStore((s) => s.threads);
+  const clearHistory = useAssistantStore((s) => s.clearHistory);
+  const deleteModelAndReset = useAssistantStore((s) => s.deleteModelAndReset);
 
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : undefined;
+
+  useEffect(() => {
+    if (!hydrated) {
+      void hydrateAssistant();
+    }
+  }, [hydrated, hydrateAssistant]);
 
   const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -63,6 +77,32 @@ export default function SettingsScreen() {
 
   const onUnitsChange = (next: UnitSystem) => {
     void setUnitSystem(next);
+  };
+
+  const handleClearAssistantHistory = () => {
+    Alert.alert("Clear Chat History", "This will remove your assistant conversations on this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear",
+        style: "destructive",
+        onPress: () => {
+          void clearHistory();
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteModel = () => {
+    Alert.alert("Delete AI Model", "This removes the downloaded model from this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          void deleteModelAndReset();
+        },
+      },
+    ]);
   };
 
   return (
@@ -130,6 +170,65 @@ export default function SettingsScreen() {
             </View>
             <ChevronRight size={18} color={resolvedIcon} />
           </Pressable>
+        </View>
+
+        <View className="rounded-2xl border border-border bg-card p-4 gap-3">
+          <View className="flex-row items-center gap-3">
+            <View className="rounded-full bg-primary/15 p-2">
+              <Download size={18} color={resolvedIcon} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-foreground">AI Model</Text>
+              <Text className="text-sm text-muted-foreground">
+                {modelState.status === "ready"
+                  ? "Ready for offline chat"
+                  : modelState.status === "downloading"
+                    ? "Downloading now"
+                    : modelState.status === "paused"
+                      ? "Download paused"
+                      : modelState.status === "loading"
+                        ? "Loading into memory"
+                        : "Not downloaded"}
+              </Text>
+            </View>
+          </View>
+          <View className="rounded-2xl bg-muted/30 px-4 py-3">
+            <Text className="text-sm text-foreground">
+              Size: {(modelState.sizeBytes / (1024 * 1024)).toFixed(0)} MB
+            </Text>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              {modelState.downloadedAt
+                ? `Downloaded ${new Date(modelState.downloadedAt).toLocaleDateString("en-US")}`
+                : "Download it from the Assistant tab when you're ready."}
+            </Text>
+          </View>
+          <Button
+            label="Delete Model"
+            variant="secondary"
+            onPress={handleDeleteModel}
+            disabled={!modelState.modelUri}
+            className="border-destructive"
+          />
+        </View>
+
+        <View className="rounded-2xl border border-border bg-card p-4 gap-3">
+          <View className="flex-row items-center gap-3">
+            <View className="rounded-full bg-primary/15 p-2">
+              <Trash2 size={18} color={resolvedIcon} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-foreground">Assistant History</Text>
+              <Text className="text-sm text-muted-foreground">
+                {threads.length} local {threads.length === 1 ? "thread" : "threads"}
+              </Text>
+            </View>
+          </View>
+          <Button
+            label="Clear Chat History"
+            variant="secondary"
+            onPress={handleClearAssistantHistory}
+            className="border-destructive"
+          />
         </View>
 
         <View className="rounded-2xl border border-border bg-card p-4">
