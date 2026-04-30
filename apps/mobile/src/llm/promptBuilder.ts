@@ -96,6 +96,7 @@ export function buildSystemPrompt(input: {
       "Use ISO date strings when possible. Each itinerary item should include title, date, optional startTime, optional endTime, optional notes, and optional placeQuery.",
       "If you are missing important trip facts like destination or dates, still return valid JSON and put the missing details into followUpQuestions.",
       "Make the summary user-friendly and itinerary items realistic, date-aware, and easy to turn into a trip.",
+      "If the user asks to modify an existing plan, return the full updated JSON plan reflecting the latest request rather than only partial changes.",
     );
   } else {
     lines.push(
