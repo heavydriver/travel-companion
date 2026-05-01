@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { isTripPast } from "@/lib/utils";
 
 export type Trip = {
   id: string;
@@ -20,12 +21,8 @@ export type Trip = {
 
 /** Trip not fully ended (end instant ≥ now). Includes upcoming-only trips. */
 export function getEligibleTripForDestination(trips: Trip[], destinationId: string) {
-  const now = new Date();
   return trips
-    .filter(
-      (trip) =>
-        trip.destination.id === destinationId && new Date(trip.endDate).getTime() >= now.getTime(),
-    )
+    .filter((trip) => trip.destination.id === destinationId && !isTripPast(trip.endDate))
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0];
 }
 

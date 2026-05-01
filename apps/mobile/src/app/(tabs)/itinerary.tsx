@@ -5,15 +5,22 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { Calendar, CheckCircle2, Circle, MapPin } from "lucide-react-native";
+import { Calendar, CheckCircle2, Circle, ExternalLink, MapPin } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { Progress } from "@/components/ui/progress";
-import { formatDate, formatDateRange, toDateOnly } from "@/lib/utils";
+import {
+  formatDate,
+  formatDateRange,
+  formatItineraryTimeRange,
+  isTripActiveToday,
+  toDateOnly,
+} from "@/lib/utils";
+import { useMapSessionStore } from "@/store/mapSessionStore";
 import { type Trip, useTripStore } from "@/store/tripStore";
 
 type ItineraryItem = {
@@ -25,6 +32,7 @@ type ItineraryItem = {
   notes: string | null;
   isDone: boolean;
   order: number;
+  placeId: string | null;
 };
 
 function groupByDate(items: ItineraryItem[]) {
@@ -38,10 +46,7 @@ function groupByDate(items: ItineraryItem[]) {
 }
 
 function getActiveTrips(trips: Trip[]) {
-  const now = new Date();
-  return trips.filter(
-    (trip) => new Date(trip.startDate) <= now && new Date(trip.endDate) >= now,
-  );
+  return trips.filter((trip) => isTripActiveToday(trip.startDate, trip.endDate));
 }
 
 function TripSummaryCard({
@@ -116,6 +121,7 @@ export default function ItineraryTabScreen() {
   const queryClient = useQueryClient();
   const trips = useTripStore((s) => s.trips);
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
+  const setMapSession = useMapSessionStore((s) => s.setSession);
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
 
@@ -132,8 +138,9 @@ export default function ItineraryTabScreen() {
   const itemsQuery = useQuery({
     queryKey: ["itinerary", singleActiveTrip?.id],
     queryFn: async () => {
+      if (!singleActiveTrip) throw new Error("No active trip");
       const res = await client.api.v1
-        .trips({ tripId: singleActiveTrip!.id })
+        .trips({ tripId: singleActiveTrip.id })
         ["itinerary-items"].get();
       if (res.error) throw new Error("Failed to load itinerary");
       return res.data;
@@ -175,6 +182,50 @@ export default function ItineraryTabScreen() {
       queryClient.invalidateQueries({ queryKey: ["itinerary", tripId] });
     },
   });
+
+  const openItem = useCallback(
+    async (item: ItineraryItem) => {
+      if (!singleActiveTrip) return;
+
+      if (!item.placeId) {
+        router.push(`/trip/${singleActiveTrip.id}` as never);
+        return;
+      }
+
+      try {
+        const [placeRes, destinationRes] = await Promise.all([
+          client.api.v1.places({ id: item.placeId }).get(),
+          client.api.v1.destinations({ destId: singleActiveTrip.destination.id }).get(),
+        ]);
+
+        if (placeRes.error || destinationRes.error) {
+          router.push(`/trip/${singleActiveTrip.id}` as never);
+          return;
+        }
+
+        const place = placeRes.data.place;
+        const destination = destinationRes.data.destination;
+
+        setMapSession({
+          destinationId: destination.id,
+          destinationName: destination.name,
+          latitude: destination.latitude,
+          longitude: destination.longitude,
+          timezone: destination.timezone?.trim() ?? null,
+          places: [],
+          focusLatitude: place.latitude,
+          focusLongitude: place.longitude,
+          focusZoomLevel: 15,
+          focusPlaceId: place.id,
+          returnHref: `/trip/${singleActiveTrip.id}`,
+        });
+        router.push("/(tabs)/map" as never);
+      } catch {
+        router.push(`/trip/${singleActiveTrip.id}` as never);
+      }
+    },
+    [router, setMapSession, singleActiveTrip],
+  );
 
   if (trips.length === 0) {
     return (
@@ -250,7 +301,11 @@ export default function ItineraryTabScreen() {
     );
   }
 
-  const activeTrip = singleActiveTrip!;
+  if (!singleActiveTrip) {
+    return null;
+  }
+
+  const activeTrip = singleActiveTrip;
   const items = (itemsQuery.data?.items ?? []) as ItineraryItem[];
   const grouped = groupByDate(items);
   const doneCount = items.filter((i) => i.isDone).length;
@@ -260,12 +315,21 @@ export default function ItineraryTabScreen() {
     <Screen scrollable contentClassName="pb-6">
       <View className="gap-5">
         <View>
-          <View className="flex-row items-center gap-2">
-            <MapPin size={14} color={mutedColor} />
-            <Text className="text-sm text-muted-foreground">
-              {activeTrip.destination.name} ·{" "}
-              {activeTrip.destination.countryCode}
-            </Text>
+          <View className="flex-row items-center justify-between gap-3">
+            <View className="min-w-0 flex-1 flex-row items-center gap-2">
+              <MapPin size={14} color={mutedColor} />
+              <Text className="flex-1 text-sm text-muted-foreground" numberOfLines={1}>
+                {activeTrip.destination.name} · {activeTrip.destination.countryCode}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => router.push(`/destination/${activeTrip.destination.id}` as never)}
+              className="rounded-lg border border-border bg-card p-2 active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${activeTrip.destination.name} destination details`}
+            >
+              <ExternalLink size={16} color={mutedColor} />
+            </Pressable>
           </View>
           <Text className="text-2xl font-bold text-foreground">
             {activeTrip.title}
@@ -326,7 +390,7 @@ export default function ItineraryTabScreen() {
             {dayItems.map((item) => (
               <Pressable
                 key={item.id}
-                onPress={() => router.push(`/trip/${activeTrip.id}` as never)}
+                onPress={() => void openItem(item)}
                 className="flex-row items-center gap-3 px-4 py-3 border rounded-xl border-border bg-card active:opacity-90"
               >
                 <Pressable
@@ -347,26 +411,22 @@ export default function ItineraryTabScreen() {
                   )}
                 </Pressable>
 
-                <View className="flex-1">
+                <View className="min-w-0 flex-1">
                   <Text
                     className={`text-base font-medium ${item.isDone ? "text-muted-foreground line-through" : "text-foreground"}`}
                   >
                     {item.title}
                   </Text>
-                  {(item.startTime || item.notes) && (
-                    <Text
-                      className="text-sm text-muted-foreground"
-                      numberOfLines={1}
-                    >
-                      {item.startTime}
-                      {item.endTime && item.startTime
-                        ? ` – ${item.endTime}`
-                        : (item.endTime ?? "")}
-                      {item.notes
-                        ? `${item.startTime || item.endTime ? " · " : ""}${item.notes}`
-                        : ""}
-                    </Text>
-                  )}
+                  {(() => {
+                    const timeLabel = formatItineraryTimeRange(item.startTime, item.endTime);
+                    const detailLine = [timeLabel, item.notes?.trim()].filter(Boolean).join(" · ");
+                    if (!detailLine) return null;
+                    return (
+                      <Text className="text-sm text-muted-foreground" numberOfLines={1}>
+                        {detailLine}
+                      </Text>
+                    );
+                  })()}
                 </View>
               </Pressable>
             ))}

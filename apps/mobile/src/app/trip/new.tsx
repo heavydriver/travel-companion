@@ -155,7 +155,7 @@ export default function NewTripScreen() {
   ]);
 
   return (
-    <Screen scrollable>
+    <Screen scrollable keyboardBottomOffset={120}>
       <View className="gap-6">
         {/* Header */}
         <View className="flex-row items-center gap-3">

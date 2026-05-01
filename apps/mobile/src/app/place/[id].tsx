@@ -462,6 +462,7 @@ export default function PlaceDetailsScreen() {
       focusLatitude: place.latitude,
       focusLongitude: place.longitude,
       focusZoomLevel: 15,
+      focusPlaceId: place.id,
       returnHref: `/place/${place.id}`,
     });
     router.push("/(tabs)/map" as never);

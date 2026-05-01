@@ -6,20 +6,26 @@ import { useCallback, useEffect, useRef } from "react";
 import { Animated, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import { cn, daysUntil, formatDateRange } from "@/lib/utils";
+import {
+  cn,
+  daysUntil,
+  differenceInCalendarDays,
+  formatDateRange,
+  isTripActiveToday,
+  isTripPast,
+  isTripUpcoming,
+} from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 import { type Trip, useTripStore } from "@/store/tripStore";
 
 function getTripStatus(trip: Trip) {
   const now = new Date();
-  const start = new Date(trip.startDate);
-  const end = new Date(trip.endDate);
-  const isUpcoming = start > now;
-  const isActive = start <= now && end >= now;
+  const isUpcomingTrip = isTripUpcoming(trip.startDate, now);
+  const isActiveTrip = isTripActiveToday(trip.startDate, trip.endDate, now);
 
-  if (isActive) {
-    const dayNum = Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  if (isActiveTrip) {
+    const dayNum = differenceInCalendarDays(now, trip.startDate) + 1;
+    const totalDays = differenceInCalendarDays(trip.endDate, trip.startDate) + 1;
     return {
       badge: "Active",
       badgeClass: "bg-green-600/30",
@@ -27,7 +33,7 @@ function getTripStatus(trip: Trip) {
       subtitle: `Day ${dayNum} of ${totalDays}`,
     };
   }
-  if (isUpcoming) {
+  if (isUpcomingTrip) {
     const days = daysUntil(trip.startDate);
     const subtitle =
       days === 0 ? "Starts today!" : days === 1 ? "Starts tomorrow" : `In ${days} days`;
@@ -133,12 +139,9 @@ export default function HomeScreen() {
 
   const trips = (tripsQuery.data?.trips ?? []) as Trip[];
 
-  const activeTrips = trips.filter((t) => {
-    const now = new Date();
-    return new Date(t.startDate) <= now && new Date(t.endDate) >= now;
-  });
-  const upcomingTrips = trips.filter((t) => new Date(t.startDate) > new Date());
-  const pastTrips = trips.filter((t) => new Date(t.endDate) < new Date());
+  const activeTrips = trips.filter((t) => isTripActiveToday(t.startDate, t.endDate));
+  const upcomingTrips = trips.filter((t) => isTripUpcoming(t.startDate));
+  const pastTrips = trips.filter((t) => isTripPast(t.endDate));
 
   const onRefresh = useCallback(() => {
     tripsQuery.refetch();

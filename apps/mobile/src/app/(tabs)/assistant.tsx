@@ -8,6 +8,7 @@ import {
   Send,
   Sparkles,
 } from "lucide-react-native";
+import { useUnstableNativeVariable } from "nativewind";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -286,6 +287,9 @@ export default function AssistantScreen() {
   const appendUserMessage = useAssistantStore((s) => s.appendUserMessage);
   const upsertAssistantMessage = useAssistantStore((s) => s.upsertAssistantMessage);
   const queueOperation = useAssistantStore((s) => s.queuePlannerOperation);
+
+  const foreground = useUnstableNativeVariable("--foreground");
+  const iconColor = foreground ? `hsl(${foreground})` : undefined;
 
   const trips = useTripStore((s) => s.trips);
   const activeTripId = useTripStore((s) => s.activeTripId);
@@ -703,7 +707,7 @@ export default function AssistantScreen() {
               onPress={() => setDrawerOpen(true)}
               className="items-center justify-center border rounded-full h-11 w-11 border-border bg-card"
             >
-              <Menu size={20} color="#1F2937" />
+              <Menu size={20} color={iconColor} />
             </Pressable>
 
             <View className="items-center flex-1 min-w-0 px-2">
@@ -715,11 +719,7 @@ export default function AssistantScreen() {
                   Travel Assistant
                 </Text>
               </View>
-              <Text className="mt-1 text-xs text-muted-foreground">
-                {activeThread?.mode === "plan"
-                  ? "Trip planning mode is ready"
-                  : "Ask about your next trip"}
-              </Text>
+              <Text className="mt-1 text-xs text-muted-foreground">Powered by Gemma 2</Text>
             </View>
 
             <Pressable
@@ -729,7 +729,7 @@ export default function AssistantScreen() {
               }}
               className="items-center justify-center border rounded-full h-11 w-11 border-border bg-card"
             >
-              <MessageSquarePlus size={20} color="#1F2937" />
+              <MessageSquarePlus size={20} color={iconColor} />
             </Pressable>
           </View>
 

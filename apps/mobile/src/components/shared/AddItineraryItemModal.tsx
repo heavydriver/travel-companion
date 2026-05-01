@@ -4,11 +4,12 @@ import { Calendar, Clock } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Modal, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { client } from "@/api/client";
 import { formatDate, toDateOnly } from "@/lib/utils";
 import { Button } from "./Button";
 import { IOSDateTimePickerModal } from "./IOSDateTimePickerModal";
+import { KeyboardSheetModal } from "./KeyboardSheetModal";
 
 type AddItineraryItemModalProps = {
   visible: boolean;
@@ -42,6 +43,7 @@ export function AddItineraryItemModal({
 }: AddItineraryItemModalProps) {
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
+  const { height: screenHeight } = useWindowDimensions();
 
   const [selectedDate, setSelectedDate] = useState(defaultDate);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -73,6 +75,8 @@ export function AddItineraryItemModal({
   const formatTime = (d: Date) =>
     d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
   const invalidTimeRange = hasInvalidTimeRange(startTimeDate, endTimeDate);
+  const minModalHeight = Math.min(screenHeight * 0.58, 500);
+  const maxModalHeight = Math.min(screenHeight * 0.76, 640);
 
   const addMutation = useMutation({
     mutationFn: async (values: { title: string; notes: string }) => {
@@ -112,191 +116,186 @@ export function AddItineraryItemModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View className="flex-1 justify-end bg-black/50">
-        <View className="rounded-t-3xl bg-background px-5 pb-10 pt-6">
-          <View className="mb-5 flex-row items-center justify-between">
-            <Text className="text-lg font-bold text-foreground">Add Item</Text>
-            <Pressable onPress={handleClose}>
-              <Text className="text-base font-medium text-primary">Cancel</Text>
+    <KeyboardSheetModal
+      visible={visible}
+      title="Add Item"
+      onClose={handleClose}
+      minHeight={minModalHeight}
+      maxHeight={maxModalHeight}
+      footer={
+        <Button
+          label="Add to Itinerary"
+          onPress={() => void handleSubmit((v) => addMutation.mutate(v))()}
+          loading={addMutation.isPending}
+          disabled={invalidTimeRange}
+        />
+      }
+    >
+      <View className="gap-4">
+        <Controller
+          control={control}
+          name="title"
+          rules={{ required: true }}
+          render={({ field: { onChange, value } }) => (
+            <TextInput
+              className="rounded-xl border border-border bg-card px-4 py-3 text-base text-foreground"
+              placeholder="What are you doing?"
+              placeholderTextColor={mutedColor}
+              value={value}
+              onChangeText={onChange}
+            />
+          )}
+        />
+
+        <View className="gap-1">
+          <Text className="text-sm font-medium text-muted-foreground">Date</Text>
+          <Pressable
+            onPress={() => setShowDatePicker(true)}
+            className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
+          >
+            <Calendar size={16} color={mutedColor} />
+            <Text className="text-base text-foreground">{formatDate(selectedDate)}</Text>
+          </Pressable>
+          {showDatePicker && Platform.OS === "ios" && (
+            <IOSDateTimePickerModal
+              visible={showDatePicker}
+              title="Item Date"
+              value={selectedDate}
+              mode="date"
+              minimumDate={tripStartDate}
+              maximumDate={tripEndDate}
+              onCancel={() => setShowDatePicker(false)}
+              onConfirm={(date) => {
+                setShowDatePicker(false);
+                setSelectedDate(date);
+              }}
+            />
+          )}
+          {showDatePicker && Platform.OS !== "ios" && (
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display="default"
+              minimumDate={tripStartDate}
+              maximumDate={tripEndDate}
+              onChange={(_, date) => {
+                setShowDatePicker(false);
+                if (date) setSelectedDate(date);
+              }}
+            />
+          )}
+        </View>
+
+        <View className="flex-row gap-3">
+          <View className="flex-1 gap-1">
+            <Text className="text-sm font-medium text-muted-foreground">Start Time</Text>
+            <Pressable
+              onPress={() => setShowStartTimePicker(true)}
+              className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
+            >
+              <Clock size={16} color={mutedColor} />
+              <Text
+                className={`text-base ${startTimeDate ? "text-foreground" : "text-muted-foreground"}`}
+              >
+                {startTimeDate ? formatTime(startTimeDate) : "Optional"}
+              </Text>
             </Pressable>
+            {showStartTimePicker && Platform.OS === "ios" && (
+              <IOSDateTimePickerModal
+                visible={showStartTimePicker}
+                title="Start Time"
+                value={startTimeDate ?? new Date()}
+                mode="time"
+                is24Hour
+                onCancel={() => setShowStartTimePicker(false)}
+                onConfirm={(date) => {
+                  setShowStartTimePicker(false);
+                  setStartTimeDate(date);
+                }}
+              />
+            )}
+            {showStartTimePicker && Platform.OS !== "ios" && (
+              <DateTimePicker
+                value={startTimeDate ?? new Date()}
+                mode="time"
+                is24Hour
+                display="default"
+                onChange={(_, date) => {
+                  setShowStartTimePicker(false);
+                  if (date) setStartTimeDate(date);
+                }}
+              />
+            )}
           </View>
 
-          <View className="gap-4">
-            <Controller
-              control={control}
-              name="title"
-              rules={{ required: true }}
-              render={({ field: { onChange, value } }) => (
-                <TextInput
-                  className="rounded-xl border border-border bg-card px-4 py-3 text-base text-foreground"
-                  placeholder="What are you doing?"
-                  placeholderTextColor={mutedColor}
-                  value={value}
-                  onChangeText={onChange}
-                />
-              )}
-            />
-
-            <View className="gap-1">
-              <Text className="text-sm font-medium text-muted-foreground">Date</Text>
-              <Pressable
-                onPress={() => setShowDatePicker(true)}
-                className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
+          <View className="flex-1 gap-1">
+            <Text className="text-sm font-medium text-muted-foreground">End Time</Text>
+            <Pressable
+              onPress={() => setShowEndTimePicker(true)}
+              className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
+            >
+              <Clock size={16} color={mutedColor} />
+              <Text
+                className={`text-base ${endTimeDate ? "text-foreground" : "text-muted-foreground"}`}
               >
-                <Calendar size={16} color={mutedColor} />
-                <Text className="text-base text-foreground">{formatDate(selectedDate)}</Text>
-              </Pressable>
-              {showDatePicker && Platform.OS === "ios" && (
-                <IOSDateTimePickerModal
-                  visible={showDatePicker}
-                  title="Item Date"
-                  value={selectedDate}
-                  mode="date"
-                  minimumDate={tripStartDate}
-                  maximumDate={tripEndDate}
-                  onCancel={() => setShowDatePicker(false)}
-                  onConfirm={(date) => {
-                    setShowDatePicker(false);
-                    setSelectedDate(date);
-                  }}
-                />
-              )}
-              {showDatePicker && Platform.OS !== "ios" && (
-                <DateTimePicker
-                  value={selectedDate}
-                  mode="date"
-                  display="default"
-                  minimumDate={tripStartDate}
-                  maximumDate={tripEndDate}
-                  onChange={(_, date) => {
-                    setShowDatePicker(false);
-                    if (date) setSelectedDate(date);
-                  }}
-                />
-              )}
-            </View>
-
-            <View className="flex-row gap-3">
-              <View className="flex-1 gap-1">
-                <Text className="text-sm font-medium text-muted-foreground">Start Time</Text>
-                <Pressable
-                  onPress={() => setShowStartTimePicker(true)}
-                  className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
-                >
-                  <Clock size={16} color={mutedColor} />
-                  <Text
-                    className={`text-base ${startTimeDate ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {startTimeDate ? formatTime(startTimeDate) : "Optional"}
-                  </Text>
-                </Pressable>
-                {showStartTimePicker && Platform.OS === "ios" && (
-                  <IOSDateTimePickerModal
-                    visible={showStartTimePicker}
-                    title="Start Time"
-                    value={startTimeDate ?? new Date()}
-                    mode="time"
-                    is24Hour
-                    onCancel={() => setShowStartTimePicker(false)}
-                    onConfirm={(date) => {
-                      setShowStartTimePicker(false);
-                      setStartTimeDate(date);
-                    }}
-                  />
-                )}
-                {showStartTimePicker && Platform.OS !== "ios" && (
-                  <DateTimePicker
-                    value={startTimeDate ?? new Date()}
-                    mode="time"
-                    is24Hour
-                    display="default"
-                    onChange={(_, date) => {
-                      setShowStartTimePicker(false);
-                      if (date) setStartTimeDate(date);
-                    }}
-                  />
-                )}
-              </View>
-
-              <View className="flex-1 gap-1">
-                <Text className="text-sm font-medium text-muted-foreground">End Time</Text>
-                <Pressable
-                  onPress={() => setShowEndTimePicker(true)}
-                  className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
-                >
-                  <Clock size={16} color={mutedColor} />
-                  <Text
-                    className={`text-base ${endTimeDate ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {endTimeDate ? formatTime(endTimeDate) : "Optional"}
-                  </Text>
-                </Pressable>
-                {showEndTimePicker && Platform.OS === "ios" && (
-                  <IOSDateTimePickerModal
-                    visible={showEndTimePicker}
-                    title="End Time"
-                    value={endTimeDate ?? new Date()}
-                    mode="time"
-                    is24Hour
-                    onCancel={() => setShowEndTimePicker(false)}
-                    onConfirm={(date) => {
-                      setShowEndTimePicker(false);
-                      setEndTimeDate(date);
-                    }}
-                  />
-                )}
-                {showEndTimePicker && Platform.OS !== "ios" && (
-                  <DateTimePicker
-                    value={endTimeDate ?? new Date()}
-                    mode="time"
-                    is24Hour
-                    display="default"
-                    onChange={(_, date) => {
-                      setShowEndTimePicker(false);
-                      if (date) setEndTimeDate(date);
-                    }}
-                  />
-                )}
-              </View>
-            </View>
-
-            {invalidTimeRange && (
-              <Text className="text-sm text-destructive">
-                Start time must be earlier than end time
+                {endTimeDate ? formatTime(endTimeDate) : "Optional"}
               </Text>
+            </Pressable>
+            {showEndTimePicker && Platform.OS === "ios" && (
+              <IOSDateTimePickerModal
+                visible={showEndTimePicker}
+                title="End Time"
+                value={endTimeDate ?? new Date()}
+                mode="time"
+                is24Hour
+                onCancel={() => setShowEndTimePicker(false)}
+                onConfirm={(date) => {
+                  setShowEndTimePicker(false);
+                  setEndTimeDate(date);
+                }}
+              />
             )}
-
-            {addMutation.error && (
-              <Text className="text-sm text-destructive">{addMutation.error.message}</Text>
+            {showEndTimePicker && Platform.OS !== "ios" && (
+              <DateTimePicker
+                value={endTimeDate ?? new Date()}
+                mode="time"
+                is24Hour
+                display="default"
+                onChange={(_, date) => {
+                  setShowEndTimePicker(false);
+                  if (date) setEndTimeDate(date);
+                }}
+              />
             )}
-
-            <Controller
-              control={control}
-              name="notes"
-              render={({ field: { onChange, value } }) => (
-                <TextInput
-                  className="rounded-xl border border-border bg-card px-4 py-3 text-base text-foreground"
-                  placeholder="Notes (optional)"
-                  placeholderTextColor={mutedColor}
-                  value={value}
-                  onChangeText={onChange}
-                  multiline
-                  numberOfLines={2}
-                  maxLength={500}
-                />
-              )}
-            />
-
-            <Button
-              label="Add to Itinerary"
-              onPress={() => void handleSubmit((v) => addMutation.mutate(v))()}
-              loading={addMutation.isPending}
-              disabled={invalidTimeRange}
-            />
           </View>
         </View>
+
+        {invalidTimeRange && (
+          <Text className="text-sm text-destructive">Start time must be earlier than end time</Text>
+        )}
+
+        {addMutation.error && (
+          <Text className="text-sm text-destructive">{addMutation.error.message}</Text>
+        )}
+
+        <Controller
+          control={control}
+          name="notes"
+          render={({ field: { onChange, value } }) => (
+            <TextInput
+              className="rounded-xl border border-border bg-card px-4 py-3 text-base text-foreground"
+              placeholder="Notes (optional)"
+              placeholderTextColor={mutedColor}
+              value={value}
+              onChangeText={onChange}
+              multiline
+              numberOfLines={2}
+              maxLength={500}
+              textAlignVertical="top"
+            />
+          )}
+        />
       </View>
-    </Modal>
+    </KeyboardSheetModal>
   );
 }

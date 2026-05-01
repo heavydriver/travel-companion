@@ -543,6 +543,21 @@ export function InteractiveMapScreen() {
     });
     setMapZoom(zoom);
     setPinStableCenter([lng, lat]);
+
+    if (session.focusPlaceId) {
+      setSelectedPlaceId(session.focusPlaceId);
+      setSheetMode("detail");
+      requestAnimationFrame(() => {
+        sheetRef.current?.snapToIndex(1);
+      });
+      return;
+    }
+
+    setSelectedPlaceId(null);
+    setSheetMode("list");
+    requestAnimationFrame(() => {
+      sheetRef.current?.snapToIndex(2);
+    });
   }, [mapReady, locPermission, session, sessionRevision]);
 
   useFocusEffect(
