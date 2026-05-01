@@ -120,7 +120,7 @@ function RootLayoutInner() {
     <PostHogProvider
       apiKey={posthogApiKey}
       options={{ host: process.env.EXPO_PUBLIC_POSTHOG_HOST }}
-      autocapture
+      autocapture={false}
     >
       <PersistQueryClientProvider
         client={queryClient}
