@@ -119,6 +119,27 @@ function pinZoomScaleFromZoom(zoom: number): number {
   return Math.min(1.62, Math.max(0.34, 0.34 + t * 1.12));
 }
 
+function withOpacity(hex: string, alpha: number): string {
+  const normalized = hex.trim();
+  const short = /^#([\da-fA-F]{3})$/;
+  const full = /^#([\da-fA-F]{6})$/;
+
+  if (short.test(normalized)) {
+    const [, raw] = normalized.match(short) ?? [];
+    if (!raw) return hex;
+    const [r, g, b] = raw.split("");
+    return `rgba(${Number.parseInt(r + r, 16)}, ${Number.parseInt(g + g, 16)}, ${Number.parseInt(b + b, 16)}, ${alpha})`;
+  }
+
+  if (full.test(normalized)) {
+    const [, raw] = normalized.match(full) ?? [];
+    if (!raw) return hex;
+    return `rgba(${Number.parseInt(raw.slice(0, 2), 16)}, ${Number.parseInt(raw.slice(2, 4), 16)}, ${Number.parseInt(raw.slice(4, 6), 16)}, ${alpha})`;
+  }
+
+  return hex;
+}
+
 function buildMapPinShape(
   places: MapSessionPlace[],
   itineraryIds: Set<string>,
@@ -1353,16 +1374,20 @@ export function InteractiveMapScreen() {
               {allCategories.map((cat) => {
                 const inFilter = selectedCategories.has(cat);
                 const active = selectedCategories.size === 0 ? false : inFilter;
+                const accent = pinColorForCategory(cat);
                 return (
                   <Pressable
                     key={cat}
                     onPress={() => toggleCategory(cat)}
-                    className={`rounded-full border px-2.5 py-1 ${
-                      active ? "border-primary bg-primary/15" : "border-border bg-muted/70"
-                    }`}
+                    className="rounded-full border px-2.5 py-1"
+                    style={{
+                      borderColor: accent,
+                      backgroundColor: active ? withOpacity(accent, 0.16) : "transparent",
+                    }}
                   >
                     <Text
-                      className={`text-[11px] font-semibold ${active ? "text-primary" : "text-muted-foreground"}`}
+                      className={`text-[11px] font-semibold ${active ? "" : "text-muted-foreground"}`}
+                      style={active ? { color: accent } : undefined}
                       numberOfLines={1}
                     >
                       {formatCategoryLabel(cat)}
