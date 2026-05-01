@@ -5,7 +5,15 @@ import BottomSheet, {
   BottomSheetScrollView,
 } from "@gorhom/bottom-sheet";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { Camera, type MapState, MapView, MarkerView, StyleURL, UserLocation } from "@rnmapbox/maps";
+import {
+  Camera,
+  CircleLayer,
+  type MapState,
+  MapView,
+  MarkerView,
+  ShapeSource,
+  UserLocation,
+} from "@rnmapbox/maps";
 import { useQuery } from "@tanstack/react-query";
 import { approximateNumber as approx } from "approximate-number";
 import { Image } from "expo-image";
@@ -59,6 +67,9 @@ import { MapPinMarker } from "./MapPinMarker";
 
 const DARK_MAP_STYLE = "mapbox://styles/varun-11/cmo7dh5kl001001qshs9chyef";
 const LIGHT_MAP_STYLE = "mapbox://styles/varun-11/cmo7dnxyi003001ql58s51upl";
+const MAP_PINS_SOURCE_ID = "travel-map-pins";
+const MAP_PINS_HALO_LAYER_ID = "travel-map-pins-halo";
+const MAP_PINS_LAYER_ID = "travel-map-pins-circle";
 
 function toRad(n: number) {
   return (n * Math.PI) / 180;
@@ -106,6 +117,28 @@ function hasActiveMapFilters(f: MapFilterControls): boolean {
 function pinZoomScaleFromZoom(zoom: number): number {
   const t = (zoom - 9) / 7;
   return Math.min(1.62, Math.max(0.34, 0.34 + t * 1.12));
+}
+
+function buildMapPinShape(
+  places: MapSessionPlace[],
+  itineraryIds: Set<string>,
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: "FeatureCollection",
+    features: places.map((p) => ({
+      type: "Feature",
+      id: p.id,
+      geometry: {
+        type: "Point",
+        coordinates: [p.longitude, p.latitude],
+      },
+      properties: {
+        placeId: p.id,
+        color: pinColorForCategory(p.category),
+        priority: itineraryIds.has(p.id) ? 3 : p.isFeatured ? 2 : p.isCurated ? 1 : 0,
+      },
+    })),
+  };
 }
 
 function selectPlacesForMapPins(
@@ -221,6 +254,7 @@ export function InteractiveMapScreen() {
   /** Point used for /places/nearby only — must not follow every UserLocation tick or the query key changes forever. */
   const [nearbyAnchorCoord, setNearbyAnchorCoord] = useState<[number, number] | null>(null);
   const [mapZoom, setMapZoom] = useState(12);
+  const [livePinZoom, setLivePinZoom] = useState(12);
   /** Map center for pin picking; only moves on idle (or explicit recenter) so pins do not reshuffle while panning. */
   const [pinStableCenter, setPinStableCenter] = useState<[number, number] | null>(null);
   const [search, setSearch] = useState("");
@@ -243,6 +277,10 @@ export function InteractiveMapScreen() {
   const appliedSessionRevisionRef = useRef(-1);
   const curatedSessionAppliedRef = useRef(-1);
   const autoOpenedForSearchKeyRef = useRef<string | null>(null);
+  const centeredPickedDestinationRef = useRef<string | null>(null);
+  const cameraIntentRef = useRef(0);
+  const liveZoomFrameRef = useRef<number | null>(null);
+  const pendingLiveZoomRef = useRef(12);
 
   const searchDebounced = useDebounce(search, 320);
 
@@ -445,6 +483,55 @@ export function InteractiveMapScreen() {
   const destCenterRef = useRef(destCenter);
   destCenterRef.current = destCenter;
 
+  const showPlaceList = useCallback((nextIndex = 2) => {
+    setSelectedPlaceId(null);
+    setSheetMode("list");
+    requestAnimationFrame(() => {
+      sheetRef.current?.snapToIndex(nextIndex);
+    });
+  }, []);
+
+  const showPlaceDetail = useCallback((id: string, nextIndex = 1) => {
+    setSelectedPlaceId(id);
+    setSheetMode("detail");
+    requestAnimationFrame(() => {
+      sheetRef.current?.snapToIndex(nextIndex);
+    });
+  }, []);
+
+  const nextCameraIntent = useCallback(() => {
+    cameraIntentRef.current += 1;
+    return cameraIntentRef.current;
+  }, []);
+
+  const moveCamera = useCallback(
+    (coord: [number, number], zoom: number, animationDuration: number) => {
+      setPinStableCenter(coord);
+      setMapZoom(zoom);
+      setLivePinZoom(zoom);
+      cameraRef.current?.setCamera({
+        centerCoordinate: coord,
+        zoomLevel: zoom,
+        heading: 0,
+        pitch: 0,
+        animationDuration,
+      });
+    },
+    [],
+  );
+
+  const syncNearbyAnchor = useCallback(
+    (coord: [number, number], opts?: { forceNearbyAnchor?: boolean }) => {
+      setNearbyAnchorCoord((prev) => {
+        if (opts?.forceNearbyAnchor) return coord;
+        if (!prev) return coord;
+        const movedKm = distanceKm(prev[1], prev[0], coord[1], coord[0]);
+        return movedKm >= 0.5 ? coord : prev;
+      });
+    },
+    [],
+  );
+
   /** Real coords when available; otherwise a fixed point so MapView can load (unblocks mapReady → flyToUser). */
   const mapCoreCenter = useMemo(() => {
     if (destCenter) return destCenter;
@@ -469,53 +556,48 @@ export function InteractiveMapScreen() {
     (opts?: { forceNearbyAnchor?: boolean }) => {
       if (locPermission === null) return;
       if (locPermission === "granted") {
-        void Location.getCurrentPositionAsync({})
+        const intentId = nextCameraIntent();
+        let movedToKnownCoord = false;
+
+        const applyUserCoord = (coord: [number, number], animationDuration: number) => {
+          if (intentId !== cameraIntentRef.current) return;
+          movedToKnownCoord = true;
+          setUserCoord(coord);
+          syncNearbyAnchor(coord, opts);
+          moveCamera(coord, 15, animationDuration);
+        };
+
+        if (userCoord) {
+          applyUserCoord(userCoord, 250);
+        } else {
+          void Location.getLastKnownPositionAsync()
+            .then((pos) => {
+              if (!pos?.coords) return;
+              applyUserCoord([pos.coords.longitude, pos.coords.latitude], 240);
+            })
+            .catch(() => {});
+        }
+
+        void Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
           .then((pos) => {
-            const coord: [number, number] = [pos.coords.longitude, pos.coords.latitude];
-            setUserCoord(coord);
-            setNearbyAnchorCoord((prev) => {
-              if (opts?.forceNearbyAnchor) return coord;
-              if (!prev) return coord;
-              const movedKm = distanceKm(prev[1], prev[0], coord[1], coord[0]);
-              return movedKm >= 0.5 ? coord : prev;
-            });
-            setPinStableCenter(coord);
-            cameraRef.current?.setCamera({
-              centerCoordinate: coord,
-              zoomLevel: 15,
-              heading: 0,
-              pitch: 0,
-              animationDuration: 450,
-            });
-            setMapZoom(15);
+            applyUserCoord(
+              [pos.coords.longitude, pos.coords.latitude],
+              movedToKnownCoord ? 260 : 420,
+            );
           })
           .catch(() => {
+            if (movedToKnownCoord || intentId !== cameraIntentRef.current) return;
             const c = destCenterRef.current ?? MAP_BOOTSTRAP_CENTER;
-            setPinStableCenter([c.lng, c.lat]);
-            cameraRef.current?.setCamera({
-              centerCoordinate: [c.lng, c.lat],
-              zoomLevel: 12,
-              heading: 0,
-              pitch: 0,
-              animationDuration: 350,
-            });
-            setMapZoom(12);
+            moveCamera([c.lng, c.lat], 12, 350);
           });
         return;
       }
       const c = destCenterRef.current;
       if (!c) return;
-      setPinStableCenter([c.lng, c.lat]);
-      cameraRef.current?.setCamera({
-        centerCoordinate: [c.lng, c.lat],
-        zoomLevel: 12,
-        heading: 0,
-        pitch: 0,
-        animationDuration: 350,
-      });
-      setMapZoom(12);
+      nextCameraIntent();
+      moveCamera([c.lng, c.lat], 12, 350);
     },
-    [locPermission],
+    [locPermission, moveCamera, nextCameraIntent, syncNearbyAnchor, userCoord],
   );
 
   const flyToUserRef = useRef(flyToUser);
@@ -534,31 +616,25 @@ export function InteractiveMapScreen() {
       session.focusZoomLevel ??
       (session.focusLongitude != null && session.focusLatitude != null ? 15 : 12);
 
-    cameraRef.current?.setCamera({
-      centerCoordinate: [lng, lat],
-      zoomLevel: zoom,
-      heading: 0,
-      pitch: 0,
-      animationDuration: 450,
-    });
-    setMapZoom(zoom);
-    setPinStableCenter([lng, lat]);
+    nextCameraIntent();
+    moveCamera([lng, lat], zoom, 450);
 
     if (session.focusPlaceId) {
-      setSelectedPlaceId(session.focusPlaceId);
-      setSheetMode("detail");
-      requestAnimationFrame(() => {
-        sheetRef.current?.snapToIndex(1);
-      });
+      showPlaceDetail(session.focusPlaceId, 1);
       return;
     }
 
-    setSelectedPlaceId(null);
-    setSheetMode("list");
-    requestAnimationFrame(() => {
-      sheetRef.current?.snapToIndex(2);
-    });
-  }, [mapReady, locPermission, session, sessionRevision]);
+    showPlaceList(2);
+  }, [
+    locPermission,
+    mapReady,
+    moveCamera,
+    nextCameraIntent,
+    session,
+    sessionRevision,
+    showPlaceDetail,
+    showPlaceList,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -579,6 +655,14 @@ export function InteractiveMapScreen() {
     if (locPermission === null) return;
     flyToUserRef.current();
   }, [session, locPermission]);
+
+  useEffect(() => {
+    return () => {
+      if (liveZoomFrameRef.current != null) {
+        cancelAnimationFrame(liveZoomFrameRef.current);
+      }
+    };
+  }, []);
 
   const allCategories = useMemo(() => deriveCategories(basePlaces), [basePlaces]);
 
@@ -644,6 +728,12 @@ export function InteractiveMapScreen() {
     itineraryPlaceIds,
     filtersActive,
   ]);
+
+  const nativePinsShape = useMemo(() => {
+    const unselectedPins =
+      selectedPlaceId == null ? pinsToRender : pinsToRender.filter((p) => p.id !== selectedPlaceId);
+    return buildMapPinShape(unselectedPins, itineraryPlaceIds);
+  }, [itineraryPlaceIds, pinsToRender, selectedPlaceId]);
 
   const selectedPlace = useMemo(() => {
     const fromOrdered = orderedPlaces.find((p) => p.id === selectedPlaceId) ?? null;
@@ -733,31 +823,17 @@ export function InteractiveMapScreen() {
       const p =
         orderedPlaces.find((x) => x.id === id) ?? basePlaces.find((x) => x.id === id) ?? null;
       if (p) {
-        setPinStableCenter([p.longitude, p.latitude]);
-        cameraRef.current?.setCamera({
-          centerCoordinate: [p.longitude, p.latitude],
-          zoomLevel: Math.max(mapZoom, 14),
-          heading: 0,
-          pitch: 0,
-          animationDuration: 380,
-        });
+        nextCameraIntent();
+        moveCamera([p.longitude, p.latitude], Math.max(mapZoom, 14), 380);
       }
-      setSelectedPlaceId(id);
-      setSheetMode("detail");
-      requestAnimationFrame(() => {
-        sheetRef.current?.snapToIndex(1);
-      });
+      showPlaceDetail(id, 1);
     },
-    [orderedPlaces, basePlaces, mapZoom],
+    [orderedPlaces, basePlaces, mapZoom, moveCamera, nextCameraIntent, showPlaceDetail],
   );
 
   const closeDetail = useCallback(() => {
-    setSheetMode("list");
-    setSelectedPlaceId(null);
-    requestAnimationFrame(() => {
-      sheetRef.current?.snapToIndex(2);
-    });
-  }, []);
+    showPlaceList(2);
+  }, [showPlaceList]);
 
   const clearCategoryFilter = useCallback(() => {
     setSelectedCategories(new Set());
@@ -779,30 +855,36 @@ export function InteractiveMapScreen() {
   }, []);
 
   const recenterUser = useCallback(() => {
+    showPlaceList(2);
     flyToUserRef.current({ forceNearbyAnchor: true });
-  }, []);
+  }, [showPlaceList]);
 
   const recenterDestination = useCallback(() => {
     const c = destCenter ?? mapCoreCenter ?? MAP_BOOTSTRAP_CENTER;
-    setPinStableCenter([c.lng, c.lat]);
-    cameraRef.current?.setCamera({
-      centerCoordinate: [c.lng, c.lat],
-      zoomLevel: 12,
-      heading: 0,
-      pitch: 0,
-      animationDuration: 450,
+    showPlaceList(2);
+    nextCameraIntent();
+    moveCamera([c.lng, c.lat], 12, 450);
+  }, [destCenter, mapCoreCenter, moveCamera, nextCameraIntent, showPlaceList]);
+
+  const onCameraChanged = useCallback((state: MapState) => {
+    pendingLiveZoomRef.current = state.properties.zoom;
+    if (liveZoomFrameRef.current != null) return;
+    liveZoomFrameRef.current = requestAnimationFrame(() => {
+      liveZoomFrameRef.current = null;
+      const zoom = pendingLiveZoomRef.current;
+      setLivePinZoom((prev) => (Math.abs(prev - zoom) < 0.04 ? prev : zoom));
     });
-    setMapZoom(12);
-  }, [destCenter, mapCoreCenter]);
+  }, []);
 
   const onMapIdle = useCallback((state: MapState) => {
     setMapZoom(state.properties.zoom);
+    setLivePinZoom(state.properties.zoom);
     const c = state.properties.center;
     const coord: [number, number] = [c[0], c[1]];
     setPinStableCenter(coord);
   }, []);
 
-  const pinZoomScale = useMemo(() => pinZoomScaleFromZoom(mapZoom), [mapZoom]);
+  const pinZoomScale = useMemo(() => pinZoomScaleFromZoom(livePinZoom), [livePinZoom]);
 
   const labelForeground = colorScheme === "dark" ? THEME.dark.foreground : THEME.light.foreground;
 
@@ -857,31 +939,37 @@ export function InteractiveMapScreen() {
   }, [session?.returnHref, clearSession, router]);
 
   const clearPickedDestination = useCallback(() => {
+    centeredPickedDestinationRef.current = null;
     setPickedDestination(null);
-  }, []);
+    showPlaceList(2);
+    flyToUserRef.current({ forceNearbyAnchor: true });
+  }, [showPlaceList]);
 
   /** Leave map session / destination pick on the tab: remove pins & list, collapse sheet, pan freely (no back navigation). */
   const clearMapPlacesOverlay = useCallback(() => {
+    centeredPickedDestinationRef.current = null;
     clearSession();
     setPickedDestination(null);
-    setSelectedPlaceId(null);
-    setSheetMode("list");
+    setSelectedCategories(new Set());
+    setMinRating(null);
+    setOpenNowOnly(false);
+    setItineraryOnly(false);
     setSearch("");
     setFiltersExpanded(false);
     setCuratedOnly(false);
-    requestAnimationFrame(() => {
-      sheetRef.current?.snapToIndex(0);
-    });
-  }, [clearSession]);
+    showPlaceList(0);
+  }, [clearSession, showPlaceList]);
 
-  const pickSearchDestination = useCallback((row: { id: string; name: string }) => {
-    setPickedDestination({ id: row.id, name: row.name });
-    setSearch("");
-    setCuratedOnly(false);
-    setSelectedPlaceId(null);
-    setSheetMode("list");
-    requestAnimationFrame(() => sheetRef.current?.snapToIndex(2));
-  }, []);
+  const pickSearchDestination = useCallback(
+    (row: { id: string; name: string }) => {
+      centeredPickedDestinationRef.current = null;
+      setPickedDestination({ id: row.id, name: row.name });
+      setSearch("");
+      setCuratedOnly(false);
+      showPlaceList(2);
+    },
+    [showPlaceList],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -914,6 +1002,29 @@ export function InteractiveMapScreen() {
     autoOpenedForSearchKeyRef.current = key;
     openPlace(filteredPlaces[0].id);
   }, [search, pickedDestination, destinationSearchHits.length, filteredPlaces, openPlace]);
+
+  useEffect(() => {
+    if (!mapReady || !pickedDestination) {
+      if (!pickedDestination) centeredPickedDestinationRef.current = null;
+      return;
+    }
+    const d = destinationQuery.data?.destination as
+      | { latitude: number; longitude: number }
+      | undefined;
+    if (!d) return;
+    if (centeredPickedDestinationRef.current === pickedDestination.id) return;
+    centeredPickedDestinationRef.current = pickedDestination.id;
+    nextCameraIntent();
+    moveCamera([d.longitude, d.latitude], 12, 420);
+    showPlaceList(2);
+  }, [
+    destinationQuery.data,
+    mapReady,
+    moveCamera,
+    nextCameraIntent,
+    pickedDestination,
+    showPlaceList,
+  ]);
 
   const mapStyle = colorScheme === "dark" ? DARK_MAP_STYLE : LIGHT_MAP_STYLE;
 
@@ -987,6 +1098,7 @@ export function InteractiveMapScreen() {
         compassViewMargins={{ x: 10, y: 200 }}
         attributionEnabled={true}
         onDidFinishLoadingMap={() => setMapReady(true)}
+        onCameraChanged={onCameraChanged}
         onMapIdle={onMapIdle}
       >
         <Camera
@@ -1012,24 +1124,103 @@ export function InteractiveMapScreen() {
             }}
           />
         ) : null}
-        {mapReady
-          ? pinsToRender.map((p) => (
+        {mapReady ? (
+          <>
+            <ShapeSource
+              id={MAP_PINS_SOURCE_ID}
+              shape={nativePinsShape}
+              hitbox={{ width: 28, height: 28 }}
+              onPress={(event) => {
+                const pressed = event.features[0];
+                const properties = pressed?.properties as { placeId?: unknown } | undefined;
+                const placeId =
+                  typeof properties?.placeId === "string"
+                    ? properties.placeId
+                    : typeof pressed?.id === "string"
+                      ? pressed.id
+                      : null;
+                if (placeId) openPlace(placeId);
+              }}
+            >
+              <CircleLayer
+                id={MAP_PINS_HALO_LAYER_ID}
+                style={{
+                  circlePitchAlignment: "viewport",
+                  circlePitchScale: "viewport",
+                  circleColor: ["get", "color"],
+                  circleRadius: [
+                    "interpolate",
+                    ["linear"],
+                    ["zoom"],
+                    8,
+                    7.5,
+                    10,
+                    10,
+                    12,
+                    13,
+                    14,
+                    16,
+                    16,
+                    20,
+                  ],
+                  circleOpacity: 0.16,
+                  circleBlur: 0.55,
+                }}
+              />
+              <CircleLayer
+                id={MAP_PINS_LAYER_ID}
+                style={{
+                  circlePitchAlignment: "viewport",
+                  circlePitchScale: "viewport",
+                  circleColor: ["get", "color"],
+                  circleRadius: [
+                    "interpolate",
+                    ["linear"],
+                    ["zoom"],
+                    8,
+                    4.5,
+                    10,
+                    6,
+                    12,
+                    8.5,
+                    14,
+                    11,
+                    16,
+                    13.5,
+                  ],
+                  circleStrokeColor: "#FFFFFF",
+                  circleStrokeWidth: [
+                    "case",
+                    [">=", ["get", "priority"], 2],
+                    2.4,
+                    [">=", ["get", "priority"], 1],
+                    1.8,
+                    1.4,
+                  ],
+                  circleOpacity: 0.98,
+                  circleSortKey: ["+", ["*", ["get", "priority"], 10], 1],
+                }}
+              />
+            </ShapeSource>
+
+            {selectedPlace ? (
               <MarkerView
-                key={p.id}
-                coordinate={[p.longitude, p.latitude]}
+                key={selectedPlace.id}
+                coordinate={[selectedPlace.longitude, selectedPlace.latitude]}
                 anchor={{ x: 0.5, y: 1 }}
                 allowOverlap
               >
                 <MapPinMarker
-                  name={p.name}
-                  category={p.category}
-                  selected={p.id === selectedPlaceId}
+                  name={selectedPlace.name}
+                  category={selectedPlace.category}
+                  selected
                   zoomScale={pinZoomScale}
-                  onPress={() => openPlace(p.id)}
+                  onPress={() => openPlace(selectedPlace.id)}
                 />
               </MarkerView>
-            ))
-          : null}
+            ) : null}
+          </>
+        ) : null}
       </MapView>
 
       {loadingPlaces ? (
@@ -1395,7 +1586,12 @@ export function InteractiveMapScreen() {
                           if (selectedPlaceId) router.push(`/place/${selectedPlaceId}` as never);
                         }}
                       >
-                        <Text className="text-sm font-light text-muted-foreground m-0 p-0 underline" style={{ textDecorationLine: "underline" }}>Details</Text>
+                        <Text
+                          className="text-sm font-light text-muted-foreground m-0 p-0 underline"
+                          style={{ textDecorationLine: "underline" }}
+                        >
+                          Details
+                        </Text>
                       </Pressable>
                     </View>
                   </View>

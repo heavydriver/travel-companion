@@ -742,7 +742,7 @@ export default function AssistantScreen() {
                 <View className="flex-1">
                   <Text className="text-lg font-semibold text-foreground">Download AI Model</Text>
                   <Text className="mt-1 text-sm leading-6 text-muted-foreground">
-                    Download the on-device Qwen model once and keep your assistant available for
+                    Download the on-device Gemma 2 model once and keep your assistant available for
                     future trips.
                   </Text>
                 </View>
