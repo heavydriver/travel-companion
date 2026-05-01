@@ -38,6 +38,13 @@ In your VPS deploy directory (`VPS_DEPLOY_PATH`), keep:
   - `JWT_ACCESS_SECRET`
   - `JWT_REFRESH_SECRET`
   - optional values from `apps/api/.env.example`
+  - Better Stack / OpenTelemetry envs when telemetry export is enabled:
+    - `BETTERSTACK_INGESTING_HOST`
+    - `BETTERSTACK_SOURCE_TOKEN`
+    - `OTEL_SERVICE_NAME` (optional, defaults to `travel-companion-api`)
+    - `SERVICE_VERSION` (recommended, usually set to deploy tag)
+    - `OTEL_METRIC_EXPORT_INTERVAL_MS` (optional)
+    - `OTEL_METRIC_EXPORT_TIMEOUT_MS` (optional)
 - `.env` (same file) or shell environment with:
   - `DOCKERHUB_USERNAME`
   - `IMAGE_TAG` (workflow exports this before `docker compose` commands)
@@ -58,3 +65,8 @@ In your VPS deploy directory (`VPS_DEPLOY_PATH`), keep:
 - No `.env` files are copied into the Docker image.
 - Secrets are injected only at runtime or through GitHub secrets.
 - API package version and changelog are updated automatically by semantic-release.
+- Health endpoints for Better Stack uptime monitors:
+  - `GET /api/v1/health/live`
+  - `GET /api/v1/health/ready`
+- `apps/api/Dockerfile` now keeps `node_modules` in runtime image so `pg` stays external and OpenTelemetry can instrument PostgreSQL in production.
+- CI/Docker install uses `pnpm install --config.node-linker=isolated ...` because Bun on this API package needs package-local links for OpenTelemetry modules.

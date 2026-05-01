@@ -1,4 +1,5 @@
 import Elysia from "elysia";
+import { getRequestMetadata } from "../observability";
 import { logger } from "../utils/logger";
 
 export class AppError extends Error {
@@ -13,8 +14,24 @@ export class AppError extends Error {
 }
 
 export const errorHandler = new Elysia({ name: "errorHandler" }).onError(
-  ({ code, error, set }) => {
+  ({ code, error, request, set }) => {
+    const requestMetadata = getRequestMetadata(request);
+    const requestMeta = {
+      method: request.method,
+      requestId: requestMetadata?.requestId,
+      route: requestMetadata?.route,
+      url: request.url,
+    };
+
     if (error instanceof AppError) {
+      logger.warn("Application error", {
+        ...requestMeta,
+        code: error.code,
+        details: error.details,
+        message: error.message,
+        statusCode: error.statusCode,
+      });
+
       set.status = error.statusCode;
       return {
         error: {
@@ -26,6 +43,11 @@ export const errorHandler = new Elysia({ name: "errorHandler" }).onError(
     }
 
     if (code === "VALIDATION") {
+      logger.warn("Validation error", {
+        ...requestMeta,
+        details: error instanceof Error ? error.message : String(error),
+      });
+
       set.status = 422;
       return {
         error: {
@@ -37,6 +59,8 @@ export const errorHandler = new Elysia({ name: "errorHandler" }).onError(
     }
 
     if (code === "NOT_FOUND") {
+      logger.warn("Route not found", requestMeta);
+
       set.status = 404;
       return {
         error: { code: "NOT_FOUND", message: "Resource not found" },
@@ -63,7 +87,11 @@ export const errorHandler = new Elysia({ name: "errorHandler" }).onError(
 
     const msg = error instanceof Error ? error.message : "Unknown error";
     const stack = error instanceof Error ? error.stack : undefined;
-    logger.error("Unhandled error", { message: msg, stack });
+    logger.error("Unhandled error", {
+      ...requestMeta,
+      message: msg,
+      stack,
+    });
 
     set.status = 500;
     return {

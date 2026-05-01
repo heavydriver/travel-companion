@@ -17,7 +17,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/types/package.json packages/types/package.json
 
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store,sharing=locked \
-    pnpm install --frozen-lockfile --filter @repo/api...
+    pnpm install --config.node-linker=isolated --frozen-lockfile --filter @repo/api...
 
 FROM deps AS builder
 
@@ -33,10 +33,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-COPY --from=builder --chown=bun:bun /workspace/apps/api/dist/index.js ./index.js
+COPY --from=builder --chown=bun:bun /workspace/apps/api/dist ./dist
+COPY --from=builder --chown=bun:bun /workspace/node_modules ./node_modules
 
 USER bun
 
 EXPOSE 3000
 
-CMD ["bun", "./index.js"]
+CMD ["bun", "./dist/index.js"]
