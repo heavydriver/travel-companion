@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Pressable, Text, View } from "react-native";
 import { z } from "zod";
-import { type AuthResponse, useEden } from "@/api/client";
+import { useEden } from "@/api/client";
 import { AuthHeader } from "@/components/auth/AuthHeader";
 import { AuthTextField } from "@/components/auth/AuthTextField";
 import { OAuthButton } from "@/components/auth/OAuthButton";
@@ -14,6 +14,7 @@ import { ErrorBanner } from "@/components/shared/ErrorBanner";
 import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
 import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
+import { analytics } from "@/utils/analytics";
 
 const registerSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name is too long"),
@@ -60,6 +61,7 @@ export default function RegisterScreen() {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
       });
+      analytics.register("email");
       router.replace("/(tabs)" as never);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to register. Please try again.");

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Send } from "lucide-react-native";
-import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -13,10 +13,10 @@ import {
   View,
 } from "react-native";
 import { client } from "@/api/client";
-import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { analytics } from "@/utils/analytics";
 
 type ApiMessage = {
   id: string;
@@ -26,6 +26,8 @@ type ApiMessage = {
   readAt: string | null;
   createdAt: string;
 };
+
+type MessageItem = ApiMessage;
 
 export default function MessageThreadScreen() {
   const router = useRouter();
@@ -60,6 +62,7 @@ export default function MessageThreadScreen() {
       return res.data;
     },
     onSuccess: () => {
+      analytics.chatMessageSent(Boolean(connectionId));
       queryClient.invalidateQueries({ queryKey: ["messages", connectionId] });
       setDraft("");
     },
@@ -68,7 +71,7 @@ export default function MessageThreadScreen() {
   useEffect(() => {
     if (!connectionId) return;
     client.api.v1.messages["mark-read"].patch({ connectionId }).catch(() => {});
-  }, [connectionId, messagesQuery.data]);
+  }, [connectionId]);
 
   const messages = (messagesQuery.data?.messages ?? []) as MessageItem[];
   const canSend = draft.trim().length > 0 && !sendMutation.isPending && isConnected;

@@ -16,6 +16,7 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { useNetworkStore } from "@/store/networkStore";
+import { analytics } from "@/utils/analytics";
 
 type SocialTab = "nearby" | "connections";
 
@@ -98,6 +99,7 @@ export default function SocialConnectScreen() {
       return res.data;
     },
     onSuccess: () => {
+      analytics.connectionSent();
       queryClient.invalidateQueries({ queryKey: ["social"] });
       setSelectedTraveler(null);
     },
@@ -119,6 +121,7 @@ export default function SocialConnectScreen() {
       return res.data;
     },
     onSuccess: () => {
+      analytics.connectionAccepted();
       queryClient.invalidateQueries({ queryKey: ["social"] });
     },
   });

@@ -26,6 +26,8 @@
     "expo-server-sdk": "^4.0.0",
     "google-auth-library": "^10.6.2",
     "jose": "^6.2.0"
+    ,
+    "posthog-node": "^5.9.1"
   },
   "devDependencies": {
     "@tsconfig/bun": "^1.0.10",

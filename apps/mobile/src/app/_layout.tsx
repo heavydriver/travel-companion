@@ -7,13 +7,13 @@ import { QueryClient, onlineManager } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { PortalHost } from "@rn-primitives/portal";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-import { PostHogProvider } from "posthog-react-native";
+import { PostHogProvider, usePostHog } from "posthog-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { client, EdenProvider } from "@/api/client";
@@ -27,6 +27,8 @@ import { usePushRegistration } from "@/hooks/usePushRegistration";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
+import { useAuthStore } from "@/store/authStore";
+import { analytics, setAnalyticsClient } from "@/utils/analytics";
 
 onlineManager.setEventListener((setOnline) =>
   NetInfo.addEventListener((state) => {
@@ -60,6 +62,35 @@ function RootToast() {
   );
 }
 
+function AnalyticsBinder() {
+  const posthog = usePostHog();
+  const pathname = usePathname();
+  const userId = useAuthStore((s) => s.user?.id);
+
+  useEffect(() => {
+    setAnalyticsClient(posthog);
+    return () => {
+      setAnalyticsClient(null);
+    };
+  }, [posthog]);
+
+  useEffect(() => {
+    if (pathname) {
+      analytics.screenView(pathname);
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    if (userId) {
+      analytics.identifyUser(userId);
+      return;
+    }
+    analytics.resetUser();
+  }, [userId]);
+
+  return null;
+}
+
 export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -83,32 +114,35 @@ function RootLayoutInner() {
     return unsubscribe;
   }, [startListening, hydrateOffline, hydratePreferences]);
 
+  const posthogApiKey = process.env.EXPO_PUBLIC_POSTHOG_API_KEY ?? "";
+
   return (
     <PostHogProvider
-  apiKey={process.env.EXPO_PUBLIC_POSTHOG_API_KEY!}
-  options={{ host: process.env.EXPO_PUBLIC_POSTHOG_HOST }}
-  autocapture
->
-  <PersistQueryClientProvider
-    client={queryClient}
-    persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 }}
-  >
-    <EdenProvider client={client} queryClient={queryClient}>
-      <DestinationFavoritesProvider>
-        <KeyboardProvider>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-              <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-              <OfflineBanner />
-              <Stack screenOptions={{ headerShown: false }} />
-              <PortalHost />
-              <RootToast />
-            </ThemeProvider>
-          </GestureHandlerRootView>
-        </KeyboardProvider>
-      </DestinationFavoritesProvider>
-    </EdenProvider>
-  </PersistQueryClientProvider>
-</PostHogProvider>
+      apiKey={posthogApiKey}
+      options={{ host: process.env.EXPO_PUBLIC_POSTHOG_HOST }}
+      autocapture
+    >
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 }}
+      >
+        <EdenProvider client={client} queryClient={queryClient}>
+          <DestinationFavoritesProvider>
+            <KeyboardProvider>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+                  <AnalyticsBinder />
+                  <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+                  <OfflineBanner />
+                  <Stack screenOptions={{ headerShown: false }} />
+                  <PortalHost />
+                  <RootToast />
+                </ThemeProvider>
+              </GestureHandlerRootView>
+            </KeyboardProvider>
+          </DestinationFavoritesProvider>
+        </EdenProvider>
+      </PersistQueryClientProvider>
+    </PostHogProvider>
   );
 }

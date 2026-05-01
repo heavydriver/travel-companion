@@ -15,6 +15,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { Screen } from "@/components/shared/Screen";
 import { formatDate } from "@/lib/utils";
+import { analytics } from "@/utils/analytics";
 
 const tripSchema = z
   .object({
@@ -99,7 +100,8 @@ export default function NewTripScreen() {
       if (res.error) throw new Error("Failed to create trip");
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      analytics.tripCreated(data.trip.destination.id);
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       router.back();
     },

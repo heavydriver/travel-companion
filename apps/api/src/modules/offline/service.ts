@@ -1,5 +1,6 @@
 import { prisma } from "@repo/db";
 import { AppError } from "../../middleware/errorHandler";
+import { serverAnalytics } from "../../utils/analytics/posthog";
 
 export const offlineService = {
   async getCityPack(destinationId: string) {
@@ -49,6 +50,13 @@ export const offlineService = {
     });
 
     const { packVersion, ...destData } = destination;
+
+    serverAnalytics.packGenerationCompleted(
+      destinationId,
+      packVersion,
+      places.length,
+      phrases.length,
+    );
 
     return {
       destination: destData,

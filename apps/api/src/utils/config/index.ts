@@ -19,6 +19,8 @@ const EnvSchema = t.Object({
   APPLE_CLIENT_ID: t.Optional(t.String()),
   APPLE_TEAM_ID: t.Optional(t.String()),
   APPLE_KEY_ID: t.Optional(t.String()),
+  POSTHOG_API_KEY: t.Optional(t.String()),
+  POSTHOG_HOST: t.Optional(t.String()),
 });
 
 function loadConfig() {
@@ -34,6 +36,8 @@ function loadConfig() {
     APPLE_CLIENT_ID: process.env.APPLE_CLIENT_ID,
     APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
     APPLE_KEY_ID: process.env.APPLE_KEY_ID,
+    POSTHOG_API_KEY: process.env.POSTHOG_API_KEY,
+    POSTHOG_HOST: process.env.POSTHOG_HOST,
   };
 
   if (!Value.Check(EnvSchema, raw)) {
@@ -57,6 +61,8 @@ function loadConfig() {
     appleClientId: raw.APPLE_CLIENT_ID,
     appleTeamId: raw.APPLE_TEAM_ID,
     appleKeyId: raw.APPLE_KEY_ID,
+    posthogApiKey: raw.POSTHOG_API_KEY,
+    posthogHost: raw.POSTHOG_HOST || "https://us.i.posthog.com",
   } as const;
 }
 

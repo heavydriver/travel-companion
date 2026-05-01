@@ -33,6 +33,7 @@ import { Screen } from "@/components/shared/Screen";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { formatDate, toDateOnly } from "@/lib/utils";
 import { useOfflineStore } from "@/store/offlineStore";
+import { analytics } from "@/utils/analytics";
 
 type ItineraryItem = {
   id: string;
@@ -46,6 +47,20 @@ type ItineraryItem = {
   isDone: boolean;
   placeId: string | null;
 };
+
+type OfflinePackPayload = {
+  packVersion?: number;
+  places?: unknown[];
+  phrases?: unknown[];
+};
+
+function parseTimeToDate(time: string | null): Date | null {
+  if (!time) return null;
+  const [h, m] = time.split(":").map(Number);
+  const date = new Date();
+  date.setHours(h, m, 0, 0);
+  return date;
+}
 
 function groupByDate(items: ItineraryItem[]) {
   const groups: Record<string, ItineraryItem[]> = {};
@@ -73,6 +88,7 @@ export default function TripDetailScreen() {
   const openAddParam = oneParam(params.openAdd);
   const prefillTitleParam = oneParam(params.prefillTitle);
   const prefillPlaceIdParam = oneParam(params.prefillPlaceId);
+  const tripId = id ?? "";
   const router = useRouter();
   const queryClient = useQueryClient();
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
@@ -93,7 +109,7 @@ export default function TripDetailScreen() {
   const tripQuery = useQuery({
     queryKey: ["trip", id],
     queryFn: async () => {
-      const res = await client.api.v1.trips({ tripId: id! }).get();
+      const res = await client.api.v1.trips({ tripId }).get();
       if (res.error) throw new Error("Failed to load trip");
       return res.data;
     },
@@ -120,7 +136,7 @@ export default function TripDetailScreen() {
   const itemsQuery = useQuery({
     queryKey: ["itinerary", id],
     queryFn: async () => {
-      const res = await client.api.v1.trips({ tripId: id! })["itinerary-items"].get();
+      const res = await client.api.v1.trips({ tripId })["itinerary-items"].get();
       if (res.error) throw new Error("Failed to load itinerary");
       return res.data;
     },
@@ -149,11 +165,12 @@ export default function TripDetailScreen() {
 
   const deleteTrip = useMutation({
     mutationFn: async () => {
-      const res = await client.api.v1.trips({ tripId: id! }).delete();
+      const res = await client.api.v1.trips({ tripId }).delete();
       if (res.error) throw new Error("Failed to delete trip");
       return res.data;
     },
     onSuccess: () => {
+      analytics.tripDeleted();
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       router.back();
     },
@@ -181,19 +198,21 @@ export default function TripDetailScreen() {
     },
     onSuccess: (data) => {
       if (!destId || !trip || !data) return;
+      const pack = data as OfflinePackPayload;
       savePack(
         {
           destinationId: destId,
           destinationName: trip.destination.name,
           country: trip.destination.countryCode,
           countryCode: trip.destination.countryCode,
-          packVersion: (data as any).packVersion ?? 1,
+          packVersion: pack.packVersion ?? 1,
           downloadedAt: new Date().toISOString(),
-          placesCount: ((data as any).places ?? []).length,
-          phrasesCount: ((data as any).phrases ?? []).length,
+          placesCount: (pack.places ?? []).length,
+          phrasesCount: (pack.phrases ?? []).length,
         },
         data,
       );
+      analytics.packDownloaded(destId);
     },
     onError: () => setDownloading(null),
   });
@@ -435,7 +454,7 @@ export default function TripDetailScreen() {
 
       <AddItemModal
         visible={showAddModal}
-        tripId={id!}
+        tripId={tripId}
         defaultDate={addDate}
         tripStartDate={trip ? new Date(trip.startDate) : undefined}
         tripEndDate={trip ? new Date(trip.endDate) : undefined}
@@ -455,7 +474,7 @@ export default function TripDetailScreen() {
       {trip && (
         <EditTripModal
           visible={showEditModal}
-          tripId={id!}
+          tripId={tripId}
           currentTitle={trip.title}
           currentStartDate={new Date(trip.startDate)}
           currentEndDate={new Date(trip.endDate)}
@@ -554,6 +573,7 @@ function AddItemModal({
       return res.data;
     },
     onSuccess: () => {
+      analytics.itemAdded(Boolean(linkedPlaceId));
       reset();
       setStartTimeDate(null);
       setEndTimeDate(null);
@@ -866,23 +886,15 @@ function EditItemModal({
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
 
-  const parseTime = (t: string | null): Date | null => {
-    if (!t) return null;
-    const [h, m] = t.split(":").map(Number);
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    return d;
-  };
-
-  const [startTimeDate, setStartTimeDate] = useState<Date | null>(parseTime(item.startTime));
-  const [endTimeDate, setEndTimeDate] = useState<Date | null>(parseTime(item.endTime));
+  const [startTimeDate, setStartTimeDate] = useState<Date | null>(parseTimeToDate(item.startTime));
+  const [endTimeDate, setEndTimeDate] = useState<Date | null>(parseTimeToDate(item.endTime));
 
   useEffect(() => {
     setTitle(item.title);
     setNotes(item.notes ?? "");
     setSelectedDate(new Date(item.date));
-    setStartTimeDate(parseTime(item.startTime));
-    setEndTimeDate(parseTime(item.endTime));
+    setStartTimeDate(parseTimeToDate(item.startTime));
+    setEndTimeDate(parseTimeToDate(item.endTime));
   }, [item]);
 
   const fmtTime = (d: Date) =>
