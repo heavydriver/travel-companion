@@ -18,6 +18,7 @@ import Toast from "react-native-toast-message";
 import { client, EdenProvider } from "@/api/client";
 // import { queryClient } from "@/lib/queryClient";
 import { appToastConfig } from "@/components/shared/AppToast";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { DestinationFavoritesProvider } from "@/features/destination/favorites";
 import { NAV_THEME } from "@/lib/theme";
@@ -61,9 +62,11 @@ function RootToast() {
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <RootLayoutInner />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RootLayoutInner />
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

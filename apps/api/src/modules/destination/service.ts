@@ -1,4 +1,5 @@
 import { prisma } from "@repo/db";
+import { apiCache } from "../../utils/cache";
 import { AppError } from "../../middleware/errorHandler";
 import { config } from "../../utils/config";
 
@@ -134,13 +135,14 @@ function withDestinationCdnImageUrl<T extends { imageUrl: string | null }>(recor
 
 export const destinationService = {
   async getPopular() {
-    const destinations = await prisma.destination.findMany({
-      where: { isFeatured: true },
-      select: popularDestinationSelect,
-      orderBy: [{ name: "asc" }],
-    });
-
-    return destinations.map(withDestinationCdnImageUrl);
+    return apiCache.getOrSet("destinations:popular", async () => {
+      const destinations = await prisma.destination.findMany({
+        where: { isFeatured: true },
+        select: popularDestinationSelect,
+        orderBy: [{ name: "asc" }],
+      });
+      return destinations.map(withDestinationCdnImageUrl);
+    }, 10 * 60 * 1000);
   },
 
   async search(filters: DestinationListFilters) {
@@ -183,45 +185,47 @@ export const destinationService = {
   },
 
   async getById(destinationId: string) {
-    const destination = await prisma.destination.findUnique({
-      where: { id: destinationId },
-      select: {
-        ...destinationDetailSelect,
-        languages: {
-          select: {
-            id: true,
-            isPrimary: true,
-            language: {
-              select: { id: true, name: true, isoCode: true, nativeName: true },
+    return apiCache.getOrSet(`destinations:${destinationId}`, async () => {
+      const destination = await prisma.destination.findUnique({
+        where: { id: destinationId },
+        select: {
+          ...destinationDetailSelect,
+          languages: {
+            select: {
+              id: true,
+              isPrimary: true,
+              language: {
+                select: { id: true, name: true, isoCode: true, nativeName: true },
+              },
             },
           },
         },
-      },
-    });
+      });
 
-    if (!destination) {
-      throw new AppError(404, "NOT_FOUND", "Destination not found");
-    }
+      if (!destination) {
+        throw new AppError(404, "NOT_FOUND", "Destination not found");
+      }
 
-    const { languages, ...destinationRest } = destination;
+      const { languages, ...destinationRest } = destination;
 
-    const places = await prisma.place.findMany({
-      where: { destinationId },
-      select: placePreviewSelect,
-      orderBy: [{ isCurated: "desc" }, { isFeatured: "desc" }, { rating: "desc" }],
-    });
+      const places = await prisma.place.findMany({
+        where: { destinationId },
+        select: placePreviewSelect,
+        orderBy: [{ isCurated: "desc" }, { isFeatured: "desc" }, { rating: "desc" }],
+      });
 
-    const curatedPlaces = places.filter((place) => place.isCurated).map(withPlaceCdnImageUrl);
-    const otherPlaces = places.filter((place) => !place.isCurated).map(withPlaceCdnImageUrl);
+      const curatedPlaces = places.filter((place) => place.isCurated).map(withPlaceCdnImageUrl);
+      const otherPlaces = places.filter((place) => !place.isCurated).map(withPlaceCdnImageUrl);
 
-    return {
-      destination: withDestinationCdnImageUrl({
-        ...destinationRest,
-        languages,
-      }),
-      curatedPlaces,
-      otherPlaces,
-    };
+      return {
+        destination: withDestinationCdnImageUrl({
+          ...destinationRest,
+          languages,
+        }),
+        curatedPlaces,
+        otherPlaces,
+      };
+    }, 5 * 60 * 1000);
   },
 
   async getPackVersion(destinationId: string) {

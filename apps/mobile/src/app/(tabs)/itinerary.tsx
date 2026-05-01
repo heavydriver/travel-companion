@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
   Calendar,
@@ -11,6 +11,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
+import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { useTripStore } from "@/store/tripStore";
 import { formatDate, toDateOnly } from "@/lib/utils";
 
@@ -37,10 +38,23 @@ function groupByDate(items: ItineraryItem[]) {
 
 export default function ItineraryTabScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const activeTrip = useTripStore((s) => s.activeTrip)();
   const trips = useTripStore((s) => s.trips);
+  const { guardAction } = useOfflineGuard();
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
+
+  const toggleDone = useMutation({
+    mutationFn: async ({ itemId, isDone }: { itemId: string; isDone: boolean }) => {
+      const res = await client.api.v1["itinerary-items"]({ id: itemId }).patch({ isDone });
+      if (res.error) throw new Error("Failed to update");
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip?.id] });
+    },
+  });
 
   const itemsQuery = useQuery({
     queryKey: ["itinerary", activeTrip?.id],
@@ -156,17 +170,31 @@ export default function ItineraryTabScreen() {
               {dayItems.length === 1 ? "item" : "items"}
             </Text>
             {dayItems.map((item) => (
-              <Pressable
+              <View
                 key={item.id}
-                onPress={() => router.push(`/trip/${activeTrip.id}` as never)}
-                className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 active:opacity-90"
+                className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
               >
-                {item.isDone ? (
-                  <CheckCircle2 size={20} color="#22C55E" />
-                ) : (
-                  <Circle size={20} color={mutedColor} />
-                )}
-                <View className="flex-1">
+                <Pressable
+                  onPress={() =>
+                    guardAction(() =>
+                      toggleDone.mutate({ itemId: item.id, isDone: !item.isDone })
+                    )
+                  }
+                  hitSlop={8}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: item.isDone }}
+                  accessibilityLabel={`Mark ${item.title} as ${item.isDone ? "not done" : "done"}`}
+                >
+                  {item.isDone ? (
+                    <CheckCircle2 size={22} color="#22C55E" />
+                  ) : (
+                    <Circle size={22} color={mutedColor} />
+                  )}
+                </Pressable>
+                <Pressable
+                  className="flex-1 active:opacity-80"
+                  onPress={() => router.push(`/trip/${activeTrip.id}` as never)}
+                >
                   <Text
                     className={`text-base font-medium ${item.isDone ? "text-muted-foreground line-through" : "text-foreground"}`}
                   >
@@ -178,8 +206,8 @@ export default function ItineraryTabScreen() {
                       {item.endTime && ` – ${item.endTime}`}
                     </Text>
                   )}
-                </View>
-              </Pressable>
+                </Pressable>
+              </View>
             ))}
           </View>
         ))}

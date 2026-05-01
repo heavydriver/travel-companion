@@ -12,11 +12,12 @@ import { connectionModule, socialModule } from "./modules/social";
 import { tripModule } from "./modules/trip";
 import { userModule } from "./modules/user";
 import { weatherModule } from "./modules/weather";
+import { apiCache } from "./utils/cache";
 
 export const app = new Elysia({ prefix: "/api/v1" })
   // .use(cors({ origin: config.frontendUrl, credentials: true }))
   .use(errorHandler)
-  .get("/health", () => ({ status: "ok" }))
+  .get("/health", () => ({ status: "ok", cacheEntries: apiCache.size }))
   .use(authModule)
   .use(userModule)
   .use(destinationModule)

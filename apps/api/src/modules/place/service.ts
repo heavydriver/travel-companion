@@ -1,4 +1,5 @@
 import { prisma } from "@repo/db";
+import { apiCache } from "../../utils/cache";
 import { AppError } from "../../middleware/errorHandler";
 import { config } from "../../utils/config";
 
@@ -159,18 +160,20 @@ export const placeService = {
   },
 
   async getById(placeId: string) {
-    const place = await prisma.place.findUnique({
-      where: { id: placeId },
-    });
+    return apiCache.getOrSet(`places:${placeId}`, async () => {
+      const place = await prisma.place.findUnique({
+        where: { id: placeId },
+      });
 
-    if (!place) {
-      throw new AppError(404, "NOT_FOUND", "Place not found");
-    }
+      if (!place) {
+        throw new AppError(404, "NOT_FOUND", "Place not found");
+      }
 
-    return withCdnImageUrl({
-      ...place,
-      createdAt: place.createdAt.toISOString(),
-      updatedAt: place.updatedAt.toISOString(),
-    });
+      return withCdnImageUrl({
+        ...place,
+        createdAt: place.createdAt.toISOString(),
+        updatedAt: place.updatedAt.toISOString(),
+      });
+    }, 5 * 60 * 1000);
   },
 };
