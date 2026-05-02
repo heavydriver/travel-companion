@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Send } from "lucide-react-native";
-import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { FlashList } from "@shopify/flash-list";
 import {
   ActivityIndicator,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,7 +13,6 @@ import {
   View,
 } from "react-native";
 import { client } from "@/api/client";
-import { Screen } from "@/components/shared/Screen";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -35,7 +34,7 @@ export default function MessageThreadScreen() {
   const currentUserId = useAuthStore((s) => s.user?.id);
   const isConnected = useNetworkStore((s) => s.isConnected);
   const [draft, setDraft] = useState("");
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<FlashList<ApiMessage>>(null);
 
   const messagesQuery = useQuery({
     queryKey: ["messages", connectionId],
@@ -65,12 +64,15 @@ export default function MessageThreadScreen() {
     },
   });
 
+  const messages = (messagesQuery.data?.messages ?? []) as ApiMessage[];
+  /** When polling adds messages, this changes so we mark read for new inbound items (R-1102). */
+  const lastMessageId = messages.at(-1)?.id ?? "";
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: lastMessageId must trigger mark-read when poll appends messages
   useEffect(() => {
     if (!connectionId) return;
     client.api.v1.messages["mark-read"].patch({ connectionId }).catch(() => {});
-  }, [connectionId, messagesQuery.data]);
-
-  const messages = (messagesQuery.data?.messages ?? []) as MessageItem[];
+  }, [connectionId, lastMessageId]);
   const canSend = draft.trim().length > 0 && !sendMutation.isPending && isConnected;
 
   const handleSend = () => {
@@ -111,11 +113,12 @@ export default function MessageThreadScreen() {
             </View>
           )}
 
-          <FlatList
+          <FlashList
             ref={flatListRef}
             data={messages}
             keyExtractor={(item) => item.id}
-            contentContainerClassName="gap-2 py-4"
+            contentContainerStyle={{ paddingVertical: 16 }}
+            estimatedItemSize={84}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
             renderItem={({ item }) => {
               const isMe = item.senderId === currentUserId;

@@ -2,10 +2,9 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Heart, Play } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useEffect, useMemo, useState } from "react";
+import { FlashList, type ListRenderItem } from "@shopify/flash-list";
 import {
   ActivityIndicator,
-  FlatList,
-  type ListRenderItem,
   Pressable,
   ScrollView,
   Text,
@@ -222,10 +221,11 @@ export default function LanguageGuideScreen() {
 
   return (
     <Screen contentClassName="px-0 pt-4 pb-0">
-      <FlatList
+      <FlashList
         data={filteredPhrases}
         keyExtractor={(item) => item.id}
         renderItem={renderPhrase}
+        estimatedItemSize={220}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.35}
         ListHeaderComponent={

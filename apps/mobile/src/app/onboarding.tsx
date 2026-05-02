@@ -3,7 +3,8 @@ import { useRouter } from "expo-router";
 import { ArrowRight } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { FlatList, Pressable, Text, View, type ViewToken } from "react-native";
+import { FlashList } from "@shopify/flash-list";
+import { Pressable, Text, View, type ViewToken } from "react-native";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import slides from "@/data/onboardingSlides.json";
@@ -18,7 +19,7 @@ type Slide = {
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const listRef = useRef<FlatList<Slide>>(null);
+  const listRef = useRef<FlashList<Slide>>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const setHasSeenOnboarding = useUiStore((state) => state.setHasSeenOnboarding);
 
@@ -77,12 +78,13 @@ export default function OnboardingScreen() {
           </View>
         </View>
 
-        <FlatList
+        <FlashList
           ref={listRef}
           data={data}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          estimatedItemSize={360}
           keyExtractor={(item) => item.id}
           onViewableItemsChanged={onViewableItemsChanged.current}
           viewabilityConfig={viewabilityConfig.current}

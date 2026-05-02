@@ -3,9 +3,9 @@ import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MessageCircle, Pencil, User as UserIcon } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
+import { FlashList } from "@shopify/flash-list";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   Switch,
   Text,
@@ -356,12 +356,13 @@ export default function ProfileScreen() {
                     discovery to appear for others.
                   </Text>
                 ) : (
-                  <FlatList
+                  <FlashList
                     horizontal
                     data={travelers}
                     keyExtractor={(item) => item.id}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={{ gap: 12, paddingVertical: 4 }}
+                    estimatedItemSize={160}
                     renderItem={({ item }) => {
                       const st = item.connection?.status;
                       const outgoing = item.connection?.direction === "outgoing";

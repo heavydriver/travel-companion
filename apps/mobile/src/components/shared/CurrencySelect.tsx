@@ -1,11 +1,10 @@
 import { ChevronDown } from "lucide-react-native";
 import { useColorScheme } from "nativewind";
 import { useCallback, useMemo, useState } from "react";
+import { FlashList } from "@shopify/flash-list";
 import {
   Dimensions,
-  FlatList,
   Modal,
-  Platform,
   Pressable,
   Text,
   TextInput,
@@ -153,15 +152,12 @@ export function CurrencySelect({
                 clearButtonMode="while-editing"
               />
             </View>
-            <FlatList
+            <FlashList
               data={filtered}
               keyExtractor={keyExtractor}
               renderItem={renderItem}
               keyboardShouldPersistTaps="handled"
-              initialNumToRender={16}
-              maxToRenderPerBatch={24}
-              windowSize={8}
-              removeClippedSubviews={Platform.OS === "android"}
+              estimatedItemSize={52}
               style={{ maxHeight: LIST_MAX_HEIGHT }}
               ListEmptyComponent={
                 <View className="items-center py-10">

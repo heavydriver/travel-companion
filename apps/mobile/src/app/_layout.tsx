@@ -7,10 +7,11 @@ import { QueryClient, onlineManager } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { PortalHost } from "@rn-primitives/portal";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { useEffect } from "react";
+import { InteractionManager } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,10 +20,13 @@ import { client, EdenProvider } from "@/api/client";
 // import { queryClient } from "@/lib/queryClient";
 import { appToastConfig } from "@/components/shared/AppToast";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
+import { ScreenErrorBoundary } from "@/components/shared/ScreenErrorBoundary";
 import { DestinationFavoritesProvider } from "@/features/destination/favorites";
+import { initMonitoring, setMonitoringScreen, setMonitoringUser } from "@/lib/monitoring";
 import { NAV_THEME } from "@/lib/theme";
 import { useInAppSocialMessageSignals } from "@/hooks/useInAppSocialMessageSignals";
 import { usePushRegistration } from "@/hooks/usePushRegistration";
+import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
@@ -52,6 +56,9 @@ const asyncPersister = createAsyncStoragePersister({
   key: "travel_companion_query_cache",
 });
 
+// R-1501: Initialize crash reporting first so future analytics init remains secondary.
+initMonitoring();
+
 function RootToast() {
   const insets = useSafeAreaInsets();
   return (
@@ -69,6 +76,8 @@ export default function RootLayout() {
 
 function RootLayoutInner() {
   const { colorScheme } = useColorScheme();
+  const pathname = usePathname();
+  const userId = useAuthStore((s) => s.user?.id);
   const startListening = useNetworkStore((s) => s.startListening);
   const hydrateOffline = useOfflineStore((s) => s.hydrate);
   const hydratePreferences = usePreferencesStore((s) => s.hydrateFromStorage);
@@ -77,10 +86,26 @@ function RootLayoutInner() {
 
   useEffect(() => {
     const unsubscribe = startListening();
-    hydrateOffline();
-    void hydratePreferences();
-    return unsubscribe;
+
+    // R-1401: Keep app shell responsive, then hydrate heavier persisted state.
+    const deferredHydration = InteractionManager.runAfterInteractions(() => {
+      void hydrateOffline();
+      void hydratePreferences();
+    });
+
+    return () => {
+      deferredHydration.cancel();
+      unsubscribe();
+    };
   }, [startListening, hydrateOffline, hydratePreferences]);
+
+  useEffect(() => {
+    setMonitoringScreen(pathname);
+  }, [pathname]);
+
+  useEffect(() => {
+    setMonitoringUser(userId);
+  }, [userId]);
 
   return (
     <PersistQueryClientProvider
@@ -94,7 +119,9 @@ function RootLayoutInner() {
               <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
                 <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
                 <OfflineBanner />
-                <Stack screenOptions={{ headerShown: false }} />
+                <ScreenErrorBoundary>
+                  <Stack screenOptions={{ headerShown: false }} />
+                </ScreenErrorBoundary>
                 <PortalHost />
                 <RootToast />
               </ThemeProvider>

@@ -2,6 +2,14 @@ import React from "react";
 import { render, fireEvent } from "@testing-library/react-native";
 import { BottomTabBar } from "@/components/shared/BottomTabBar";
 
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
+jest.mock("nativewind", () => ({
+  useUnstableNativeVariable: () => "217 91% 60%",
+}));
+
 jest.mock("expo-image", () => ({
   Image: "Image",
 }));
