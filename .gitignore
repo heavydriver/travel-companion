@@ -12,4 +12,5 @@ dist
 
 packages/db/generated
 
+android/
 pocs/

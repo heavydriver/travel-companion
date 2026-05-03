@@ -39,6 +39,7 @@ import { Progress } from "@/components/ui/progress";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { formatDate, formatItineraryTimeRange, toDateOnly } from "@/lib/utils";
 import { useOfflineStore } from "@/store/offlineStore";
+import { analytics } from "@/utils/analytics";
 
 type ItineraryItem = {
   id: string;
@@ -52,6 +53,20 @@ type ItineraryItem = {
   isDone: boolean;
   placeId: string | null;
 };
+
+type OfflinePackPayload = {
+  packVersion?: number;
+  places?: unknown[];
+  phrases?: unknown[];
+};
+
+function parseTimeToDate(time: string | null): Date | null {
+  if (!time) return null;
+  const [h, m] = time.split(":").map(Number);
+  const date = new Date();
+  date.setHours(h, m, 0, 0);
+  return date;
+}
 
 function groupByDate(items: ItineraryItem[]) {
   const groups: Record<string, ItineraryItem[]> = {};
@@ -114,7 +129,7 @@ export default function TripDetailScreen() {
   const tripQuery = useQuery({
     queryKey: ["trip", id],
     queryFn: async () => {
-      const res = await client.api.v1.trips({ tripId: id! }).get();
+      const res = await client.api.v1.trips({ tripId }).get();
       if (res.error) throw new Error("Failed to load trip");
       return res.data;
     },
@@ -155,7 +170,7 @@ export default function TripDetailScreen() {
   const itemsQuery = useQuery({
     queryKey: ["itinerary", id],
     queryFn: async () => {
-      const res = await client.api.v1.trips({ tripId: id! })["itinerary-items"].get();
+      const res = await client.api.v1.trips({ tripId })["itinerary-items"].get();
       if (res.error) throw new Error("Failed to load itinerary");
       return res.data;
     },
@@ -184,11 +199,12 @@ export default function TripDetailScreen() {
 
   const deleteTrip = useMutation({
     mutationFn: async () => {
-      const res = await client.api.v1.trips({ tripId: id! }).delete();
+      const res = await client.api.v1.trips({ tripId }).delete();
       if (res.error) throw new Error("Failed to delete trip");
       return res.data;
     },
     onSuccess: () => {
+      analytics.tripDeleted();
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       router.back();
     },
@@ -216,19 +232,21 @@ export default function TripDetailScreen() {
     },
     onSuccess: (data) => {
       if (!destId || !trip || !data) return;
+      const pack = data as OfflinePackPayload;
       savePack(
         {
           destinationId: destId,
           destinationName: trip.destination.name,
           country: trip.destination.countryCode,
           countryCode: trip.destination.countryCode,
-          packVersion: (data as any).packVersion ?? 1,
+          packVersion: pack.packVersion ?? 1,
           downloadedAt: new Date().toISOString(),
-          placesCount: ((data as any).places ?? []).length,
-          phrasesCount: ((data as any).phrases ?? []).length,
+          placesCount: (pack.places ?? []).length,
+          phrasesCount: (pack.phrases ?? []).length,
         },
         data,
       );
+      analytics.packDownloaded(destId);
     },
     onError: () => setDownloading(null),
   });
@@ -515,7 +533,7 @@ export default function TripDetailScreen() {
 
       <AddItineraryItemModal
         visible={showAddModal}
-        tripId={id!}
+        tripId={tripId}
         defaultDate={addDate}
         tripStartDate={trip ? new Date(trip.startDate) : undefined}
         tripEndDate={trip ? new Date(trip.endDate) : undefined}
@@ -535,7 +553,7 @@ export default function TripDetailScreen() {
       {trip && (
         <EditTripModal
           visible={showEditModal}
-          tripId={id!}
+          tripId={tripId}
           currentTitle={trip.title}
           currentStartDate={new Date(trip.startDate)}
           currentEndDate={new Date(trip.endDate)}

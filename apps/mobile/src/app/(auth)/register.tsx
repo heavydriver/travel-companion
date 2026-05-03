@@ -15,6 +15,7 @@ import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
 import { Screen } from "@/components/shared/Screen";
 import { useGoogleAuth } from "@/features/auth/googleAuth";
 import { useAuthStore } from "@/store/authStore";
+import { analytics } from "@/utils/analytics";
 
 const registerSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name is too long"),
@@ -72,6 +73,7 @@ export default function RegisterScreen() {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
       });
+      analytics.register("email");
       router.replace("/(tabs)" as never);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to register. Please try again.");

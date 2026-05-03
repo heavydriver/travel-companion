@@ -1,5 +1,6 @@
 import { prisma } from "@repo/db";
 import { AppError } from "../../middleware/errorHandler";
+import { serverAnalytics } from "../../utils/analytics/posthog";
 
 function formatItem(item: {
   id: string;
@@ -159,6 +160,7 @@ export const itineraryService = {
     });
 
     if (existing.length !== ids.length) {
+      serverAnalytics.syncConflictDetected(userId, "reorder_missing_items");
       throw new AppError(
         422,
         "VALIDATION_ERROR",

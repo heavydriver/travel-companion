@@ -16,9 +16,11 @@ import {
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import { invalidateMessageQueries } from "@/lib/socialQueries";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { analytics } from "@/utils/analytics";
+import { invalidateMessageQueries } from "@/lib/socialQueries";
 
 type MessageItem = {
   id: string;
@@ -122,6 +124,7 @@ export default function MessageThreadScreen() {
       return res.data;
     },
     onSuccess: ({ message }) => {
+      analytics.chatMessageSent(Boolean(connectionId));
       queryClient.setQueryData<MessagesResponse>(["messages", connectionId], (current) => ({
         messages: [...(current?.messages ?? []), message],
       }));
