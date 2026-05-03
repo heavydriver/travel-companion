@@ -27,6 +27,8 @@ export const userService = {
         profilePicUpdatedAt: true,
         bio: true,
         socialOptIn: true,
+        notifyMessages: true,
+        notifyConnections: true,
         _count: {
           select: {
             trips: { where: { deletedAt: null } },
@@ -115,7 +117,15 @@ export const userService = {
 
   async updateProfile(
     userId: string,
-    data: { name?: string; username?: string; bio?: string | null; socialOptIn?: boolean }
+    data: {
+      name?: string;
+      username?: string;
+      bio?: string | null;
+      socialOptIn?: boolean;
+      avatarUrl?: string | null;
+      notifyMessages?: boolean;
+      notifyConnections?: boolean;
+    }
   ) {
     if (data.username) {
       const existing = await prisma.user.findUnique({
@@ -134,6 +144,9 @@ export const userService = {
         ...(data.username !== undefined && { username: data.username }),
         ...(data.bio !== undefined && { bio: data.bio }),
         ...(data.socialOptIn !== undefined && { socialOptIn: data.socialOptIn }),
+        ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
+        ...(data.notifyMessages !== undefined && { notifyMessages: data.notifyMessages }),
+        ...(data.notifyConnections !== undefined && { notifyConnections: data.notifyConnections }),
       },
       select: {
         id: true,
@@ -143,6 +156,8 @@ export const userService = {
         profilePicUpdatedAt: true,
         bio: true,
         socialOptIn: true,
+        notifyMessages: true,
+        notifyConnections: true,
         _count: {
           select: {
             trips: { where: { deletedAt: null } },

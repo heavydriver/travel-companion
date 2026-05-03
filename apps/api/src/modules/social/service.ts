@@ -350,7 +350,8 @@ export const connectionService = {
       receiverId,
       "New connection request",
       `${requester?.name ?? "A traveler"} wants to connect`,
-      { type: "connection_request", connectionId: created.id }
+      { type: "connection_request", connectionId: created.id },
+      "connection_request"
     );
 
     return formatConnection(created);
@@ -384,7 +385,8 @@ export const connectionService = {
         updated.requesterId,
         "Connection accepted",
         `${accepter?.name ?? "Your connection"} accepted your request`,
-        { type: "connection_accepted", connectionId: updated.id }
+        { type: "connection_accepted", connectionId: updated.id },
+        "connection_accepted"
       );
     }
 
