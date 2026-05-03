@@ -18,7 +18,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { analytics } from "@/utils/analytics";
 import { invalidateMessageQueries } from "@/lib/socialQueries";
 

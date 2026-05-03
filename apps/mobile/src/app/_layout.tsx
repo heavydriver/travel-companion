@@ -103,8 +103,8 @@ function RootLayoutInner() {
       autocapture={false}
     >
       <PersistQueryClientProvider
-        client={queryClient}
-        persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 }}
+      client={queryClient}
+      persistOptions={{ persister: queryCachePersister, maxAge: 1000 * 60 * 60 * 24 }}
       >
         <EdenProvider client={client} queryClient={queryClient}>
           <DestinationFavoritesProvider>

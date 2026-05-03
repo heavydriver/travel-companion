@@ -129,7 +129,7 @@ export default function TripDetailScreen() {
   const tripQuery = useQuery({
     queryKey: ["trip", id],
     queryFn: async () => {
-      const res = await client.api.v1.trips({ tripId }).get();
+      const res = await client.api.v1.trips({ tripId: id! }).get();
       if (res.error) throw new Error("Failed to load trip");
       return res.data;
     },
@@ -170,7 +170,7 @@ export default function TripDetailScreen() {
   const itemsQuery = useQuery({
     queryKey: ["itinerary", id],
     queryFn: async () => {
-      const res = await client.api.v1.trips({ tripId })["itinerary-items"].get();
+      const res = await client.api.v1.trips({ tripId: id! })["itinerary-items"].get();
       if (res.error) throw new Error("Failed to load itinerary");
       return res.data;
     },
@@ -199,7 +199,7 @@ export default function TripDetailScreen() {
 
   const deleteTrip = useMutation({
     mutationFn: async () => {
-      const res = await client.api.v1.trips({ tripId }).delete();
+      const res = await client.api.v1.trips({ tripId: id! }).delete();
       if (res.error) throw new Error("Failed to delete trip");
       return res.data;
     },
@@ -255,7 +255,7 @@ export default function TripDetailScreen() {
     if (!trip) return;
     const grouped = groupByDate(items);
     let text = `${trip.title}\n`;
-    text += `${trip.destination.name}, ${trip.destination.country}\n`;
+    text += `${trip.destination.name}, ${trip.destination.countryCode}\n`;
     text += `${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}\n\n`;
 
     if (grouped.length === 0) {
@@ -533,7 +533,7 @@ export default function TripDetailScreen() {
 
       <AddItineraryItemModal
         visible={showAddModal}
-        tripId={tripId}
+        tripId={id!}
         defaultDate={addDate}
         tripStartDate={trip ? new Date(trip.startDate) : undefined}
         tripEndDate={trip ? new Date(trip.endDate) : undefined}
@@ -553,7 +553,7 @@ export default function TripDetailScreen() {
       {trip && (
         <EditTripModal
           visible={showEditModal}
-          tripId={tripId}
+          tripId={id!}
           currentTitle={trip.title}
           currentStartDate={new Date(trip.startDate)}
           currentEndDate={new Date(trip.endDate)}
