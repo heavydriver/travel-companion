@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { approximateNumber as approx } from "approximate-number";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,7 +19,6 @@ import {
   ActivityIndicator,
   Dimensions,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -28,6 +27,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
 import { showAppToast } from "@/components/shared/AppToast";
+import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal";
 import { Button } from "@/components/shared/Button";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
@@ -311,6 +311,7 @@ export default function PlaceDetailsScreen() {
   const mutedIconColor = mutedVar ? `hsl(${mutedVar})` : "#9CA3AF";
 
   const [now, setNow] = useState(() => new Date());
+  const [showAddModal, setShowAddModal] = useState(false);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
@@ -445,63 +446,6 @@ export default function PlaceDetailsScreen() {
       itineraryQuery.data?.items?.some((it: { placeId: string | null }) => it.placeId === place.id),
   );
 
-  const addToItineraryMutation = useMutation({
-    mutationFn: async () => {
-      if (!place || !eligibleTrip) {
-        throw new Error("No active trip available");
-      }
-
-      const targetDate = clampDateToTrip(new Date(), eligibleTrip.startDate, eligibleTrip.endDate);
-      const res = await client.api.v1.trips({ tripId: eligibleTrip.id })["itinerary-items"].post({
-        title: place.name,
-        date: targetDate.toISOString(),
-        placeId: place.id,
-      });
-      if (res.error) throw new Error("Failed to add to itinerary");
-      return { tripId: eligibleTrip.id, tripTitle: eligibleTrip.title };
-    },
-    onMutate: async () => {
-      if (!place || !eligibleTrip) return;
-      await queryClient.cancelQueries({ queryKey: ["itinerary", eligibleTrip.id] });
-      const prev = queryClient.getQueryData<{ items: unknown[] }>(["itinerary", eligibleTrip.id]);
-      const items = (prev?.items ?? []) as Array<{ order: number }>;
-      const nextOrder =
-        items.length > 0 ? Math.max(...items.map((i) => Number(i.order) || 0)) + 1 : 0;
-      const targetDate = clampDateToTrip(new Date(), eligibleTrip.startDate, eligibleTrip.endDate);
-      queryClient.setQueryData(["itinerary", eligibleTrip.id], {
-        items: [
-          ...items,
-          {
-            id: `optimistic-${place.id}`,
-            tripId: eligibleTrip.id,
-            placeId: place.id,
-            title: place.name,
-            notes: null,
-            date: targetDate.toISOString(),
-            startTime: null,
-            endTime: null,
-            order: nextOrder,
-            isDone: false,
-          },
-        ],
-      });
-      return { prev, tripId: eligibleTrip.id };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev !== undefined && ctx.tripId) {
-        queryClient.setQueryData(["itinerary", ctx.tripId], ctx.prev);
-      }
-    },
-    onSuccess: async (data) => {
-      showAppToast({
-        variant: "success",
-        title: "Added to trip",
-        message: `${place?.name ?? "Place"} was added to ${data.tripTitle}.`,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["itinerary", data.tripId] });
-    },
-  });
-
   const openOnMap = useCallback(() => {
     if (!place) return;
     const dest = destinationMetaQuery.data?.destination as
@@ -518,6 +462,7 @@ export default function PlaceDetailsScreen() {
       focusLatitude: place.latitude,
       focusLongitude: place.longitude,
       focusZoomLevel: 15,
+      focusPlaceId: place.id,
       returnHref: `/place/${place.id}`,
     });
     router.push("/(tabs)/map" as never);
@@ -805,27 +750,49 @@ export default function PlaceDetailsScreen() {
           style={{ bottom: insets.bottom }}
         >
           <Pressable
-            onPress={() => addToItineraryMutation.mutate()}
-            disabled={addToItineraryMutation.isPending || itineraryFirstLoadPending}
+            onPress={() => {
+              setShowAddModal(true);
+            }}
+            disabled={itineraryFirstLoadPending}
             className="flex-row items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 active:opacity-90 disabled:opacity-60"
           >
-            {itineraryFirstLoadPending || addToItineraryMutation.isPending ? (
+            {itineraryFirstLoadPending ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <CirclePlus size={28} color="#fff" strokeWidth={2.25} />
             )}
             <Text className="text-center text-lg font-semibold text-primary-foreground">
-              {addToItineraryMutation.isPending
-                ? "Adding…"
-                : itineraryFirstLoadPending
-                  ? "Loading itinerary…"
-                  : "Add to itinerary"}
+              {itineraryFirstLoadPending ? "Loading itinerary…" : "Add to itinerary"}
             </Text>
           </Pressable>
           {/* <Text className="mt-1.5 text-center text-xs text-muted-foreground" numberOfLines={1}>
             {eligibleTrip.title}
           </Text> */}
         </View>
+      ) : null}
+
+      {place && eligibleTrip ? (
+        <AddItineraryItemModal
+          visible={showAddModal}
+          tripId={eligibleTrip.id}
+          defaultDate={clampDateToTrip(new Date(), eligibleTrip.startDate, eligibleTrip.endDate)}
+          tripStartDate={new Date(eligibleTrip.startDate)}
+          tripEndDate={new Date(eligibleTrip.endDate)}
+          initialTitle={place.name}
+          initialPlaceId={place.id}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => {
+            setShowAddModal(false);
+            void queryClient.invalidateQueries({ queryKey: ["itinerary", eligibleTrip.id] });
+          }}
+          onSuccessMessage={(title) => {
+            showAppToast({
+              variant: "success",
+              title: "Added to trip",
+              message: `${title} was added to ${eligibleTrip.title}.`,
+            });
+          }}
+        />
       ) : null}
     </SafeAreaView>
   );

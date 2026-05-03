@@ -1,12 +1,13 @@
 import { prisma } from "@repo/db";
 import { AppError } from "../../middleware/errorHandler";
+import { resolvedAvatarUrl } from "../../utils/avatarUrl";
 import { notifyUserPush } from "../../utils/notifyUserPush";
 
 const publicUserSelect = {
   id: true,
   name: true,
   username: true,
-  avatarUrl: true,
+  profilePicUpdatedAt: true,
   bio: true,
 } as const;
 
@@ -17,6 +18,22 @@ type PublicUser = {
   avatarUrl: string | null;
   bio: string | null;
 };
+
+function toPublicUser(peer: {
+  id: string;
+  name: string;
+  username: string;
+  profilePicUpdatedAt: Date | null;
+  bio: string | null;
+}): PublicUser {
+  return {
+    id: peer.id,
+    name: peer.name,
+    username: peer.username,
+    bio: peer.bio,
+    avatarUrl: resolvedAvatarUrl(peer),
+  };
+}
 
 function daysRemaining(endDate: Date, now: Date): number {
   const ms = endDate.getTime() - now.getTime();
@@ -144,11 +161,7 @@ export const socialService = {
 
       const conn = connectionByPeer.get(peer.id);
       travelers.push({
-        id: peer.id,
-        name: peer.name,
-        username: peer.username,
-        avatarUrl: peer.avatarUrl,
-        bio: peer.bio,
+        ...toPublicUser(peer),
         daysRemaining: daysRemaining(row.endDate, now),
         destinationId: row.destinationId,
         connection: conn
@@ -193,18 +206,12 @@ export const connectionService = {
     }> = [];
 
     for (const c of rows) {
-      const peer: PublicUser = c.receiverId === userId ? c.requester : c.receiver;
+      const peerRow = c.receiverId === userId ? c.requester : c.receiver;
       const row = {
         id: c.id,
         status: "PENDING" as const,
         createdAt: c.createdAt.toISOString(),
-        peer: {
-          id: peer.id,
-          name: peer.name,
-          username: peer.username,
-          avatarUrl: peer.avatarUrl,
-          bio: peer.bio,
-        },
+        peer: toPublicUser(peerRow),
       };
       if (c.receiverId === userId) incoming.push(row);
       else outgoing.push(row);
@@ -228,8 +235,8 @@ export const connectionService = {
 
     const connections = await Promise.all(
       acceptedConnections.map(async (c) => {
-        const peer: PublicUser = c.requesterId === userId ? c.receiver : c.requester;
-        const otherUserId = peer.id;
+        const peerRow = c.requesterId === userId ? c.receiver : c.requester;
+        const otherUserId = peerRow.id;
 
         const [lastMessage, unreadCount] = await Promise.all([
           prisma.message.findFirst({
@@ -253,10 +260,10 @@ export const connectionService = {
         return {
           id: c.id,
           user: {
-            id: peer.id,
-            name: peer.name,
-            username: peer.username,
-            avatarUrl: peer.avatarUrl,
+            id: peerRow.id,
+            name: peerRow.name,
+            username: peerRow.username,
+            avatarUrl: resolvedAvatarUrl(peerRow),
           },
           lastMessage: lastMessage
             ? {
@@ -343,7 +350,8 @@ export const connectionService = {
       receiverId,
       "New connection request",
       `${requester?.name ?? "A traveler"} wants to connect`,
-      { type: "connection_request", connectionId: created.id }
+      { type: "connection_request", connectionId: created.id },
+      "connection_request"
     );
 
     return formatConnection(created);
@@ -377,7 +385,8 @@ export const connectionService = {
         updated.requesterId,
         "Connection accepted",
         `${accepter?.name ?? "Your connection"} accepted your request`,
-        { type: "connection_accepted", connectionId: updated.id }
+        { type: "connection_accepted", connectionId: updated.id },
+        "connection_accepted"
       );
     }
 

@@ -1,5 +1,6 @@
 import Elysia, { t } from "elysia";
 import { authGuard } from "../../middleware/auth";
+import { AppError } from "../../middleware/errorHandler";
 import { userService } from "./service";
 
 const MeUser = t.Object({
@@ -10,6 +11,8 @@ const MeUser = t.Object({
   avatarUrl: t.Union([t.String(), t.Null()]),
   bio: t.Union([t.String(), t.Null()]),
   socialOptIn: t.Boolean(),
+  notifyMessages: t.Boolean(),
+  notifyConnections: t.Boolean(),
   friendCount: t.Integer({ minimum: 0 }),
   tripCount: t.Integer({ minimum: 0 }),
 });
@@ -24,6 +27,8 @@ const UpdateProfileBody = t.Object({
   bio: t.Optional(t.Union([t.String({ maxLength: 300 }), t.Null()])),
   socialOptIn: t.Optional(t.Boolean()),
   avatarUrl: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
+  notifyMessages: t.Optional(t.Boolean()),
+  notifyConnections: t.Optional(t.Boolean()),
 });
 
 const PushTokenBody = t.Object({
@@ -34,6 +39,34 @@ const PushTokenResponse = t.Object({
   ok: t.Literal(true),
 });
 
+const PublicProfileUser = t.Object({
+  id: t.String(),
+  name: t.String(),
+  username: t.String(),
+  avatarUrl: t.Union([t.String(), t.Null()]),
+  bio: t.Union([t.String(), t.Null()]),
+  friendCount: t.Integer({ minimum: 0 }),
+  tripCount: t.Integer({ minimum: 0 }),
+});
+
+const ViewerConnection = t.Union([
+  t.Null(),
+  t.Object({
+    id: t.String(),
+    status: t.Union([
+      t.Literal("PENDING"),
+      t.Literal("ACCEPTED"),
+      t.Literal("REJECTED"),
+    ]),
+    direction: t.Union([t.Literal("incoming"), t.Literal("outgoing")]),
+  }),
+]);
+
+const PublicProfileResponse = t.Object({
+  user: PublicProfileUser,
+  connection: ViewerConnection,
+});
+
 export const userModule = new Elysia({ prefix: "/users" })
   .use(authGuard)
   .get(
@@ -42,7 +75,7 @@ export const userModule = new Elysia({ prefix: "/users" })
       const user = await userService.getProfile(userId);
       return { user };
     },
-    { response: MeResponse }
+    { response: MeResponse },
   )
   .patch(
     "/me",
@@ -50,12 +83,36 @@ export const userModule = new Elysia({ prefix: "/users" })
       const user = await userService.updateProfile(userId, body);
       return { user };
     },
-    { body: UpdateProfileBody, response: MeResponse }
+    { body: UpdateProfileBody, response: MeResponse },
+  )
+  .post(
+    "/me/profile-picture",
+    async ({ request, userId }) => {
+      const form = await request.formData();
+      const entry = (form as unknown as { get: (name: string) => unknown }).get(
+        "file",
+      );
+      if (!(entry instanceof Blob)) {
+        throw new AppError(400, "VALIDATION_ERROR", "Missing image file");
+      }
+      const user = await userService.uploadProfilePicture(userId, entry);
+      return { user };
+    },
+    { response: MeResponse },
   )
   .post(
     "/me/push-token",
     async ({ userId, body }) => {
       return userService.registerPushToken(userId, body.expoToken.trim());
     },
-    { body: PushTokenBody, response: PushTokenResponse }
+    { body: PushTokenBody, response: PushTokenResponse },
+  )
+  .get(
+    "/:id",
+    async ({ userId, params }) =>
+      userService.getPublicProfileForViewer(userId, params.id),
+    {
+      params: t.Object({ id: t.String() }),
+      response: PublicProfileResponse,
+    },
   );

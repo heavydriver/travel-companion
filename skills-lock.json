@@ -11,6 +11,12 @@
       "sourceType": "github",
       "computedHash": "516bd2154eb843a8240e43d5b285229129853114ad7075a5e141e1c08e408c84"
     },
+    "react-native-ai-skills": {
+      "source": "callstackincubator/react-native-ai",
+      "sourceType": "github",
+      "skillPath": "skills/react-native-ai/SKILL.md",
+      "computedHash": "a64cd11d117453bad5d62c9c9c19a9070cdc59b84edc777b8d7c350c5cff4b69"
+    },
     "vercel-react-native-skills": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",

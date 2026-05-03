@@ -6,11 +6,19 @@ import { Calendar, ChevronLeft, MapPin, Search, X } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { z } from "zod";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
+import { IOSDateTimePickerModal } from "@/components/shared/IOSDateTimePickerModal";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { Screen } from "@/components/shared/Screen";
@@ -106,7 +114,9 @@ export default function NewTripScreen() {
   });
 
   const { guardAction } = useOfflineGuard();
-  const onSubmit = handleSubmit((values) => guardAction(() => createMutation.mutate(values)));
+  const onSubmit = handleSubmit((values) =>
+    guardAction(() => createMutation.mutate(values)),
+  );
 
   const selectDestination = (dest: Destination) => {
     setSelectedDest(dest);
@@ -137,10 +147,15 @@ export default function NewTripScreen() {
         : prefetchedDestination.name,
     );
     setShowResults(false);
-  }, [params.destinationCountry, params.destinationId, params.destinationName, setValue]);
+  }, [
+    params.destinationCountry,
+    params.destinationId,
+    params.destinationName,
+    setValue,
+  ]);
 
   return (
-    <Screen scrollable>
+    <Screen scrollable keyboardBottomOffset={120}>
       <View className="gap-6">
         {/* Header */}
         <View className="flex-row items-center gap-3">
@@ -151,7 +166,9 @@ export default function NewTripScreen() {
             <ChevronLeft size={20} color={iconColor} />
             <Text className="text-base font-medium text-primary">Cancel</Text>
           </Pressable>
-          <Text className="flex-1 text-center text-lg font-bold text-foreground">New Trip</Text>
+          <Text className="flex-1 text-lg font-bold text-center text-foreground">
+            New Trip
+          </Text>
           <View className="w-14" />
         </View>
 
@@ -160,25 +177,36 @@ export default function NewTripScreen() {
         {/* Selected destination chip */}
         {selectedDest ? (
           <View className="gap-2">
-            <Text className="text-sm font-medium text-foreground">Destination</Text>
-            <View className="flex-row items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3">
+            <Text className="text-sm font-medium text-foreground">
+              Destination
+            </Text>
+            <View className="flex-row items-center gap-3 px-4 py-3 border rounded-xl border-primary/30 bg-primary/10">
               <MapPin size={18} color={iconColor} />
               <View className="flex-1">
-                <Text className="text-base font-semibold text-foreground">{selectedDest.name}</Text>
-                <Text className="text-sm text-muted-foreground">{selectedDest.country}</Text>
+                <Text className="text-base font-semibold text-foreground">
+                  {selectedDest.name}
+                </Text>
+                <Text className="text-sm text-muted-foreground">
+                  {selectedDest.country}
+                </Text>
               </View>
-              <Pressable onPress={clearDestination} className="active:opacity-80">
+              <Pressable
+                onPress={clearDestination}
+                className="active:opacity-80"
+              >
                 <X size={18} color={mutedColor} />
               </Pressable>
             </View>
           </View>
         ) : (
           <View className="gap-2">
-            <Text className="text-sm font-medium text-foreground">Destination</Text>
-            <View className="flex-row items-center rounded-xl border border-border bg-card px-3">
+            <Text className="text-sm font-medium text-foreground">
+              Destination
+            </Text>
+            <View className="flex-row items-center px-3 border rounded-xl border-border bg-card">
               <Search size={18} color={mutedColor} />
               <TextInput
-                className="ml-2 flex-1 py-3 text-base text-foreground"
+                className="flex-1 py-3 ml-2 text-base text-foreground"
                 placeholder="Search cities..."
                 placeholderTextColor={mutedColor}
                 value={searchQuery}
@@ -189,11 +217,13 @@ export default function NewTripScreen() {
               />
             </View>
             {errors.destinationId && (
-              <Text className="text-sm text-destructive">{errors.destinationId.message}</Text>
+              <Text className="text-sm text-destructive">
+                {errors.destinationId.message}
+              </Text>
             )}
 
             {showResults && searchQuery.length >= 2 && (
-              <View className="rounded-xl border border-border bg-card">
+              <View className="border rounded-xl border-border bg-card">
                 {destQuery.isLoading && (
                   <View className="items-center py-4">
                     <ActivityIndicator />
@@ -203,11 +233,13 @@ export default function NewTripScreen() {
                   <Pressable
                     key={dest.id}
                     onPress={() => selectDestination(dest as Destination)}
-                    className="flex-row items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 active:bg-muted"
+                    className="flex-row items-center gap-3 px-4 py-3 border-b border-border last:border-b-0 active:bg-muted"
                   >
                     <MapPin size={18} color={mutedColor} />
                     <View>
-                      <Text className="text-base font-medium text-foreground">{dest.name}</Text>
+                      <Text className="text-base font-medium text-foreground">
+                        {dest.name}
+                      </Text>
                       <Text className="text-sm text-muted-foreground">
                         {(dest as Destination).country}
                       </Text>
@@ -226,13 +258,15 @@ export default function NewTripScreen() {
 
         {/* Title */}
         <View className="gap-2">
-          <Text className="text-sm font-medium text-foreground">Trip Title</Text>
+          <Text className="text-sm font-medium text-foreground">
+            Trip Title
+          </Text>
           <Controller
             control={control}
             name="title"
             render={({ field: { onChange, value } }) => (
               <TextInput
-                className="rounded-xl border border-border bg-card px-4 py-3 text-base text-foreground"
+                className="px-4 py-3 text-base border rounded-xl border-border bg-card text-foreground"
                 placeholder="e.g. Tokyo Adventure"
                 placeholderTextColor={mutedColor}
                 value={value}
@@ -241,16 +275,22 @@ export default function NewTripScreen() {
               />
             )}
           />
-          {errors.title && <Text className="text-sm text-destructive">{errors.title.message}</Text>}
+          {errors.title && (
+            <Text className="text-sm text-destructive">
+              {errors.title.message}
+            </Text>
+          )}
         </View>
 
         {/* Dates */}
         <View className="flex-row gap-3">
           <View className="flex-1 gap-2">
-            <Text className="text-sm font-medium text-foreground">Start Date</Text>
+            <Text className="text-sm font-medium text-foreground">
+              Start Date
+            </Text>
             <Pressable
               onPress={() => setShowStartPicker(true)}
-              className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
+              className="flex-row items-center gap-2 px-4 py-3 border rounded-xl border-border bg-card"
             >
               <Calendar size={16} color={mutedColor} />
               <Text
@@ -259,14 +299,31 @@ export default function NewTripScreen() {
                 {startDate ? formatDate(startDate) : "Select"}
               </Text>
             </Pressable>
-            {showStartPicker && (
+            {showStartPicker && Platform.OS === "ios" && (
+              <IOSDateTimePickerModal
+                visible={showStartPicker}
+                title="Start Date"
+                value={startDate ?? new Date()}
+                mode="date"
+                minimumDate={new Date()}
+                onCancel={() => setShowStartPicker(false)}
+                onConfirm={(date) => {
+                  setShowStartPicker(false);
+                  setValue("startDate", date, { shouldValidate: true });
+                  if (endDate && date > endDate) {
+                    setValue("endDate", date, { shouldValidate: true });
+                  }
+                }}
+              />
+            )}
+            {showStartPicker && Platform.OS !== "ios" && (
               <DateTimePicker
                 value={startDate ?? new Date()}
                 mode="date"
                 minimumDate={new Date()}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
+                display="default"
                 onChange={(_, date) => {
-                  setShowStartPicker(Platform.OS === "ios");
+                  setShowStartPicker(false);
                   if (date) {
                     setValue("startDate", date, { shouldValidate: true });
                     if (endDate && date > endDate) {
@@ -277,15 +334,19 @@ export default function NewTripScreen() {
               />
             )}
             {errors.startDate && (
-              <Text className="text-sm text-destructive">{errors.startDate.message}</Text>
+              <Text className="text-sm text-destructive">
+                {errors.startDate.message}
+              </Text>
             )}
           </View>
 
           <View className="flex-1 gap-2">
-            <Text className="text-sm font-medium text-foreground">End Date</Text>
+            <Text className="text-sm font-medium text-foreground">
+              End Date
+            </Text>
             <Pressable
               onPress={() => setShowEndPicker(true)}
-              className="flex-row items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
+              className="flex-row items-center gap-2 px-4 py-3 border rounded-xl border-border bg-card"
             >
               <Calendar size={16} color={mutedColor} />
               <Text
@@ -294,14 +355,28 @@ export default function NewTripScreen() {
                 {endDate ? formatDate(endDate) : "Select"}
               </Text>
             </Pressable>
-            {showEndPicker && (
+            {showEndPicker && Platform.OS === "ios" && (
+              <IOSDateTimePickerModal
+                visible={showEndPicker}
+                title="End Date"
+                value={endDate ?? startDate ?? new Date()}
+                mode="date"
+                minimumDate={startDate ?? new Date()}
+                onCancel={() => setShowEndPicker(false)}
+                onConfirm={(date) => {
+                  setShowEndPicker(false);
+                  setValue("endDate", date, { shouldValidate: true });
+                }}
+              />
+            )}
+            {showEndPicker && Platform.OS !== "ios" && (
               <DateTimePicker
                 value={endDate ?? startDate ?? new Date()}
                 mode="date"
                 minimumDate={startDate ?? new Date()}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
+                display="default"
                 onChange={(_, date) => {
-                  setShowEndPicker(Platform.OS === "ios");
+                  setShowEndPicker(false);
                   if (date) {
                     setValue("endDate", date, { shouldValidate: true });
                   }
@@ -309,16 +384,21 @@ export default function NewTripScreen() {
               />
             )}
             {errors.endDate && (
-              <Text className="text-sm text-destructive">{errors.endDate.message}</Text>
+              <Text className="text-sm text-destructive">
+                {errors.endDate.message}
+              </Text>
             )}
           </View>
         </View>
 
         {/* Trip summary preview */}
         {selectedDest && startDate && endDate && (
-          <View className="rounded-xl border border-border bg-card/50 px-4 py-3">
+          <View className="px-4 py-3 border rounded-xl border-border bg-card/50">
             <Text className="text-sm text-muted-foreground">
-              {Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1}{" "}
+              {Math.ceil(
+                (endDate.getTime() - startDate.getTime()) /
+                  (1000 * 60 * 60 * 24),
+              ) + 1}{" "}
               days in {selectedDest.name}, {selectedDest.country}
             </Text>
           </View>
