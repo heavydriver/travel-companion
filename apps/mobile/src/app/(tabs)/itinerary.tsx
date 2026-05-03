@@ -12,7 +12,6 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
-import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { Progress } from "@/components/ui/progress";
 import {
   formatDate,
@@ -120,19 +119,6 @@ function TripSummaryCard({
 export default function ItineraryTabScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const activeTrip = useTripStore((s) => s.activeTrip)();
-  const { guardAction } = useOfflineGuard();
-
-  const toggleDone = useMutation({
-    mutationFn: async ({ itemId, isDone }: { itemId: string; isDone: boolean }) => {
-      const res = await client.api.v1["itinerary-items"]({ id: itemId }).patch({ isDone });
-      if (res.error) throw new Error("Failed to update");
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip?.id] });
-    },
-  });
   const trips = useTripStore((s) => s.trips);
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
   const setMapSession = useMapSessionStore((s) => s.setSession);
@@ -402,31 +388,30 @@ export default function ItineraryTabScreen() {
               {dayItems.length === 1 ? "item" : "items"}
             </Text>
             {dayItems.map((item) => (
-              <View
+              <Pressable
                 key={item.id}
-                className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
+                onPress={() => void openItem(item)}
+                className="flex-row items-center gap-3 px-4 py-3 border rounded-xl border-border bg-card active:opacity-90"
               >
                 <Pressable
                   onPress={() =>
-                    guardAction(() =>
-                      toggleDone.mutate({ itemId: item.id, isDone: !item.isDone })
-                    )
+                    toggleDone.mutate({
+                      tripId: activeTrip.id,
+                      itemId: item.id,
+                      isDone: !item.isDone,
+                    })
                   }
-                  hitSlop={8}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: item.isDone }}
-                  accessibilityLabel={`Mark ${item.title} as ${item.isDone ? "not done" : "done"}`}
                 >
                   {item.isDone ? (
-                    <CheckCircle2 size={22} color="#22C55E" />
+                    <CheckCircle2 size={20} color="#22C55E" />
                   ) : (
-                    <Circle size={22} color={mutedColor} />
+                    <Circle size={20} color={mutedColor} />
                   )}
                 </Pressable>
-                <Pressable
-                  className="flex-1 active:opacity-80"
-                  onPress={() => router.push(`/trip/${activeTrip.id}` as never)}
-                >
+
+                <View className="min-w-0 flex-1">
                   <Text
                     className={`text-base font-medium ${item.isDone ? "text-muted-foreground line-through" : "text-foreground"}`}
                   >
