@@ -7,6 +7,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      OTEL_SERVICE_NAME: travel-companion-api
+      SERVICE_VERSION: ${IMAGE_TAG:-latest}
     expose:
       - "3000"
     networks:

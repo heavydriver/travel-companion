@@ -341,24 +341,26 @@ export default function ExploreScreen() {
       >
         <View className="gap-6">
           <View className="flex-row items-start justify-between">
-            <View>
+            <View className="max-w-[80%]">
               <Text className="text-2xl font-bold text-foreground">Explore</Text>
               <Text className="mt-1 text-sm text-muted-foreground">
                 Discover popular destinations and nearby favorites
               </Text>
             </View>
-            <Pressable
-              onPress={() => router.push("/destination/favorites" as never)}
-              className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-85"
-              accessibilityRole="button"
-              accessibilityLabel="View favorite destinations"
-            >
-              <Heart
-                size={18}
-                color={hasFavoriteDestinations ? "#EC4899" : mutedColor}
-                fill={hasFavoriteDestinations ? "#EC4899" : "none"}
-              />
-            </Pressable>
+            <View>
+              <Pressable
+                onPress={() => router.push("/destination/favorites" as never)}
+                className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-85"
+                accessibilityRole="button"
+                accessibilityLabel="View favorite destinations"
+              >
+                <Heart
+                  size={18}
+                  color={hasFavoriteDestinations ? "#EC4899" : mutedColor}
+                  fill={hasFavoriteDestinations ? "#EC4899" : "none"}
+                />
+              </Pressable>
+            </View>
           </View>
 
           <View className="flex-row items-center rounded-xl border border-border bg-card px-3">

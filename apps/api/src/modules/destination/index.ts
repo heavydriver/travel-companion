@@ -6,6 +6,8 @@ import {
   DestinationSearchQuery,
   PackVersionResponse,
   PopularDestinationsResponse,
+  ResolveDestinationBody,
+  ResolveDestinationResponse,
 } from "./model";
 import { destinationService } from "./service";
 
@@ -26,6 +28,21 @@ export const destinationModule = new Elysia({ prefix: "/destinations" })
       return { destinations };
     },
     { response: PopularDestinationsResponse },
+  )
+  .post(
+    "/resolve",
+    async ({ body, set }) => {
+      const resolved = await destinationService.resolve(body);
+      set.status = resolved.resolvedBy === "existing" ? 200 : 201;
+      return resolved;
+    },
+    {
+      body: ResolveDestinationBody,
+      response: {
+        200: ResolveDestinationResponse,
+        201: ResolveDestinationResponse,
+      },
+    },
   )
   .get(
     "/:destId",

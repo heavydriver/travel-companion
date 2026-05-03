@@ -28,6 +28,8 @@ export type MapSession = {
   focusLatitude?: number | null;
   focusLongitude?: number | null;
   focusZoomLevel?: number | null;
+  /** When set, the map also opens the place detail sheet for this place id. */
+  focusPlaceId?: string | null;
   /** Expo route to return to when leaving the session (e.g. `/destination/abc`). */
   returnHref?: string | null;
   /** When true, map applies “curated only” once for this session (must-visit map entry). */

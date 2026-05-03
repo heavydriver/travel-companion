@@ -94,9 +94,13 @@ Travel Companion is a mobile application that centralizes everything a traveler 
 - Enter the following commands:
   - `cd apps/mobile`
   - `pnpm run start`
-- Use Expo Go to scan the qr code and test the app
+- Use Expo Go to scan the qr code and test the app for general app work
   - Alternatively, can run emulator on your computer
   - press `a` for android or `i` for iOS
+- Google Sign-In requires a development build and will not work in Expo Go
+  - add `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` to `apps/mobile/.env`
+  - make sure `apps/api/.env` uses the same value for `GOOGLE_CLIENT_ID`
+  - rebuild native Android after config changes with `npx expo run:android`
 
 ## Git Commands
 

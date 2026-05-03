@@ -87,4 +87,26 @@ describe("userService", () => {
       userService.getProfile("00000000-0000-0000-0000-000000000000")
     ).rejects.toMatchObject({ statusCode: 404 });
   });
+
+  test("getPublicProfileForViewer returns peer without email and no connection", async () => {
+    const viewer = await authService.register(
+      `${runId}_pv1@test.local`,
+      "Password456!",
+      "Viewer",
+      `${runId}_pv1`
+    );
+    const target = await authService.register(
+      `${runId}_pv2@test.local`,
+      "Password456!",
+      "Target",
+      `${runId}_pv2`
+    );
+    createdUserIds.add(viewer.user.id);
+    createdUserIds.add(target.user.id);
+
+    const out = await userService.getPublicProfileForViewer(viewer.user.id, target.user.id);
+    expect(out.user.name).toBe("Target");
+    expect(out.user).not.toHaveProperty("email");
+    expect(out.connection).toBeNull();
+  });
 });

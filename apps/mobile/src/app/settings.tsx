@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { Bell, ChevronLeft, ChevronRight, MessageCircle, Ruler, User, Users } from "lucide-react-native";
+import { Bell, ChevronLeft, ChevronRight, Download, MessageCircle, Ruler, Trash2, User, Users } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
+import { useEffect } from "react";
 import { Alert, Pressable, Switch, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
-import { clearQueryCache } from "@/lib/queryClient";
 import type { UnitSystem } from "@/lib/units";
+import { useAssistantStore } from "@/store/assistantStore";
 import { useAuthStore } from "@/store/authStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 
@@ -41,10 +42,22 @@ export default function SettingsScreen() {
   const logout = useAuthStore((s) => s.logout);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
+  const hydrated = useAssistantStore((s) => s.hydrated);
+  const hydrateAssistant = useAssistantStore((s) => s.hydrate);
+  const modelState = useAssistantStore((s) => s.modelState);
+  const threads = useAssistantStore((s) => s.threads);
+  const clearHistory = useAssistantStore((s) => s.clearHistory);
+  const deleteModelAndReset = useAssistantStore((s) => s.deleteModelAndReset);
 
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : undefined;
 
+  useEffect(() => {
+    if (!hydrated) {
+      void hydrateAssistant();
+    }
+  }, [hydrated, hydrateAssistant]);
+  
   const profileQuery = useQuery({
     queryKey: ["user", "me"],
     queryFn: async () => {
@@ -80,7 +93,6 @@ export default function SettingsScreen() {
             // Best-effort
           }
           await logout();
-          clearQueryCache();
           router.replace("/(auth)/login" as never);
         },
       },
@@ -89,6 +101,32 @@ export default function SettingsScreen() {
 
   const onUnitsChange = (next: UnitSystem) => {
     void setUnitSystem(next);
+  };
+
+  const handleClearAssistantHistory = () => {
+    Alert.alert("Clear Chat History", "This will remove your assistant conversations on this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear",
+        style: "destructive",
+        onPress: () => {
+          void clearHistory();
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteModel = () => {
+    Alert.alert("Delete AI Model", "This removes the downloaded model from this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          void deleteModelAndReset();
+        },
+      },
+    ]);
   };
 
   return (
@@ -115,40 +153,32 @@ export default function SettingsScreen() {
           </View>
           <View className="flex-1">
             <Text className="text-base font-semibold text-foreground">Profile & social</Text>
-            <Text className="mt-0.5 text-sm text-muted-foreground" numberOfLines={2}>
-              Photo, bio, nearby travelers, and connection requests
-            </Text>
           </View>
           <ChevronRight size={18} color={resolvedIcon} />
         </Pressable>
 
-        <View className="rounded-2xl border border-border bg-card p-4">
-          <View className="flex-row items-start gap-3">
-            <View className="mt-0.5 rounded-full bg-primary/15 p-2">
+        <View className="rounded-2xl border border-border bg-card p-4 gap-2">
+          <View className="flex-row items-center gap-3">
+            <View className="rounded-full bg-primary/15 p-2">
               <Ruler size={18} color={resolvedIcon} />
             </View>
-            <View className="min-w-0 flex-1">
-              <Text className="text-base font-semibold text-foreground">Units</Text>
-              <Text className="mt-1 text-sm leading-5 text-muted-foreground">
-                Metric uses °C, km, and km/h. Imperial uses °F, miles, and mph. Applies to weather and distance on Explore, map, and place details.
-              </Text>
-              <View className="mt-4 flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
-                <TabChip
-                  label="Metric"
-                  active={unitSystem === "metric"}
-                  onPress={() => onUnitsChange("metric")}
-                />
-                <TabChip
-                  label="Imperial"
-                  active={unitSystem === "imperial"}
-                  onPress={() => onUnitsChange("imperial")}
-                />
-              </View>
-              <Text className="mt-2 text-xs text-muted-foreground">
-                {unitSystem === "metric" ? "°C · km · km/h" : "°F · mi · mph"}
-              </Text>
-            </View>
+            <Text className="text-base font-semibold text-foreground">Units</Text>
           </View>
+          <View className="flex-row gap-2 rounded-2xl border border-border bg-muted/30 p-1">
+            <TabChip
+              label="Metric"
+              active={unitSystem === "metric"}
+              onPress={() => onUnitsChange("metric")}
+            />
+            <TabChip
+              label="Imperial"
+              active={unitSystem === "imperial"}
+              onPress={() => onUnitsChange("imperial")}
+            />
+          </View>
+          <Text className="text-xs text-muted-foreground">
+            {unitSystem === "metric" ? "°C · km · km/h" : "°F · mi · mph"}
+          </Text>
         </View>
 
         <View className="rounded-2xl border border-border bg-card p-4">
@@ -192,32 +222,86 @@ export default function SettingsScreen() {
 
         <View className="rounded-2xl border border-border bg-card p-2">
           <Pressable
-            onPress={() => router.push("/social-connect" as never)}
-            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
-          >
-            <View className="flex-row items-center gap-2">
-              <Users size={18} color={resolvedIcon} />
-              <Text className="text-base text-foreground">Social Connect</Text>
-            </View>
-            <ChevronRight size={18} color={resolvedIcon} />
-          </Pressable>
-
-          <Pressable
             onPress={() => router.push("/messages" as never)}
-            className="flex-row items-center justify-between rounded-xl px-3 py-3 active:opacity-80"
+            className="flex-row items-center justify-between rounded-xl px-2 py-2 active:opacity-80"
           >
             <View className="flex-row items-center gap-2">
-              <MessageCircle size={18} color={resolvedIcon} />
+              <View className="rounded-full bg-primary/15 p-2">
+                <MessageCircle size={18} color={resolvedIcon} />
+              </View>
               <Text className="text-base text-foreground">Messages</Text>
             </View>
             <ChevronRight size={18} color={resolvedIcon} />
           </Pressable>
         </View>
 
+        <View className="rounded-2xl border border-border bg-card p-4 gap-3">
+          <View className="flex-row items-center gap-3">
+            <View className="rounded-full bg-primary/15 p-2">
+              <Download size={18} color={resolvedIcon} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-foreground">AI Model</Text>
+              <Text className="text-sm text-muted-foreground">
+                {modelState.status === "ready"
+                  ? "Ready for offline chat"
+                  : modelState.status === "downloading"
+                    ? "Downloading now"
+                    : modelState.status === "paused"
+                      ? "Download paused"
+                      : modelState.status === "loading"
+                        ? "Loading into memory"
+                        : "Not downloaded"}
+              </Text>
+            </View>
+          </View>
+          <View className="rounded-2xl bg-muted/30 px-4 py-3">
+            <Text className="text-sm text-foreground">
+              Size: {(modelState.sizeBytes / (1024 * 1024)).toFixed(0)} MB
+            </Text>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              {modelState.downloadedAt
+                ? `Downloaded ${new Date(modelState.downloadedAt).toLocaleDateString("en-US")}`
+                : "Download it from the Assistant tab when you're ready."}
+            </Text>
+          </View>
+          <Button
+            label="Delete Model"
+            variant="secondary"
+            onPress={handleDeleteModel}
+            disabled={!modelState.modelUri}
+            className="border-destructive"
+          />
+        </View>
+
+        <View className="rounded-2xl border border-border bg-card p-4 gap-3">
+          <View className="flex-row items-center gap-3">
+            <View className="rounded-full bg-primary/15 p-2">
+              <Trash2 size={18} color={resolvedIcon} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-foreground">Assistant History</Text>
+              <Text className="text-sm text-muted-foreground">
+                {threads.length} local {threads.length === 1 ? "thread" : "threads"}
+              </Text>
+            </View>
+          </View>
+          <Button
+            label="Clear Chat History"
+            variant="secondary"
+            onPress={handleClearAssistantHistory}
+            className="border-destructive"
+          />
+        </View>
+
         <View className="rounded-2xl border border-border bg-card p-4">
           <Text className="text-sm font-medium text-muted-foreground">Signed in as</Text>
-          <Text className="mt-1 text-base font-semibold text-foreground">{user?.name ?? "Traveler"}</Text>
-          <Text className="mt-0.5 text-sm text-muted-foreground">{user?.email}</Text>
+          <Text className="mt-1 text-base font-semibold text-foreground">
+            {user?.name ?? "Traveler"}
+          </Text>
+          {user?.email ? (
+            <Text className="mt-0.5 text-sm text-muted-foreground">{user.email}</Text>
+          ) : null}
           {user?.username ? (
             <Text className="mt-1 text-sm text-muted-foreground">@{user.username}</Text>
           ) : null}
