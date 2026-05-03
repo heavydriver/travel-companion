@@ -4,8 +4,11 @@ import { AppError } from "../../middleware/errorHandler";
 const tripSelect = {
   id: true,
   title: true,
+  description: true,
   startDate: true,
   endDate: true,
+  budget: true,
+  currencyCode: true,
   coverImageUrl: true,
   createdAt: true,
   destination: {
@@ -16,8 +19,11 @@ const tripSelect = {
 function formatTrip(trip: {
   id: string;
   title: string;
+  description: string | null;
   startDate: Date;
   endDate: Date;
+  budget: number | null;
+  currencyCode: string | null;
   coverImageUrl: string | null;
   createdAt: Date;
   destination: { id: string; name: string; countryCode: string };
@@ -68,6 +74,9 @@ export const tripService = {
       title: string;
       startDate: string;
       endDate: string;
+      description?: string;
+      budget?: number;
+      currencyCode?: string;
     }
   ) {
     if (new Date(data.endDate) < new Date(data.startDate)) {
@@ -90,8 +99,11 @@ export const tripService = {
         ownerId: userId,
         destinationId: data.destinationId,
         title: data.title,
+        description: data.description?.trim() || null,
         startDate: new Date(data.startDate),
         endDate: new Date(data.endDate),
+        budget: data.budget ?? null,
+        currencyCode: data.currencyCode?.trim().toUpperCase() || destination.currencyCode,
       },
       select: tripSelect,
     });
@@ -106,6 +118,9 @@ export const tripService = {
       title?: string;
       startDate?: string;
       endDate?: string;
+      description?: string | null;
+      budget?: number | null;
+      currencyCode?: string | null;
       coverImageUrl?: string | null;
     }
   ) {
@@ -135,8 +150,13 @@ export const tripService = {
       where: { id: tripId },
       data: {
         ...(data.title !== undefined && { title: data.title }),
+        ...(data.description !== undefined && { description: data.description?.trim() || null }),
         ...(data.startDate !== undefined && { startDate }),
         ...(data.endDate !== undefined && { endDate }),
+        ...(data.budget !== undefined && { budget: data.budget }),
+        ...(data.currencyCode !== undefined && {
+          currencyCode: data.currencyCode?.trim().toUpperCase() || null,
+        }),
         ...(data.coverImageUrl !== undefined && {
           coverImageUrl: data.coverImageUrl,
         }),

@@ -13,6 +13,7 @@ import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
 import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
 import { Screen } from "@/components/shared/Screen";
+import { useGoogleAuth } from "@/features/auth/googleAuth";
 import { useAuthStore } from "@/store/authStore";
 import { analytics } from "@/utils/analytics";
 
@@ -32,6 +33,7 @@ export default function RegisterScreen() {
   const eden = useEden();
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
+  const googleAuth = useGoogleAuth();
 
   const [error, setError] = useState<string | null>(null);
 
@@ -53,7 +55,17 @@ export default function RegisterScreen() {
     ...eden.api.v1.auth.register.post.mutationOptions(),
   });
 
+  const onGooglePress = async () => {
+    setError(null);
+    try {
+      await googleAuth.signIn();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to continue with Google.");
+    }
+  };
+
   const onSubmit = handleSubmit(async (values) => {
+    setError(null);
     try {
       const data = await registerMutation.mutateAsync(values);
       await login({
@@ -115,7 +127,11 @@ export default function RegisterScreen() {
             onPress={() => void onSubmit()}
             loading={isSubmitting || registerMutation.isPending}
           />
-          <OAuthButton provider="google" onPress={() => undefined} />
+          <OAuthButton
+            provider="google"
+            onPress={() => void onGooglePress()}
+            loading={googleAuth.isPending}
+          />
           <OAuthButton provider="apple" onPress={() => undefined} />
         </View>
 
@@ -126,7 +142,9 @@ export default function RegisterScreen() {
           </Pressable>
         </View>
       </View>
-      {registerMutation.isPending ? <LoadingOverlay label="Creating your account..." /> : null}
+      {registerMutation.isPending || googleAuth.isPending ? (
+        <LoadingOverlay label="Signing you in..." />
+      ) : null}
     </Screen>
   );
 }

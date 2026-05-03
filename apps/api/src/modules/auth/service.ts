@@ -2,6 +2,7 @@ import { prisma } from "@repo/db";
 import bcrypt from "bcryptjs";
 import { OAuth2Client } from "google-auth-library";
 import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
+import { withResolvedAvatar } from "../../utils/avatarUrl";
 import { config } from "../../utils/config";
 import { AppError } from "../../middleware/errorHandler";
 
@@ -87,7 +88,7 @@ export const authService = {
         email: true,
         name: true,
         username: true,
-        avatarUrl: true,
+        profilePicUpdatedAt: true,
         bio: true,
         socialOptIn: true,
       },
@@ -96,7 +97,7 @@ export const authService = {
     const accessToken = await generateAccessToken(user.id);
     const refreshToken = await generateRefreshToken(user.id);
 
-    return { user, accessToken, refreshToken };
+    return { user: withResolvedAvatar(user), accessToken, refreshToken };
   },
 
   async googleLogin(idToken: string) {
@@ -141,7 +142,7 @@ export const authService = {
             email: true,
             name: true,
             username: true,
-            avatarUrl: true,
+            profilePicUpdatedAt: true,
             bio: true,
             socialOptIn: true,
             isActive: true,
@@ -158,7 +159,7 @@ export const authService = {
       const accessToken = await generateAccessToken(existingAccount.user.id);
       const refreshToken = await generateRefreshToken(existingAccount.user.id);
       const { isActive: _, ...safeUser } = existingAccount.user;
-      return { user: safeUser, accessToken, refreshToken };
+      return { user: withResolvedAvatar(safeUser), accessToken, refreshToken };
     }
 
     const { user } = await prisma.$transaction(async (tx) => {
@@ -169,7 +170,7 @@ export const authService = {
           email: true,
           name: true,
           username: true,
-          avatarUrl: true,
+          profilePicUpdatedAt: true,
           bio: true,
           socialOptIn: true,
           isActive: true,
@@ -205,7 +206,7 @@ export const authService = {
           email: true,
           name: true,
           username: true,
-          avatarUrl: true,
+          profilePicUpdatedAt: true,
           bio: true,
           socialOptIn: true,
           isActive: true,
@@ -226,7 +227,7 @@ export const authService = {
     const accessToken = await generateAccessToken(user.id);
     const refreshToken = await generateRefreshToken(user.id);
     const { isActive: _, ...safeUser } = user;
-    return { user: safeUser, accessToken, refreshToken };
+    return { user: withResolvedAvatar(safeUser), accessToken, refreshToken };
   },
 
   async appleLogin(identityToken: string, name?: string) {
@@ -271,7 +272,7 @@ export const authService = {
             email: true,
             name: true,
             username: true,
-            avatarUrl: true,
+            profilePicUpdatedAt: true,
             bio: true,
             socialOptIn: true,
             isActive: true,
@@ -288,7 +289,7 @@ export const authService = {
       const accessToken = await generateAccessToken(existingAccount.user.id);
       const refreshToken = await generateRefreshToken(existingAccount.user.id);
       const { isActive: _, ...safeUser } = existingAccount.user;
-      return { user: safeUser, accessToken, refreshToken };
+      return { user: withResolvedAvatar(safeUser), accessToken, refreshToken };
     }
 
     const { user } = await prisma.$transaction(async (tx) => {
@@ -299,7 +300,7 @@ export const authService = {
           email: true,
           name: true,
           username: true,
-          avatarUrl: true,
+          profilePicUpdatedAt: true,
           bio: true,
           socialOptIn: true,
           isActive: true,
@@ -335,7 +336,7 @@ export const authService = {
           email: true,
           name: true,
           username: true,
-          avatarUrl: true,
+          profilePicUpdatedAt: true,
           bio: true,
           socialOptIn: true,
           isActive: true,
@@ -356,7 +357,7 @@ export const authService = {
     const accessToken = await generateAccessToken(user.id);
     const refreshToken = await generateRefreshToken(user.id);
     const { isActive: _, ...safeUser } = user;
-    return { user: safeUser, accessToken, refreshToken };
+    return { user: withResolvedAvatar(safeUser), accessToken, refreshToken };
   },
 
   async login(email: string, password: string) {
@@ -367,7 +368,7 @@ export const authService = {
         email: true,
         name: true,
         username: true,
-        avatarUrl: true,
+        profilePicUpdatedAt: true,
         bio: true,
         socialOptIn: true,
         passwordHash: true,
@@ -392,7 +393,7 @@ export const authService = {
     const refreshToken = await generateRefreshToken(user.id);
 
     const { passwordHash: _, isActive: __, ...safeUser } = user;
-    return { user: safeUser, accessToken, refreshToken };
+    return { user: withResolvedAvatar(safeUser), accessToken, refreshToken };
   },
 
   async refresh(refreshToken: string) {

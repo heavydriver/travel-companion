@@ -4,7 +4,6 @@ export const PatchUserMeBody = t.Object({
   socialOptIn: t.Optional(t.Boolean()),
   name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
   bio: t.Optional(t.Union([t.String({ maxLength: 300 }), t.Null()])),
-  avatarUrl: t.Optional(t.Union([t.String(), t.Null()])),
 });
 
 export const UserMeResponse = t.Object({

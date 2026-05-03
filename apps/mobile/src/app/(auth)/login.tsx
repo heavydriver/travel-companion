@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Pressable, Text, View } from "react-native";
 import { z } from "zod";
-import { type AuthResponse, useEden } from "@/api/client";
+import { useEden } from "@/api/client";
 import { AuthHeader } from "@/components/auth/AuthHeader";
 import { AuthTextField } from "@/components/auth/AuthTextField";
 import { OAuthButton } from "@/components/auth/OAuthButton";
@@ -13,6 +13,7 @@ import { Button } from "@/components/shared/Button";
 import { ErrorBanner } from "@/components/shared/ErrorBanner";
 import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
 import { Screen } from "@/components/shared/Screen";
+import { useGoogleAuth } from "@/features/auth/googleAuth";
 import { useAuthStore } from "@/store/authStore";
 
 const loginSchema = z.object({
@@ -26,6 +27,7 @@ export default function LoginScreen() {
   const eden = useEden();
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
+  const googleAuth = useGoogleAuth();
 
   const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +44,15 @@ export default function LoginScreen() {
   });
 
   const loginMutation = useMutation({ ...eden.api.v1.auth.login.post.mutationOptions() });
+
+  const onGooglePress = async () => {
+    setError(null);
+    try {
+      await googleAuth.signIn();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to continue with Google.");
+    }
+  };
 
   const onSubmit = handleSubmit(async (values) => {
     setError(null);
@@ -88,7 +99,11 @@ export default function LoginScreen() {
             onPress={() => void onSubmit()}
             loading={isSubmitting || loginMutation.isPending}
           />
-          <OAuthButton provider="google" onPress={() => undefined} />
+          <OAuthButton
+            provider="google"
+            onPress={() => void onGooglePress()}
+            loading={googleAuth.isPending}
+          />
           <OAuthButton provider="apple" onPress={() => undefined} />
         </View>
 
@@ -99,7 +114,9 @@ export default function LoginScreen() {
           </Pressable>
         </View>
       </View>
-      {loginMutation.isPending ? <LoadingOverlay label="Signing you in..." /> : null}
+      {loginMutation.isPending || googleAuth.isPending ? (
+        <LoadingOverlay label="Signing you in..." />
+      ) : null}
     </Screen>
   );
 }

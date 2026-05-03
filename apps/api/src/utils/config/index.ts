@@ -16,11 +16,18 @@ const EnvSchema = t.Object({
   FRONTEND_URL: t.Optional(t.String()),
   CDN_BASE_URL: t.Optional(t.String()),
   GOOGLE_CLIENT_ID: t.Optional(t.String()),
+  GOOGLE_MAPS_API_KEY: t.Optional(t.String()),
   APPLE_CLIENT_ID: t.Optional(t.String()),
   APPLE_TEAM_ID: t.Optional(t.String()),
   APPLE_KEY_ID: t.Optional(t.String()),
   POSTHOG_API_KEY: t.Optional(t.String()),
   POSTHOG_HOST: t.Optional(t.String()),
+  BETTERSTACK_INGESTING_HOST: t.Optional(t.String()),
+  BETTERSTACK_SOURCE_TOKEN: t.Optional(t.String()),
+  OTEL_METRIC_EXPORT_INTERVAL_MS: t.Optional(t.String()),
+  OTEL_METRIC_EXPORT_TIMEOUT_MS: t.Optional(t.String()),
+  OTEL_SERVICE_NAME: t.Optional(t.String()),
+  SERVICE_VERSION: t.Optional(t.String()),
 });
 
 function loadConfig() {
@@ -33,11 +40,18 @@ function loadConfig() {
     FRONTEND_URL: process.env.FRONTEND_URL,
     CDN_BASE_URL: process.env.CDN_BASE_URL,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
     APPLE_CLIENT_ID: process.env.APPLE_CLIENT_ID,
     APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
     APPLE_KEY_ID: process.env.APPLE_KEY_ID,
     POSTHOG_API_KEY: process.env.POSTHOG_API_KEY,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
+    BETTERSTACK_INGESTING_HOST: process.env.BETTERSTACK_INGESTING_HOST,
+    BETTERSTACK_SOURCE_TOKEN: process.env.BETTERSTACK_SOURCE_TOKEN,
+    OTEL_METRIC_EXPORT_INTERVAL_MS: process.env.OTEL_METRIC_EXPORT_INTERVAL_MS,
+    OTEL_METRIC_EXPORT_TIMEOUT_MS: process.env.OTEL_METRIC_EXPORT_TIMEOUT_MS,
+    OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
+    SERVICE_VERSION: process.env.SERVICE_VERSION,
   };
 
   if (!Value.Check(EnvSchema, raw)) {
@@ -58,11 +72,23 @@ function loadConfig() {
     frontendUrl: raw.FRONTEND_URL || "http://localhost:8081",
     cdnBaseUrl: raw.CDN_BASE_URL || "",
     googleClientId: raw.GOOGLE_CLIENT_ID,
+    googleMapsApiKey: raw.GOOGLE_MAPS_API_KEY,
     appleClientId: raw.APPLE_CLIENT_ID,
     appleTeamId: raw.APPLE_TEAM_ID,
     appleKeyId: raw.APPLE_KEY_ID,
     posthogApiKey: raw.POSTHOG_API_KEY,
     posthogHost: raw.POSTHOG_HOST || "https://us.i.posthog.com",
+    betterStackIngestingHost: raw.BETTERSTACK_INGESTING_HOST,
+    betterStackSourceToken: raw.BETTERSTACK_SOURCE_TOKEN,
+    otelMetricExportIntervalMs: Number(
+      raw.OTEL_METRIC_EXPORT_INTERVAL_MS || "15000"
+    ),
+    otelMetricExportTimeoutMs: Number(
+      raw.OTEL_METRIC_EXPORT_TIMEOUT_MS || "10000"
+    ),
+    otelServiceName: raw.OTEL_SERVICE_NAME || "travel-companion-api",
+    serviceVersion:
+      raw.SERVICE_VERSION || process.env.IMAGE_TAG || process.env.npm_package_version || "dev",
   } as const;
 }
 

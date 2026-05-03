@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch ./src/index.ts",
-    "build": "bun build ./src/index.ts --target bun --outdir dist",
+    "build": "bun build ./src/index.ts --target bun --outdir dist --external pg",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov"
@@ -16,8 +16,20 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.2",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1036.0",
     "@elysiajs/cors": "^1.4.1",
     "@elysiajs/eden": "^1.4.8",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.216.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.74.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.216.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.216.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.216.0",
+    "@opentelemetry/resources": "^2.7.1",
+    "@opentelemetry/sdk-logs": "^0.216.0",
+    "@opentelemetry/sdk-metrics": "^2.7.1",
+    "@opentelemetry/sdk-node": "^0.216.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
     "@repo/db": "workspace:*",
     "@repo/types": "workspace:*",
     "@sinclair/typebox": "^0.34.48",
@@ -25,8 +37,8 @@
     "elysia": "^1.4.26",
     "expo-server-sdk": "^4.0.0",
     "google-auth-library": "^10.6.2",
-    "jose": "^6.2.0"
-    ,
+    "jose": "^6.2.0",
+    "sharp": "^0.34.5",
     "posthog-node": "^5.9.1"
   },
   "devDependencies": {

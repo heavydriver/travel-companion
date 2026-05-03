@@ -32,11 +32,15 @@ model User {
   name         String
   username     String  @unique
   avatarUrl    String?
+  /// Set when the user uploads a profile picture to object storage; used to build public avatar URL.
+  profilePicUpdatedAt DateTime?
   bio          String? @db.VarChar(300)
 
   homeCountry         String? // ISO country code
   preferredLanguageId String?
   socialOptIn         Boolean @default(false)
+  notifyMessages      Boolean @default(true)
+  notifyConnections   Boolean @default(true)
 
   isVerified Boolean @default(false)
   isActive   Boolean @default(true)
@@ -120,10 +124,12 @@ model Language {
 
 model Destination {
   id          String  @id @default(cuid())
+  googlePlaceId String? @unique
   name        String
   slug        String  @unique
   country     String
   countryCode String
+  source      DestinationSource @default(INTERNAL)
   kind        DestinationKind @default(CITY)
   region      String?
   adminCode   String?
@@ -156,6 +162,7 @@ model Destination {
   @@index([m49Code])
   @@index([kind])
   @@index([isFeatured])
+  @@index([source])
 }
 
 enum DestinationKind {
@@ -163,6 +170,12 @@ enum DestinationKind {
   STATE
   REGION
   COUNTRY
+}
+
+enum DestinationSource {
+  INTERNAL
+  GOOGLE_PLACES
+  MANUAL
 }
 
 model DestinationLanguage {

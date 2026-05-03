@@ -1,3 +1,4 @@
+import { apiCache } from "../../utils/cache";
 import { AppError } from "../../middleware/errorHandler";
 
 const OPEN_METEO = "https://api.open-meteo.com/v1/forecast";
@@ -28,11 +29,13 @@ export const weatherService = {
     url.searchParams.set("current", CURRENT);
     url.searchParams.set("daily", DAILY);
 
-    const res = await fetch(url.toString());
-    if (!res.ok) {
-      throw new AppError(502, "UPSTREAM_ERROR", "Weather provider request failed");
-    }
-
-    return res.json() as Promise<Record<string, unknown>>;
+    const cacheKey = `weather:${input.latitude}:${input.longitude}:${days}:${tz}`;
+    return apiCache.getOrSet(cacheKey, async () => {
+      const res = await fetch(url.toString());
+      if (!res.ok) {
+        throw new AppError(502, "UPSTREAM_ERROR", "Weather provider request failed");
+      }
+      return res.json() as Promise<Record<string, unknown>>;
+    }, 15 * 60 * 1000);
   },
 };

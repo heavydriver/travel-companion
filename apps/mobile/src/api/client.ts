@@ -1,23 +1,109 @@
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@repo/api/src/app";
 import { createEdenTanStackQuery } from "eden-tanstack-react-query";
-import type { AuthUser } from "@/types/auth";
-import { clearQueryCache } from "@/lib/queryClient";
 import { useAuthStore } from "@/store/authStore";
+import type { AuthUser } from "@/types/auth";
 
 export const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:3000";
 
-let isRefreshing = false;
-let refreshPromise: Promise<string | null> | null = null;
+const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60_000;
+const AUTH_RETRY_HEADER = "x-eden-auth-retry";
 
-async function tryRefreshToken(): Promise<string | null> {
+type RefreshResult =
+  | { kind: "success"; accessToken: string }
+  | { kind: "missing" }
+  | { kind: "invalid" }
+  | { kind: "transient" };
+
+let isRefreshing = false;
+let refreshPromise: Promise<RefreshResult> | null = null;
+
+function getRequestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function mergeHeaders(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Headers {
+  const headers =
+    input instanceof Request ? new Headers(input.headers) : new Headers();
+  const initHeaders = new Headers(init?.headers as HeadersInit | undefined);
+  initHeaders.forEach((value, key) => headers.set(key, value));
+  return headers;
+}
+
+function decodeBase64Url(value: string): string | null {
+  const base64Alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const base64 = value
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(value.length + ((4 - (value.length % 4)) % 4), "=");
+
+  let buffer = 0;
+  let bits = 0;
+  let output = "";
+
+  for (const char of base64) {
+    if (char === "=") break;
+    const index = base64Alphabet.indexOf(char);
+    if (index === -1) {
+      return null;
+    }
+
+    buffer = (buffer << 6) | index;
+    bits += 6;
+
+    if (bits >= 8) {
+      bits -= 8;
+      output += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+
+  return output;
+}
+
+function decodeJwtPayload(token: string): { exp?: unknown } | null {
+  const payload = token.split(".")[1];
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const decoded = decodeBase64Url(payload);
+    if (!decoded) {
+      return null;
+    }
+
+    return JSON.parse(decoded) as { exp?: unknown };
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpiringSoon(token: string | null): boolean {
+  if (!token) return true;
+  const payload = decodeJwtPayload(token);
+  if (typeof payload?.exp !== "number") {
+    return false;
+  }
+
+  return payload.exp * 1000 - Date.now() <= ACCESS_TOKEN_REFRESH_LEEWAY_MS;
+}
+
+async function tryRefreshToken(): Promise<RefreshResult> {
   if (isRefreshing && refreshPromise) return refreshPromise;
   isRefreshing = true;
   refreshPromise = (async () => {
     try {
       const { refreshToken, user } = useAuthStore.getState();
-      if (!refreshToken || !user) return null;
+      if (!refreshToken || !user) {
+        return { kind: "missing" };
+      }
 
       const res = await fetch(`${apiBaseUrl}/api/v1/auth/refresh`, {
         method: "POST",
@@ -25,7 +111,14 @@ async function tryRefreshToken(): Promise<string | null> {
         credentials: "include",
         body: JSON.stringify({ refreshToken }),
       });
-      if (!res.ok) return null;
+
+      if (res.status === 401 || res.status === 403) {
+        return { kind: "invalid" };
+      }
+      if (!res.ok) {
+        return { kind: "transient" };
+      }
+
       const data = (await res.json()) as { accessToken?: unknown };
       const newToken = data?.accessToken;
       if (typeof newToken === "string") {
@@ -34,11 +127,11 @@ async function tryRefreshToken(): Promise<string | null> {
           accessToken: newToken,
           refreshToken,
         });
-        return newToken;
+        return { kind: "success", accessToken: newToken };
       }
-      return null;
+      return { kind: "transient" };
     } catch {
-      return null;
+      return { kind: "transient" };
     } finally {
       isRefreshing = false;
       refreshPromise = null;
@@ -46,9 +139,6 @@ async function tryRefreshToken(): Promise<string | null> {
   })();
   return refreshPromise;
 }
-
-/** One retry round-trip after refresh; prevents infinite loops if the retry still returns 401. */
-const AUTH_RETRY_HEADER = "x-eden-auth-retry";
 
 function isAuthPublicPath(url: string): boolean {
   try {
@@ -65,43 +155,63 @@ function isAuthPublicPath(url: string): boolean {
   }
 }
 
-function createAuthAwareFetch(): typeof globalThis.fetch {
+async function getUsableAccessToken(forceRefresh: boolean): Promise<RefreshResult> {
+  const { accessToken, refreshToken } = useAuthStore.getState();
+
+  if (!refreshToken) {
+    return { kind: "missing" };
+  }
+
+  if (!forceRefresh && accessToken && !isTokenExpiringSoon(accessToken)) {
+    return { kind: "success", accessToken };
+  }
+
+  return tryRefreshToken();
+}
+
+export function createAuthAwareFetch(): typeof globalThis.fetch {
   const impl = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const response = await fetch(input, init);
-    if (response.status !== 401) {
+    const url = getRequestUrl(input);
+    const headers = mergeHeaders(input, init);
+    const isPublicPath = isAuthPublicPath(url);
+
+    if (!isPublicPath) {
+      const authResult = await getUsableAccessToken(false);
+      if (authResult.kind === "success") {
+        headers.set("authorization", `Bearer ${authResult.accessToken}`);
+      } else if (authResult.kind === "invalid") {
+        headers.delete("authorization");
+        await useAuthStore.getState().logout();
+      }
+    }
+
+    const response = await fetch(input, {
+      ...init,
+      headers,
+    });
+    if (response.status !== 401 || isPublicPath) {
       return response;
     }
 
-    const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url;
-
-    if (isAuthPublicPath(url)) {
+    if (!useAuthStore.getState().refreshToken) {
       return response;
     }
 
-    const { refreshToken } = useAuthStore.getState();
-    if (!refreshToken) {
+    if (headers.get(AUTH_RETRY_HEADER) === "1") {
       return response;
     }
 
-    const prior = new Headers(init?.headers as HeadersInit | undefined);
-    if (prior.get(AUTH_RETRY_HEADER) === "1") {
-      return response;
-    }
-
-    const newToken = await tryRefreshToken();
-    if (!newToken) {
+    const refreshResult = await getUsableAccessToken(true);
+    if (refreshResult.kind === "invalid") {
       await useAuthStore.getState().logout();
-      clearQueryCache();
+      return response;
+    }
+    if (refreshResult.kind !== "success") {
       return response;
     }
 
-    const nextHeaders = new Headers(init?.headers as HeadersInit | undefined);
-    nextHeaders.set("authorization", `Bearer ${newToken}`);
+    const nextHeaders = mergeHeaders(input, init);
+    nextHeaders.set("authorization", `Bearer ${refreshResult.accessToken}`);
     nextHeaders.set(AUTH_RETRY_HEADER, "1");
 
     return fetch(input, {
@@ -112,8 +222,27 @@ function createAuthAwareFetch(): typeof globalThis.fetch {
   return impl as typeof globalThis.fetch;
 }
 
+/** Use for non-Eden requests (e.g. multipart uploads) so refresh + auth headers match the API client. */
+export const authAwareFetch = createAuthAwareFetch();
+
+/**
+ * Bearer (and ngrok interstitial bypass) for raw `fetch` calls.
+ * Do not set `Content-Type` when sending `FormData` — the runtime must add the multipart boundary.
+ */
+export function authHeadersForMultipart(): Record<string, string> {
+  const token = useAuthStore.getState().accessToken;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
+  }
+  if (apiBaseUrl.includes("ngrok")) {
+    headers["ngrok-skip-browser-warning"] = "69420";
+  }
+  return headers;
+}
+
 export const client = treaty<App>(apiBaseUrl, {
-  fetcher: createAuthAwareFetch(),
+  fetcher: authAwareFetch,
   headers() {
     const token = useAuthStore.getState().accessToken;
     if (token) {

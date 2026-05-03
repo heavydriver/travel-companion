@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { apiCache } from "../../utils/cache";
 import { AppError } from "../../middleware/errorHandler";
 
 type FiatEntry = { code: string; name: string; country: string };
@@ -28,11 +29,12 @@ export const currencyService = {
       throw new AppError(404, "NOT_FOUND", "Unsupported currency code");
     }
 
-    const res = await fetch(CDN_RATES(base));
-    if (!res.ok) {
-      throw new AppError(502, "UPSTREAM_ERROR", "Rates provider request failed");
-    }
-
-    return res.json() as Promise<Record<string, unknown>>;
+    return apiCache.getOrSet(`currency:${base}`, async () => {
+      const res = await fetch(CDN_RATES(base));
+      if (!res.ok) {
+        throw new AppError(502, "UPSTREAM_ERROR", "Rates provider request failed");
+      }
+      return res.json() as Promise<Record<string, unknown>>;
+    }, 30 * 60 * 1000);
   },
 };

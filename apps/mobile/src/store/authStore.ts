@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AuthUser } from "@/types/auth";
+import { clearQueryCache } from "@/lib/queryClient";
 import { storage } from "@/lib/storage";
 
 const AUTH_STORAGE_KEY = "travel_companion_auth";
@@ -53,6 +54,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       refreshToken: null,
       isAuthenticated: false,
     });
+    clearQueryCache();
   },
   hydrateFromStorage: async () => {
     try {

@@ -69,7 +69,7 @@ export default function PopularDestinationsScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView contentContainerClassName="gap-3 pb-3">
+          <ScrollView contentContainerClassName="gap-3 pb-3" showsVerticalScrollIndicator={false}>
             {destinations.map((destination) => (
               <PopularDestinationRow key={destination.id} destination={destination} />
             ))}

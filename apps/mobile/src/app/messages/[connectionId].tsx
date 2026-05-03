@@ -1,24 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { Send } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { Image } from "expo-image";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { Check, CheckCheck, ChevronLeft, Send, User as UserIcon } from "lucide-react-native";
+import { useUnstableNativeVariable } from "nativewind";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { analytics } from "@/utils/analytics";
+import { invalidateMessageQueries } from "@/lib/socialQueries";
 
-type ApiMessage = {
+type MessageItem = {
   id: string;
   senderId: string;
   receiverId: string;
@@ -27,7 +31,41 @@ type ApiMessage = {
   createdAt: string;
 };
 
-type MessageItem = ApiMessage;
+type ConnectionInboxRow = {
+  id: string;
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl: string | null;
+  };
+  lastMessage: {
+    content: string;
+    createdAt: string;
+    senderId: string;
+  } | null;
+  unreadCount: number;
+};
+
+type MessagesResponse = {
+  messages: MessageItem[];
+};
+
+type ConnectionsResponse = {
+  connections: ConnectionInboxRow[];
+};
+
+function formatMessageDay(iso: string) {
+  const date = new Date(iso);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return "Today";
+
+  const yesterday = new Date();
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
 export default function MessageThreadScreen() {
   const router = useRouter();
@@ -38,6 +76,9 @@ export default function MessageThreadScreen() {
   const isConnected = useNetworkStore((s) => s.isConnected);
   const [draft, setDraft] = useState("");
   const flatListRef = useRef<FlatList>(null);
+  const lastMarkedMessageIdRef = useRef<string | null>(null);
+  const iconColor = useUnstableNativeVariable("--foreground");
+  const resolvedIcon = iconColor ? `hsl(${iconColor})` : "hsl(220 20% 10%)";
 
   const messagesQuery = useQuery({
     queryKey: ["messages", connectionId],
@@ -49,8 +90,29 @@ export default function MessageThreadScreen() {
       return res.data;
     },
     enabled: !!connectionId,
-    refetchInterval: 5000,
   });
+  const {
+    data: messagesData,
+    isLoading: isMessagesLoading,
+    refetch: refetchMessages,
+  } = messagesQuery;
+
+  const connectionQuery = useQuery({
+    queryKey: ["connections-accepted"],
+    queryFn: async () => {
+      const res = await client.api.v1.connections.get();
+      if (res.error) throw new Error("connections");
+      return res.data;
+    },
+    enabled: !!connectionId,
+  });
+  const { data: connectionData, refetch: refetchConnections } = connectionQuery;
+
+  const syncThread = useCallback(() => {
+    if (!connectionId) return;
+    void refetchMessages();
+    void refetchConnections();
+  }, [connectionId, refetchConnections, refetchMessages]);
 
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -61,19 +123,74 @@ export default function MessageThreadScreen() {
       if (res.error) throw new Error("Failed to send message");
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: ({ message }) => {
       analytics.chatMessageSent(Boolean(connectionId));
-      queryClient.invalidateQueries({ queryKey: ["messages", connectionId] });
+      queryClient.setQueryData<MessagesResponse>(["messages", connectionId], (current) => ({
+        messages: [...(current?.messages ?? []), message],
+      }));
+      queryClient.setQueryData<ConnectionsResponse>(["connections-accepted"], (current) => {
+        if (!current) return current;
+        return {
+          connections: current.connections.map((row) =>
+            row.id === connectionId
+              ? {
+                  ...row,
+                  lastMessage: {
+                    content: message.content,
+                    createdAt: message.createdAt,
+                    senderId: message.senderId,
+                  },
+                }
+              : row,
+          ),
+        };
+      });
+      void refetchConnections();
       setDraft("");
     },
   });
 
   useEffect(() => {
-    if (!connectionId) return;
-    client.api.v1.messages["mark-read"].patch({ connectionId }).catch(() => {});
-  }, [connectionId]);
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        syncThread();
+      }
+    });
 
-  const messages = (messagesQuery.data?.messages ?? []) as MessageItem[];
+    return () => sub.remove();
+  }, [syncThread]);
+
+  useFocusEffect(
+    useCallback(() => {
+      syncThread();
+    }, [syncThread]),
+  );
+
+  useEffect(() => {
+    if (!connectionId || !currentUserId) return;
+
+    const unreadIncoming = (messagesData?.messages ?? []).filter(
+      (message) => message.senderId !== currentUserId && !message.readAt,
+    );
+    const latestUnread = unreadIncoming.at(-1);
+    if (!latestUnread) return;
+    if (lastMarkedMessageIdRef.current === latestUnread.id) return;
+
+    lastMarkedMessageIdRef.current = latestUnread.id;
+    client.api.v1.messages["mark-read"]
+      .patch({ connectionId })
+      .then(() => {
+        void invalidateMessageQueries(queryClient, connectionId);
+      })
+      .catch(() => {
+        lastMarkedMessageIdRef.current = null;
+      });
+  }, [connectionId, currentUserId, messagesData?.messages, queryClient]);
+
+  const messages = (messagesData?.messages ?? []) as MessageItem[];
+  const connection = (connectionData?.connections ?? []).find(
+    (row: ConnectionInboxRow) => row.id === connectionId,
+  ) as ConnectionInboxRow | undefined;
   const canSend = draft.trim().length > 0 && !sendMutation.isPending && isConnected;
 
   const handleSend = () => {
@@ -86,101 +203,152 @@ export default function MessageThreadScreen() {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  const renderStatusIcon = (item: MessageItem) => {
+    if (item.senderId !== currentUserId) return null;
+    if (item.readAt) {
+      return <CheckCheck size={13} color="rgba(255,255,255,0.92)" />;
+    }
+    return <Check size={13} color="rgba(255,255,255,0.82)" />;
+  };
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-background">
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
-      >
-        <View className="flex-row items-center border-b border-border px-2 py-2">
-          <Pressable onPress={() => router.back()} className="px-2 py-2 active:opacity-80">
-            <Text className="text-base font-medium text-primary">Back</Text>
-          </Pressable>
+      <KeyboardAvoidingView className="flex-1" behavior="padding" keyboardVerticalOffset={8}>
+        <View className="border-b border-border bg-background px-4 pb-3 pt-2">
+          <View className="flex-row items-center gap-3">
+            <Pressable
+              onPress={() => router.back()}
+              className="h-11 w-11 items-center justify-center rounded-full border border-border/80 bg-card active:opacity-80"
+            >
+              <ChevronLeft size={22} color={resolvedIcon} />
+            </Pressable>
 
-          <View className="mt-3 rounded-2xl border border-border bg-card px-4 py-3">
-            <Text className="text-lg font-semibold text-foreground">Messages</Text>
-            {!isConnected && (
-              <Text className="mt-1 text-xs text-destructive">
-                Offline — messages will load when you reconnect
+            <View className="h-12 w-12 overflow-hidden rounded-full border border-primary/10 bg-muted">
+              {connection?.user.avatarUrl ? (
+                <Image
+                  source={{ uri: connection.user.avatarUrl }}
+                  style={{ width: 48, height: 48 }}
+                  contentFit="cover"
+                />
+              ) : (
+                <View className="h-full w-full items-center justify-center">
+                  <UserIcon size={22} color="hsl(218 11% 65%)" />
+                </View>
+              )}
+            </View>
+
+            <View className="min-w-0 flex-1">
+              <Text className="text-lg font-semibold text-foreground" numberOfLines={1}>
+                {connection?.user.name ?? "Messages"}
               </Text>
-            )}
+              <Text
+                className={`mt-0.5 text-sm ${isConnected ? "text-muted-foreground" : "text-destructive"}`}
+              >
+                {isConnected ? "Active conversation" : "Offline - reconnect to sync"}
+              </Text>
+            </View>
           </View>
         </View>
 
-          {messagesQuery.isLoading && (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator />
-            </View>
-          )}
+        {isMessagesLoading && (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator />
+          </View>
+        )}
 
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            contentContainerClassName="gap-2 py-4"
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-            renderItem={({ item }) => {
-              const isMe = item.senderId === currentUserId;
-              return (
-                <View
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    isMe
-                      ? "self-end bg-primary"
-                      : "self-start border border-border bg-card"
-                  }`}
-                >
-                  <Text className={isMe ? "text-primary-foreground" : "text-foreground"}>
-                    {item.content}
-                  </Text>
-                  <View className="mt-1 flex-row items-center gap-1">
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          className="flex-1"
+          contentContainerClassName="gap-1 px-3 pb-4 pt-3"
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          renderItem={({ item, index }) => {
+            const isMe = item.senderId === currentUserId;
+            const previousMessage = index > 0 ? messages[index - 1] : null;
+            const showDayLabel =
+              !previousMessage ||
+              formatMessageDay(previousMessage.createdAt) !== formatMessageDay(item.createdAt);
+            return (
+              <View>
+                {showDayLabel ? (
+                  <View className="items-center py-3">
+                    <View className="rounded-full border border-border/70 bg-card/90 px-3 py-1">
+                      <Text className="text-[11px] font-medium uppercase tracking-[1px] text-muted-foreground">
+                        {formatMessageDay(item.createdAt)}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <View className={`mb-1 max-w-[82%] ${isMe ? "self-end" : "self-start"}`}>
+                  <View
+                    className={`px-4 py-2.5 ${
+                      isMe
+                        ? "rounded-[22px] rounded-br-md bg-primary"
+                        : "rounded-[22px] rounded-bl-md border border-border/70 bg-card"
+                    }`}
+                  >
                     <Text
-                      className={`text-[11px] ${
-                        isMe ? "text-primary-foreground/80" : "text-muted-foreground"
-                      }`}
+                      className={`text-[15px] leading-5 ${isMe ? "text-primary-foreground" : "text-foreground"}`}
                     >
-                      {formatTime(item.createdAt)}
+                      {item.content}
                     </Text>
-                    {isMe && item.readAt && (
-                      <Text className="text-[11px] text-primary-foreground/80">· Read</Text>
-                    )}
+                    <View className="mt-1.5 flex-row items-center justify-end gap-1">
+                      <Text
+                        className={`text-[11px] ${
+                          isMe ? "text-primary-foreground/80" : "text-muted-foreground"
+                        }`}
+                      >
+                        {formatTime(item.createdAt)}
+                      </Text>
+                      {renderStatusIcon(item)}
+                    </View>
                   </View>
                 </View>
-              );
-            }}
-            ListEmptyComponent={
-              !messagesQuery.isLoading ? (
-                <View className="items-center py-12">
-                  <Text className="text-sm text-muted-foreground">
-                    No messages yet. Say hello!
+              </View>
+            );
+          }}
+          ListEmptyComponent={
+            !isMessagesLoading ? (
+              <View className="flex-1 items-center justify-center px-8 py-16">
+                <View className="rounded-[28px] border border-border bg-card px-6 py-8">
+                  <Text className="text-center text-base font-semibold text-foreground">
+                    No messages yet
+                  </Text>
+                  <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
+                    Break ice. Start with travel plan, favorite spot, or quick hello.
                   </Text>
                 </View>
-              ) : null
-            }
-          />
+              </View>
+            ) : null
+          }
+        />
 
-          <View className="border-t border-border bg-background pb-5 pt-3">
-            <View className="flex-row items-center gap-2">
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                placeholder={isConnected ? "Type your message" : "You're offline"}
-                placeholderTextColor="hsl(218 11% 65%)"
-                editable={isConnected}
-                className="min-h-12 flex-1 rounded-xl border border-border bg-card px-4 text-foreground"
-                onSubmitEditing={handleSend}
-              />
-              <Pressable
-                onPress={handleSend}
-                disabled={!canSend}
-                className={`h-12 w-12 items-center justify-center rounded-xl ${
-                  canSend ? "bg-primary" : "bg-muted"
-                }`}
-              >
-                <Send size={18} color={canSend ? "white" : "hsl(218 11% 65%)"} />
-              </Pressable>
-            </View>
+        <View className="border-t border-border bg-background px-3 pb-3 pt-2">
+          <View className="flex-row items-end gap-2 rounded-[24px] border border-border/80 bg-card px-3 py-2">
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={isConnected ? "Type your message" : "You're offline"}
+              placeholderTextColor="hsl(218 11% 65%)"
+              editable={isConnected}
+              multiline
+              textAlignVertical="top"
+              className="max-h-24 min-h-9 flex-1 px-1 py-1 text-[15px] leading-5 text-foreground"
+              onSubmitEditing={handleSend}
+            />
+            <Pressable
+              onPress={handleSend}
+              disabled={!canSend}
+              className={`h-10 w-10 items-center justify-center rounded-full ${
+                canSend ? "bg-primary" : "bg-muted"
+              }`}
+            >
+              <Send size={18} color={canSend ? "white" : "hsl(218 11% 65%)"} />
+            </Pressable>
           </View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
