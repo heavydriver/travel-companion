@@ -13,6 +13,7 @@ import { connectionModule, socialModule } from "./modules/social";
 import { tripModule } from "./modules/trip";
 import { userModule } from "./modules/user";
 import { weatherModule } from "./modules/weather";
+import { apiCache } from "./utils/cache";
 import { getHealthSnapshot, observabilityPlugin } from "./observability";
 
 export const app = new Elysia({ prefix: "/api/v1" })
@@ -22,6 +23,7 @@ export const app = new Elysia({ prefix: "/api/v1" })
   .get("/health", () => ({
     ...getHealthSnapshot(),
     status: "ok",
+    cacheEntries: apiCache.size
   }))
   .get("/health/live", () => ({
     ...getHealthSnapshot(),

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { Calendar, MapPin, Plus, Settings, User } from "lucide-react-native";
+import { Calendar, CheckCircle2, MapPin, Plane, Plus, Settings, User } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useCallback, useEffect, useRef } from "react";
 import { Animated, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
@@ -10,6 +10,7 @@ import {
   cn,
   daysUntil,
   differenceInCalendarDays,
+  formatDate,
   formatDateRange,
   isTripActiveToday,
   isTripPast,
@@ -111,6 +112,85 @@ function SkeletonCard() {
   );
 }
 
+function NextTripHero({ trip, onPress }: { trip: Trip; onPress: () => void }) {
+  const now = new Date();
+  const start = new Date(trip.startDate);
+  const end = new Date(trip.endDate);
+  const isActive = start <= now && end >= now;
+  const days = daysUntil(trip.startDate);
+
+  const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const currentDay = isActive
+    ? Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : 0;
+  const dayProgress = isActive ? currentDay / totalDays : 0;
+
+  const countdownLabel = isActive
+    ? `Day ${currentDay} of ${totalDays}`
+    : days === 0
+      ? "Starts today!"
+      : days === 1
+        ? "Starts tomorrow"
+        : `${days} days away`;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-5 active:opacity-90"
+    >
+      <View className="flex-row items-center gap-2">
+        <Plane size={16} color="hsl(142 71% 45%)" />
+        <Text className="text-xs font-semibold uppercase tracking-wide text-chart-2">
+          {isActive ? "Currently traveling" : "Next adventure"}
+        </Text>
+      </View>
+
+      <Text className="mt-2 text-xl font-bold text-foreground">{trip.title}</Text>
+
+      <View className="mt-1 flex-row items-center gap-1.5">
+        <MapPin size={13} color="hsl(218 11% 65%)" />
+        <Text className="text-sm text-muted-foreground">
+          {trip.destination.name} · {formatDateRange(trip.startDate, trip.endDate)}
+        </Text>
+      </View>
+
+      <View className="mt-4 flex-row items-end justify-between">
+        <View>
+          <Text className="text-3xl font-bold text-primary">
+            {isActive ? `${currentDay}` : `${days}`}
+          </Text>
+          <Text className="text-xs text-muted-foreground">{countdownLabel}</Text>
+        </View>
+
+        {isActive && (
+          <View className="items-end">
+            <View className="h-2 w-24 overflow-hidden rounded-full bg-muted">
+              <View
+                className="h-full rounded-full bg-chart-2"
+                style={{ width: `${dayProgress * 100}%` }}
+              />
+            </View>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              {totalDays - currentDay} days left
+            </Text>
+          </View>
+        )}
+
+        {!isActive && (
+          <View className="items-end">
+            <Text className="text-sm font-medium text-primary">
+              {totalDays} {totalDays === 1 ? "day" : "days"}
+            </Text>
+            <Text className="text-xs text-muted-foreground">
+              {formatDate(trip.startDate)}
+            </Text>
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
@@ -196,6 +276,21 @@ export default function HomeScreen() {
             <Plus size={20} color={iconColor} />
             <Text className="text-base font-semibold text-primary">Plan a New Trip</Text>
           </Pressable>
+
+          {/* Next trip hero */}
+          {(() => {
+            const heroTrip = activeTrips[0] ?? upcomingTrips[0];
+            if (!heroTrip) return null;
+            return (
+              <NextTripHero
+                trip={heroTrip}
+                onPress={() => {
+                  setActiveTripId(heroTrip.id);
+                  router.push(`/trip/${heroTrip.id}` as never);
+                }}
+              />
+            );
+          })()}
 
           {/* Loading skeletons */}
           {tripsQuery.isLoading && (
