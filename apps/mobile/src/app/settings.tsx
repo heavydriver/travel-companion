@@ -1,7 +1,8 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, MessageCircle, Ruler, User, Users } from "lucide-react-native";
+import { Bell, ChevronLeft, ChevronRight, MessageCircle, Ruler, User, Users } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Pressable, Switch, Text, View } from "react-native";
 import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
@@ -35,6 +36,7 @@ function TabChip({
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
@@ -42,6 +44,28 @@ export default function SettingsScreen() {
 
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : undefined;
+
+  const profileQuery = useQuery({
+    queryKey: ["user", "me"],
+    queryFn: async () => {
+      const res = await client.api.v1.users.me.get();
+      if (res.error) throw new Error("Failed to load profile");
+      return res.data;
+    },
+  });
+
+  const notifMutation = useMutation({
+    mutationFn: async (data: { notifyMessages?: boolean; notifyConnections?: boolean }) => {
+      const res = await client.api.v1.users.me.patch(data);
+      if (res.error) throw new Error("Failed to update");
+      return res.data;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "me"] }),
+  });
+
+  const profile = profileQuery.data?.user as
+    | { notifyMessages: boolean; notifyConnections: boolean }
+    | undefined;
 
   const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -123,6 +147,45 @@ export default function SettingsScreen() {
               <Text className="mt-2 text-xs text-muted-foreground">
                 {unitSystem === "metric" ? "°C · km · km/h" : "°F · mi · mph"}
               </Text>
+            </View>
+          </View>
+        </View>
+
+        <View className="rounded-2xl border border-border bg-card p-4">
+          <View className="flex-row items-start gap-3">
+            <View className="mt-0.5 rounded-full bg-primary/15 p-2">
+              <Bell size={18} color={resolvedIcon} />
+            </View>
+            <View className="min-w-0 flex-1 gap-4">
+              <Text className="text-base font-semibold text-foreground">Notifications</Text>
+
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1 pr-4">
+                  <Text className="text-sm font-medium text-foreground">Messages</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Get notified when you receive a new message
+                  </Text>
+                </View>
+                <Switch
+                  value={profile?.notifyMessages ?? true}
+                  onValueChange={(val) => notifMutation.mutate({ notifyMessages: val })}
+                  disabled={!profile || notifMutation.isPending}
+                />
+              </View>
+
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1 pr-4">
+                  <Text className="text-sm font-medium text-foreground">Connections</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Get notified for connection requests and acceptances
+                  </Text>
+                </View>
+                <Switch
+                  value={profile?.notifyConnections ?? true}
+                  onValueChange={(val) => notifMutation.mutate({ notifyConnections: val })}
+                  disabled={!profile || notifMutation.isPending}
+                />
+              </View>
             </View>
           </View>
         </View>

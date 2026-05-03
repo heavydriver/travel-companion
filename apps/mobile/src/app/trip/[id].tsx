@@ -12,6 +12,7 @@ import {
   MapPin,
   PackageCheck,
   Plus,
+  Share2,
   Trash2,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
@@ -23,6 +24,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  Share,
   Text,
   TextInput,
   View,
@@ -198,6 +200,36 @@ export default function TripDetailScreen() {
     onError: () => setDownloading(null),
   });
 
+  const shareTrip = async () => {
+    if (!trip) return;
+    const grouped = groupByDate(items);
+    let text = `${trip.title}\n`;
+    text += `${trip.destination.name}, ${trip.destination.country}\n`;
+    text += `${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}\n\n`;
+
+    if (grouped.length === 0) {
+      text += "No itinerary items yet.";
+    } else {
+      for (const [date, dayItems] of grouped) {
+        text += `📅 ${formatDate(date)}\n`;
+        for (const item of dayItems) {
+          const check = item.isDone ? "✅" : "⬜";
+          const time = item.startTime ? ` (${item.startTime})` : "";
+          text += `  ${check} ${item.title}${time}\n`;
+          if (item.notes) text += `     ${item.notes}\n`;
+        }
+        text += "\n";
+      }
+      text += `Progress: ${doneCount}/${items.length} complete`;
+    }
+
+    try {
+      await Share.share({ message: text });
+    } catch {
+      // User cancelled
+    }
+  };
+
   if (tripQuery.isLoading) {
     return (
       <Screen>
@@ -248,6 +280,12 @@ export default function TripDetailScreen() {
             </View>
             <View className="flex-row items-center justify-between">
               <Text className="flex-1 text-2xl font-bold text-foreground">{trip.title}</Text>
+              <Pressable
+                onPress={shareTrip}
+                className="ml-2 rounded-lg border border-border bg-card p-2 active:opacity-80"
+              >
+                <Share2 size={16} color={mutedColor} />
+              </Pressable>
               <Pressable
                 onPress={() => guardAction(() => setShowEditModal(true))}
                 className="ml-2 rounded-lg border border-border bg-card p-2 active:opacity-80"

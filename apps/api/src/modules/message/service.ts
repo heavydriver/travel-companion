@@ -55,10 +55,13 @@ export const messageService = {
     });
     const preview =
       content.length > 80 ? `${content.slice(0, 77).trimEnd()}…` : content;
-    void notifyUserPush(otherUserId, `Message from ${sender?.name ?? "Traveler"}`, preview, {
-      type: "message",
-      connectionId,
-    });
+    void notifyUserPush(
+      otherUserId,
+      `Message from ${sender?.name ?? "Traveler"}`,
+      preview,
+      { type: "message", connectionId },
+      "message"
+    );
 
     return formatMessage(message);
   },
