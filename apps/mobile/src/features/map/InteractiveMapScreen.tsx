@@ -15,7 +15,7 @@ import {
   ShapeSource,
   UserLocation,
 } from "@rnmapbox/maps";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { approximateNumber as approx } from "approximate-number";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
@@ -58,6 +58,7 @@ import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDebounce } from "@/hooks/useDebounce";
 import { THEME } from "@/lib/theme";
 import { formatDistanceFromKm } from "@/lib/units";
+import { isTripPast } from "@/lib/utils";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
@@ -65,6 +66,15 @@ import { pinColorForCategory } from "./categoryPinColor";
 import { ensureMapboxToken } from "./ensureMapboxToken";
 import { applyMapFilters, deriveCategories, type MapFilterControls } from "./filterMapPlaces";
 import { MapPinMarker } from "./MapPinMarker";
+import {
+  createMapboxSearchSessionToken,
+  fetchMapboxSearchSuggestions,
+  formatMapboxPoiCategory,
+  formatMapboxSearchSubtitle,
+  type MapboxSearchBoxSuggestion,
+  mapboxFeatureZoom,
+  retrieveMapboxSearchFeature,
+} from "./mapboxSearchBox";
 
 const DARK_MAP_STYLE = "mapbox://styles/varun-11/cmo7dh5kl001001qshs9chyef";
 const LIGHT_MAP_STYLE = "mapbox://styles/varun-11/cmo7dnxyi003001ql58s51upl";
@@ -262,6 +272,21 @@ function formatCategoryLabel(category: string): string {
     .join(" ");
 }
 
+function normalizeSearchQuery(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeMatchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isSearchDetailFeatureType(featureType: string): boolean {
+  return featureType === "poi" || featureType === "address";
+}
+
 type PlaceDetail = {
   id: string;
   destinationId: string;
@@ -276,6 +301,56 @@ type PlaceDetail = {
   reviewCount: number | null;
   isCurated: boolean;
 };
+
+type SearchSelection = {
+  mapboxId: string;
+  name: string;
+  subtitle: string | null;
+  coordinate: [number, number];
+  featureType: string;
+};
+
+type ExternalSearchPlaceDetail = {
+  mapboxId: string;
+  name: string;
+  subtitle: string | null;
+  fullAddress: string | null;
+  address: string | null;
+  featureType: string;
+  displayCategory: string | null;
+  coordinate: [number, number];
+};
+
+function findMatchingSavedPlace(
+  places: MapSessionPlace[],
+  feature: { name: string; coordinate: [number, number] },
+): MapSessionPlace | null {
+  const featureName = normalizeMatchText(feature.name);
+  let best: { place: MapSessionPlace; score: number } | null = null;
+
+  for (const place of places) {
+    const dist = distanceKm(
+      feature.coordinate[1],
+      feature.coordinate[0],
+      place.latitude,
+      place.longitude,
+    );
+    if (dist > 0.4) continue;
+
+    const placeName = normalizeMatchText(place.name);
+    const exactName = placeName === featureName;
+    const partialName =
+      placeName.includes(featureName) || featureName.includes(placeName) || exactName;
+    if (!partialName && dist > 0.06) continue;
+
+    const score = (partialName ? 100 : 0) - dist * 100 + (place.isFeatured ? 8 : 0);
+    if (!best || score > best.score) {
+      best = { place, score };
+    }
+  }
+
+  return best?.place ?? null;
+}
 
 export function InteractiveMapScreen() {
   const isFocused = useIsFocused();
@@ -316,12 +391,15 @@ export function InteractiveMapScreen() {
   const [pickedDestination, setPickedDestination] = useState<{ id: string; name: string } | null>(
     null,
   );
+  const [searchSelection, setSearchSelection] = useState<SearchSelection | null>(null);
+  const [selectedExternalPlace, setSelectedExternalPlace] =
+    useState<ExternalSearchPlaceDetail | null>(null);
+  const [retrievingSuggestionId, setRetrievingSuggestionId] = useState<string | null>(null);
 
   const cameraRef = useRef<ElementRef<typeof Camera>>(null);
   const sheetRef = useRef<BottomSheet>(null);
   const appliedSessionRevisionRef = useRef(-1);
   const curatedSessionAppliedRef = useRef(-1);
-  const autoOpenedForSearchKeyRef = useRef<string | null>(null);
   const centeredPickedDestinationRef = useRef<string | null>(null);
   const cameraIntentRef = useRef(0);
   const liveZoomFrameRef = useRef<number | null>(null);
@@ -329,14 +407,30 @@ export function InteractiveMapScreen() {
   const suppressSessionClearEffectsRef = useRef(false);
   const allowNextBeforeRemoveRef = useRef(false);
   const goToExploreOnNextBackRef = useRef(false);
+  const mapboxSearchSessionRef = useRef(createMapboxSearchSessionToken());
 
   const searchDebounced = useDebounce(search, 320);
+  const localeTag = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().locale?.split("-")[0] ?? "en",
+    [],
+  );
+  const allowSearchBoxApi = !session && !pickedDestination;
+  const normalizedSearch = useMemo(() => normalizeSearchQuery(search), [search]);
+  const normalizedSelectedSearch = useMemo(
+    () => (searchSelection ? normalizeSearchQuery(searchSelection.name) : ""),
+    [searchSelection],
+  );
+  const placeSearch = allowSearchBoxApi ? "" : search;
 
   /** Destination whose places we load from the API (session or search pick). */
   const mapsPlacesSourceId = session?.destinationId ?? pickedDestination?.id ?? null;
+  const browseNearbyMode = !mapsPlacesSourceId && !session;
 
   useEffect(() => {
-    if (session) setPickedDestination(null);
+    if (!session) return;
+    setPickedDestination(null);
+    setSearchSelection(null);
+    setSelectedExternalPlace(null);
   }, [session]);
 
   useEffect(() => {
@@ -390,6 +484,10 @@ export function InteractiveMapScreen() {
     const [lng, lat] = nearbyAnchorCoord;
     return [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5] as const;
   }, [nearbyAnchorCoord]);
+  const searchProximity = useMemo(
+    () => searchSelection?.coordinate ?? nearbyAnchorCoord ?? userCoord,
+    [searchSelection, nearbyAnchorCoord, userCoord],
+  );
 
   const destinationQuery = useQuery({
     queryKey: ["destination-details", mapsPlacesSourceId],
@@ -441,17 +539,27 @@ export function InteractiveMapScreen() {
     refetchOnWindowFocus: false,
   });
 
-  const destinationSearchQuery = useQuery({
-    queryKey: ["map-destination-search", searchDebounced],
+  const mapboxSuggestQuery = useQuery({
+    queryKey: [
+      "mapbox-search-suggest",
+      searchDebounced,
+      searchProximity?.[0],
+      searchProximity?.[1],
+    ],
     queryFn: async () => {
-      const q = searchDebounced.trim();
-      const res = await client.api.v1.destinations.get({
-        query: { q, limit: 10 },
+      return fetchMapboxSearchSuggestions({
+        query: searchDebounced,
+        sessionToken: mapboxSearchSessionRef.current,
+        proximity: searchProximity,
+        language: localeTag,
+        limit: 6,
       });
-      if (res.error) throw new Error("Failed to search destinations");
-      return res.data;
     },
-    enabled: searchDebounced.trim().length >= 2,
+    enabled:
+      tokenOk &&
+      allowSearchBoxApi &&
+      searchDebounced.trim().length >= 2 &&
+      normalizeSearchQuery(searchDebounced) !== normalizedSelectedSearch,
     staleTime: 30 * 1000,
   });
 
@@ -506,6 +614,24 @@ export function InteractiveMapScreen() {
     return getEligibleTripForDestination(list, tripDestinationScopeId);
   }, [tripDestinationScopeId, tripsQuery.data, tripsQuery.isSuccess, storeTrips]);
 
+  const activeNearbyTrips = useMemo(
+    () => storeTrips.filter((trip) => !isTripPast(trip.endDate)),
+    [storeTrips],
+  );
+
+  const nearbyItineraryQueries = useQueries({
+    queries: activeNearbyTrips.map((trip) => ({
+      queryKey: ["itinerary", trip.id],
+      queryFn: async () => {
+        const res = await client.api.v1.trips({ tripId: trip.id })["itinerary-items"].get();
+        if (res.error) throw new Error("Failed to load itinerary");
+        return res.data;
+      },
+      enabled: browseNearbyMode,
+      staleTime: 30 * 1000,
+    })),
+  });
+
   const itineraryQuery = useQuery({
     queryKey: ["itinerary", eligibleTrip?.id],
     queryFn: async () => {
@@ -520,11 +646,20 @@ export function InteractiveMapScreen() {
 
   const itineraryPlaceIds = useMemo(() => {
     const ids = new Set<string>();
+    if (browseNearbyMode) {
+      for (const query of nearbyItineraryQueries) {
+        for (const it of (query.data?.items ?? []) as { placeId: string | null }[]) {
+          if (it.placeId) ids.add(it.placeId);
+        }
+      }
+      return ids;
+    }
+
     for (const it of (itineraryQuery.data?.items ?? []) as { placeId: string | null }[]) {
       if (it.placeId) ids.add(it.placeId);
     }
     return ids;
-  }, [itineraryQuery.data]);
+  }, [browseNearbyMode, itineraryQuery.data, nearbyItineraryQueries]);
 
   const destCenter = useMemo(() => {
     if (session) return { lat: session.latitude, lng: session.longitude };
@@ -543,6 +678,7 @@ export function InteractiveMapScreen() {
 
   const showPlaceList = useCallback((nextIndex = 2) => {
     setSelectedPlaceId(null);
+    setSelectedExternalPlace(null);
     setSheetMode("list");
     requestAnimationFrame(() => {
       sheetRef.current?.snapToIndex(nextIndex);
@@ -550,7 +686,17 @@ export function InteractiveMapScreen() {
   }, []);
 
   const showPlaceDetail = useCallback((id: string, nextIndex = 1) => {
+    setSelectedExternalPlace(null);
     setSelectedPlaceId(id);
+    setSheetMode("detail");
+    requestAnimationFrame(() => {
+      sheetRef.current?.snapToIndex(nextIndex);
+    });
+  }, []);
+
+  const showExternalPlaceDetail = useCallback((place: ExternalSearchPlaceDetail, nextIndex = 1) => {
+    setSelectedPlaceId(null);
+    setSelectedExternalPlace(place);
     setSheetMode("detail");
     requestAnimationFrame(() => {
       sheetRef.current?.snapToIndex(nextIndex);
@@ -730,7 +876,7 @@ export function InteractiveMapScreen() {
 
   const filterPayload: MapFilterControls = useMemo(
     () => ({
-      search,
+      search: placeSearch,
       selectedCategories,
       minRating,
       curatedOnly,
@@ -741,7 +887,7 @@ export function InteractiveMapScreen() {
       now: nowTick,
     }),
     [
-      search,
+      placeSearch,
       selectedCategories,
       minRating,
       curatedOnly,
@@ -822,6 +968,16 @@ export function InteractiveMapScreen() {
   const placeDetail = placeDetailQuery.data?.place as PlaceDetail | undefined;
   const detailHeroImageUrl = placeDetail?.imageUrl ?? selectedPlace?.imageUrl ?? null;
   const placeInItinerary = Boolean(selectedPlaceId && itineraryPlaceIds.has(selectedPlaceId));
+  const selectedSavedPlaceFromSearch = useMemo(
+    () =>
+      searchSelection
+        ? findMatchingSavedPlace(basePlaces, {
+            name: searchSelection.name,
+            coordinate: searchSelection.coordinate,
+          })
+        : null,
+    [basePlaces, searchSelection],
+  );
 
   const detailOwnerDestinationQuery = useQuery({
     queryKey: ["destination-details", placeDetail?.destinationId],
@@ -896,6 +1052,19 @@ export function InteractiveMapScreen() {
     [orderedPlaces, basePlaces, mapZoom, moveCamera, nextCameraIntent, showPlaceDetail],
   );
 
+  useEffect(() => {
+    if (!selectedExternalPlace || !selectedSavedPlaceFromSearch) return;
+    if (!searchSelection) return;
+    if (selectedSavedPlaceFromSearch.id === selectedPlaceId) return;
+    openPlace(selectedSavedPlaceFromSearch.id);
+  }, [
+    openPlace,
+    searchSelection,
+    selectedExternalPlace,
+    selectedPlaceId,
+    selectedSavedPlaceFromSearch,
+  ]);
+
   const closeDetail = useCallback(() => {
     showPlaceList(2);
   }, [showPlaceList]);
@@ -925,11 +1094,17 @@ export function InteractiveMapScreen() {
   }, [showPlaceList]);
 
   const recenterDestination = useCallback(() => {
-    const c = destCenter ?? mapCoreCenter ?? MAP_BOOTSTRAP_CENTER;
+    const c = searchSelection
+      ? { lat: searchSelection.coordinate[1], lng: searchSelection.coordinate[0] }
+      : (destCenter ?? mapCoreCenter ?? MAP_BOOTSTRAP_CENTER);
     showPlaceList(2);
     nextCameraIntent();
-    moveCamera([c.lng, c.lat], 12, 450);
-  }, [destCenter, mapCoreCenter, moveCamera, nextCameraIntent, showPlaceList]);
+    moveCamera(
+      [c.lng, c.lat],
+      searchSelection ? mapboxFeatureZoom(searchSelection.featureType) : 12,
+      450,
+    );
+  }, [destCenter, mapCoreCenter, moveCamera, nextCameraIntent, searchSelection, showPlaceList]);
 
   const onCameraChanged = useCallback((state: MapState) => {
     pendingLiveZoomRef.current = state.properties.zoom;
@@ -986,14 +1161,9 @@ export function InteractiveMapScreen() {
     [eligibleTrip, router],
   );
 
-  const destinationSearchHits = useMemo(
-    () =>
-      (destinationSearchQuery.data?.destinations ?? []) as Array<{
-        id: string;
-        name: string;
-        country: string;
-      }>,
-    [destinationSearchQuery.data],
+  const mapboxSuggestions = useMemo(
+    () => (mapboxSuggestQuery.data ?? []) as MapboxSearchBoxSuggestion[],
+    [mapboxSuggestQuery.data],
   );
 
   const leaveMapSession = useCallback(() => {
@@ -1010,9 +1180,41 @@ export function InteractiveMapScreen() {
   const clearPickedDestination = useCallback(() => {
     centeredPickedDestinationRef.current = null;
     setPickedDestination(null);
+    setSearch("");
     showPlaceList(2);
     flyToUserRef.current({ forceNearbyAnchor: true });
   }, [showPlaceList]);
+
+  const clearSearchSelection = useCallback(() => {
+    mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
+    setSearchSelection(null);
+    setSearch("");
+    showPlaceList(2);
+    flyToUserRef.current({ forceNearbyAnchor: true });
+  }, [showPlaceList]);
+
+  const activeScope = useMemo(() => {
+    if (searchSelection) {
+      return {
+        title: searchSelection.name,
+        subtitle: searchSelection.subtitle || "Showing saved places around this search",
+        onClear: clearSearchSelection,
+      };
+    }
+    if (!pickedDestination) return null;
+    const destination = destinationQuery.data?.destination as { country?: string } | undefined;
+    return {
+      title: pickedDestination.name,
+      subtitle: destination?.country?.trim() || "Destination guide loaded",
+      onClear: clearPickedDestination,
+    };
+  }, [
+    clearPickedDestination,
+    clearSearchSelection,
+    destinationQuery.data,
+    pickedDestination,
+    searchSelection,
+  ]);
 
   const handleMapBack = useCallback(() => {
     if (sheetMode === "detail") {
@@ -1025,6 +1227,10 @@ export function InteractiveMapScreen() {
     }
     if (pickedDestination) {
       clearPickedDestination();
+      return true;
+    }
+    if (searchSelection) {
+      clearSearchSelection();
       return true;
     }
     if (goToExploreOnNextBackRef.current) {
@@ -1041,6 +1247,8 @@ export function InteractiveMapScreen() {
     leaveMapSession,
     pickedDestination,
     clearPickedDestination,
+    searchSelection,
+    clearSearchSelection,
     router,
   ]);
 
@@ -1060,11 +1268,25 @@ export function InteractiveMapScreen() {
         leaveMapSession();
         return;
       }
+      if (searchSelection) {
+        event.preventDefault();
+        clearSearchSelection();
+        return;
+      }
       if (!pickedDestination) return;
       event.preventDefault();
       clearPickedDestination();
     },
-    [clearPickedDestination, closeDetail, leaveMapSession, pickedDestination, session, sheetMode],
+    [
+      clearPickedDestination,
+      clearSearchSelection,
+      closeDetail,
+      leaveMapSession,
+      pickedDestination,
+      searchSelection,
+      session,
+      sheetMode,
+    ],
   );
 
   useEffect(() => {
@@ -1085,8 +1307,10 @@ export function InteractiveMapScreen() {
     centeredPickedDestinationRef.current = null;
     suppressSessionClearEffectsRef.current = true;
     goToExploreOnNextBackRef.current = true;
+    mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
     clearSession();
     setPickedDestination(null);
+    setSearchSelection(null);
     setSelectedCategories(new Set());
     setMinRating(null);
     setOpenNowOnly(false);
@@ -1097,15 +1321,19 @@ export function InteractiveMapScreen() {
     showPlaceList(0);
   }, [clearSession, showPlaceList]);
 
-  const pickSearchDestination = useCallback(
-    (row: { id: string; name: string }) => {
-      centeredPickedDestinationRef.current = null;
-      setPickedDestination({ id: row.id, name: row.name });
-      setSearch("");
-      setCuratedOnly(false);
-      showPlaceList(2);
+  const handleSearchChange = useCallback(
+    (next: string) => {
+      setSearch(next);
+      if (searchSelection && normalizeSearchQuery(next) !== normalizedSelectedSearch) {
+        setSearchSelection(null);
+        setSelectedExternalPlace(null);
+        mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
+      }
+      if (!next.trim()) {
+        mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
+      }
     },
-    [showPlaceList],
+    [normalizedSelectedSearch, searchSelection],
   );
 
   useFocusEffect(
@@ -1115,25 +1343,74 @@ export function InteractiveMapScreen() {
     }, [handleMapBack]),
   );
 
-  useEffect(() => {
-    const q = search.trim().toLowerCase();
-    if (q.length < 2 || pickedDestination) {
-      autoOpenedForSearchKeyRef.current = null;
-      return;
-    }
-    if (destinationSearchHits.length > 0) {
-      autoOpenedForSearchKeyRef.current = null;
-      return;
-    }
-    if (filteredPlaces.length !== 1) {
-      autoOpenedForSearchKeyRef.current = null;
-      return;
-    }
-    const key = `${q}::${filteredPlaces[0].id}`;
-    if (autoOpenedForSearchKeyRef.current === key) return;
-    autoOpenedForSearchKeyRef.current = key;
-    openPlace(filteredPlaces[0].id);
-  }, [search, pickedDestination, destinationSearchHits.length, filteredPlaces, openPlace]);
+  const pickMapboxSuggestion = useCallback(
+    async (suggestion: MapboxSearchBoxSuggestion) => {
+      setRetrievingSuggestionId(suggestion.mapboxId);
+      try {
+        const feature = await retrieveMapboxSearchFeature({
+          mapboxId: suggestion.mapboxId,
+          sessionToken: mapboxSearchSessionRef.current,
+          language: localeTag,
+        });
+        if (!feature) return;
+
+        centeredPickedDestinationRef.current = null;
+        setSearchSelection({
+          mapboxId: feature.mapboxId,
+          name: feature.name,
+          subtitle: formatMapboxSearchSubtitle(feature),
+          coordinate: feature.coordinate,
+          featureType: feature.featureType,
+        });
+        setSearch(feature.name);
+        setCuratedOnly(false);
+        setSelectedCategories(new Set());
+        setMinRating(null);
+        setOpenNowOnly(false);
+        setItineraryOnly(false);
+        setNearbyAnchorCoord(feature.coordinate);
+        nextCameraIntent();
+        moveCamera(feature.coordinate, mapboxFeatureZoom(feature.featureType), 420);
+
+        if (isSearchDetailFeatureType(feature.featureType)) {
+          const matchedPlace = findMatchingSavedPlace(basePlaces, {
+            name: feature.name,
+            coordinate: feature.coordinate,
+          });
+
+          if (matchedPlace) {
+            openPlace(matchedPlace.id);
+          } else {
+            showExternalPlaceDetail({
+              mapboxId: feature.mapboxId,
+              name: feature.name,
+              subtitle: formatMapboxSearchSubtitle(feature),
+              fullAddress: feature.fullAddress,
+              address: feature.address ?? feature.placeFormatted,
+              featureType: feature.featureType,
+              displayCategory: feature.poiCategory ?? formatMapboxPoiCategory(feature.featureType),
+              coordinate: feature.coordinate,
+            });
+          }
+          return;
+        }
+
+        showPlaceList(2);
+      } finally {
+        setRetrievingSuggestionId(null);
+        mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
+      }
+    },
+    [
+      basePlaces,
+      localeTag,
+      moveCamera,
+      nextCameraIntent,
+      openPlace,
+      showExternalPlaceDetail,
+      showPlaceList,
+    ],
+  );
 
   useEffect(() => {
     if (!mapReady || !pickedDestination) {
@@ -1209,13 +1486,26 @@ export function InteractiveMapScreen() {
       nearbyPlacesQuery.isPending &&
       basePlaces.length === 0);
 
-  const browseNearbyMode = !mapsPlacesSourceId && !session;
   const nearbyNoResults =
     browseNearbyMode &&
     nearbyPlacesQuery.isSuccess &&
     !nearbyPlacesQuery.isPending &&
     basePlaces.length === 0;
   const nearbyFailed = browseNearbyMode && nearbyPlacesQuery.isError;
+  const mapboxSuggestionsFetching =
+    mapboxSuggestQuery.fetchStatus === "fetching" &&
+    searchDebounced.trim().length >= 2 &&
+    normalizeSearchQuery(searchDebounced) !== normalizedSelectedSearch;
+  const searchResultsVisible =
+    normalizedSearch.length >= 2 && (mapboxSuggestions.length > 0 || mapboxSuggestionsFetching);
+  const placesSectionTitle = searchSelection
+    ? `Places around ${searchSelection.name}`
+    : browseNearbyMode
+      ? "Nearby places"
+      : "Places";
+  const nearbyEmptyMessage = searchSelection
+    ? `No saved places near ${searchSelection.name} in our database yet. Try another search or jump back to your location.`
+    : "No saved places near you in our database yet. Try searching for a destination above, or zoom and pan the map and use My location to refresh your position.";
 
   return (
     <View className="flex-1 bg-background">
@@ -1358,6 +1648,22 @@ export function InteractiveMapScreen() {
                 />
               </MarkerView>
             ) : null}
+            {selectedExternalPlace && !selectedPlace ? (
+              <MarkerView
+                key={selectedExternalPlace.mapboxId}
+                coordinate={selectedExternalPlace.coordinate}
+                anchor={{ x: 0.5, y: 1 }}
+                allowOverlap
+              >
+                <MapPinMarker
+                  name={selectedExternalPlace.name}
+                  category={selectedExternalPlace.displayCategory ?? selectedExternalPlace.featureType}
+                  selected
+                  zoomScale={pinZoomScale}
+                  onPress={() => showExternalPlaceDetail(selectedExternalPlace)}
+                />
+              </MarkerView>
+            ) : null}
           </>
         ) : null}
       </MapView>
@@ -1379,7 +1685,7 @@ export function InteractiveMapScreen() {
           style={{ backgroundColor: colorScheme === "dark" ? THEME.dark.card : THEME.light.card }}
         >
           <View className="flex-row items-center gap-2">
-            {sheetMode === "detail" || session || pickedDestination ? (
+            {sheetMode === "detail" || session || pickedDestination || searchSelection ? (
               <Pressable
                 onPress={() => {
                   handleMapBack();
@@ -1389,18 +1695,36 @@ export function InteractiveMapScreen() {
                 <ChevronLeft size={20} color={labelForeground} />
               </Pressable>
             ) : null}
-            <View className="min-w-0 h-9 flex-1 flex-row items-center rounded-xl border border-border/80 bg-background/50 px-2.5 py-1.5">
-              <Search size={16} color="#9CA3AF" />
+            <View className="min-w-0 h-11 flex-1 flex-row items-center rounded-2xl border border-border/70 bg-background/70 px-3">
+              <Search size={18} color="#9CA3AF" />
               <TextInput
                 value={search}
-                onChangeText={setSearch}
-                placeholder="Search places or destinations…"
+                onChangeText={handleSearchChange}
+                placeholder="Search cities, landmarks, or neighborhoods"
                 placeholderTextColor="#9CA3AF"
                 className="ml-2 flex-1 py-0 text-[15px] text-foreground"
                 returnKeyType="search"
               />
+              {retrievingSuggestionId || mapboxSuggestionsFetching ? (
+                <ActivityIndicator size="small" />
+              ) : search.trim().length > 0 ? (
+                <Pressable
+                  onPress={() => {
+                    if (searchSelection) {
+                      clearSearchSelection();
+                      return;
+                    }
+                    setSearch("");
+                    mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
+                  }}
+                  accessibilityLabel="Clear search"
+                  className="ml-2 h-7 w-7 items-center justify-center rounded-full bg-muted/70 active:opacity-80"
+                >
+                  <X size={14} color={labelForeground} />
+                </Pressable>
+              ) : null}
             </View>
-            {session || pickedDestination ? (
+            {session ? (
               <Pressable
                 onPress={clearMapPlacesOverlay}
                 accessibilityLabel="Clear places and pins from map"
@@ -1422,52 +1746,83 @@ export function InteractiveMapScreen() {
             </Pressable>
           </View>
 
-          {pickedDestination ? (
-            <View className="mt-2 flex-row items-center justify-between gap-2 rounded-xl border border-primary/35 bg-primary/12 px-2.5 py-2">
-              <Text
-                className="min-w-0 flex-1 text-xs font-semibold text-foreground"
-                numberOfLines={1}
-              >
-                {pickedDestination.name}
-              </Text>
+          {activeScope ? (
+            <View className="mt-2 flex-row items-center gap-2 rounded-2xl border border-primary/25 bg-primary/10 px-3 py-2">
+              <View className="h-8 w-8 items-center justify-center rounded-xl bg-background/70">
+                <Navigation size={15} color={primaryIconColor} />
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                  {activeScope.title}
+                </Text>
+                <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                  {activeScope.subtitle}
+                </Text>
+              </View>
               <Pressable
-                onPress={clearPickedDestination}
-                className="shrink-0 rounded-lg border border-border bg-background/70 px-2 py-1 active:opacity-80"
+                onPress={activeScope.onClear}
+                accessibilityLabel="Clear search scope"
+                className="h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-background/70 active:opacity-80"
               >
-                <Text className="text-[11px] font-semibold text-primary">Nearby</Text>
+                <X size={16} color={labelForeground} />
               </Pressable>
             </View>
           ) : null}
 
-          {destinationSearchHits.length > 0 && search.trim().length >= 2 ? (
-            <View className="mt-2">
-              <Text className="mb-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                Destinations
-              </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8, paddingRight: 8, alignItems: "center" }}
-              >
-                {destinationSearchHits.map((d) => (
-                  <Pressable
-                    key={d.id}
-                    onPress={() => pickSearchDestination(d)}
-                    className="max-w-[200px] rounded-xl border border-border bg-muted/50 px-3 py-2 active:opacity-85"
-                  >
+          {searchResultsVisible ? (
+            <View className="mt-2 overflow-hidden rounded-2xl border border-border/70 bg-background/95">
+              {mapboxSuggestions.length > 0 ? (
+                <View className="border-b border-border/60 px-3 pb-1 pt-2">
+                  <Text className="text-[10px] font-bold uppercase tracking-[1px] text-muted-foreground">
+                    Search suggestions
+                  </Text>
+                </View>
+              ) : null}
+              {mapboxSuggestions.map((suggestion) => (
+                <Pressable
+                  key={suggestion.mapboxId}
+                  onPress={() => {
+                    void pickMapboxSuggestion(suggestion);
+                  }}
+                  className="flex-row items-center gap-3 px-3 py-3 active:bg-muted/50"
+                >
+                  <View className="h-9 w-9 items-center justify-center rounded-xl bg-muted/70">
+                    {retrievingSuggestionId === suggestion.mapboxId ? (
+                      <ActivityIndicator size="small" />
+                    ) : (
+                      <Navigation size={15} color={primaryIconColor} />
+                    )}
+                  </View>
+                  <View className="min-w-0 flex-1">
                     <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                      {d.name}
+                      {suggestion.name}
                     </Text>
                     <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-                      {d.country}
+                      {formatMapboxSearchSubtitle(suggestion)}
                     </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
+                  </View>
+                  <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {suggestion.featureType}
+                  </Text>
+                </Pressable>
+              ))}
+
+              {mapboxSuggestionsFetching && mapboxSuggestions.length === 0 ? (
+                <View className="flex-row items-center gap-3 px-3 py-3">
+                  <ActivityIndicator size="small" />
+                  <Text className="text-sm text-muted-foreground">Searching Mapbox…</Text>
+                </View>
+              ) : null}
+
+              {mapboxSuggestions.length > 0 ? (
+                <Text className="px-3 pb-2 pt-1 text-[10px] text-muted-foreground">
+                  Powered by Mapbox Search Box
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
-          <View className="mt-1.5">
+          <View className="mt-2">
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1556,7 +1911,7 @@ export function InteractiveMapScreen() {
       >
         <Pressable
           onPress={recenterDestination}
-          accessibilityLabel="Face destination area"
+          accessibilityLabel={searchSelection ? "Focus searched area" : "Focus destination area"}
           className="h-12 w-12 items-center justify-center rounded-2xl border border-primary/30 bg-primary shadow-md active:opacity-90"
         >
           <Navigation size={20} color="#fff" />
@@ -1596,19 +1951,14 @@ export function InteractiveMapScreen() {
             contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}
             ListHeaderComponent={
               <View className="pb-2">
-                <Text className="text-lg font-bold text-foreground">
-                  {browseNearbyMode ? "Nearby places" : "Places"}
-                </Text>
+                <Text className="text-lg font-bold text-foreground">{placesSectionTitle}</Text>
                 {nearbyFailed ? (
                   <Text className="mt-1 text-sm text-destructive">
                     Could not load nearby places. Check your connection and try opening the map
                     again.
                   </Text>
                 ) : nearbyNoResults ? (
-                  <Text className="mt-1 text-sm text-muted-foreground">
-                    No saved places near you in our database yet. Try searching for a destination
-                    above, or zoom and pan the map and use My location to refresh your position.
-                  </Text>
+                  <Text className="mt-1 text-sm text-muted-foreground">{nearbyEmptyMessage}</Text>
                 ) : (
                   <Text className="text-xs text-muted-foreground">
                     {orderedPlaces.length} shown · tap a row or a pin for details
@@ -1667,7 +2017,7 @@ export function InteractiveMapScreen() {
                 <X size={22} color="#A1A1AA" />
               </Pressable> */}
             </View>
-            {placeDetailQuery.isPending ? (
+            {selectedPlaceId && placeDetailQuery.fetchStatus === "fetching" ? (
               <View className="items-center py-10">
                 <ActivityIndicator />
               </View>
@@ -1784,6 +2134,51 @@ export function InteractiveMapScreen() {
                     </Text>
                   )}
                 </View>
+              </View>
+            ) : selectedExternalPlace ? (
+              <View className="w-full gap-3">
+                <View className="flex-row gap-3">
+                  <View className="h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
+                    <Navigation size={30} color={primaryIconColor} />
+                  </View>
+                  <View className="min-w-0 flex-1">
+                    <Text className="text-xl font-bold text-foreground" numberOfLines={2}>
+                      {selectedExternalPlace.name}
+                    </Text>
+                    <Text className="mt-1 text-xs font-semibold text-primary">
+                      {selectedExternalPlace.displayCategory ??
+                        formatCategoryLabel(selectedExternalPlace.featureType)}
+                    </Text>
+                    <View className="mt-2 flex-row flex-wrap items-center gap-2">
+                      {userCoord ? (
+                        <Text className="text-sm text-muted-foreground">
+                          {formatDistanceFromKm(
+                            distanceKm(
+                              userCoord[1],
+                              userCoord[0],
+                              selectedExternalPlace.coordinate[1],
+                              selectedExternalPlace.coordinate[0],
+                            ),
+                            unitSystem,
+                          )}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+                {selectedExternalPlace.fullAddress ? (
+                  <Text className="text-sm leading-6 text-muted-foreground">
+                    {selectedExternalPlace.fullAddress}
+                  </Text>
+                ) : selectedExternalPlace.address ? (
+                  <Text className="text-sm leading-6 text-muted-foreground">
+                    {selectedExternalPlace.address}
+                  </Text>
+                ) : selectedExternalPlace.subtitle ? (
+                  <Text className="text-sm leading-6 text-muted-foreground">
+                    {selectedExternalPlace.subtitle}
+                  </Text>
+                ) : null}
               </View>
             ) : (
               <Text className="text-muted-foreground">Could not load this place.</Text>
