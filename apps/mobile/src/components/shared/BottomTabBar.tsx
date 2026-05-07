@@ -1,8 +1,10 @@
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { useRouter } from "expo-router";
 import { Bot, CalendarDays, Compass, Home, Map as MapIcon } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useMapSessionStore } from "@/store/mapSessionStore";
 
 type TabMeta = {
   label: string;
@@ -48,11 +50,15 @@ function TabIcon({
 }
 
 export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const primary = useUnstableNativeVariable("--primary");
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
+  const session = useMapSessionStore((s) => s.session);
+  const clearSession = useMapSessionStore((s) => s.clearSession);
   const primaryColor = primary ? `hsl(${primary})` : undefined;
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : undefined;
+  const currentRouteName = state.routes[state.index]?.name;
 
   return (
     <View className="border-t border-border bg-card" style={{ paddingBottom: insets.bottom }}>
@@ -70,6 +76,19 @@ export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               target: route.key,
               canPreventDefault: true,
             });
+
+            const returnHref = session?.returnHref?.trim() ?? null;
+            const leavingMapSessionToSource =
+              currentRouteName === "map" &&
+              route.name === "explore" &&
+              Boolean(returnHref) &&
+              returnHref !== "/(tabs)/explore";
+
+            if (leavingMapSessionToSource && !event.defaultPrevented) {
+              clearSession();
+              router.dismissTo(returnHref as never);
+              return;
+            }
 
             if (!isFocused && !event.defaultPrevented) {
               navigation.navigate(route.name, route.params);

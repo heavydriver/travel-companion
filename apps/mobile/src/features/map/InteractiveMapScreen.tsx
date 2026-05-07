@@ -5,6 +5,7 @@ import BottomSheet, {
   BottomSheetScrollView,
 } from "@gorhom/bottom-sheet";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import {
   Camera,
   CircleLayer,
@@ -140,9 +141,28 @@ function withOpacity(hex: string, alpha: number): string {
   return hex;
 }
 
+function brightenHex(hex: string, amount: number): string {
+  const normalized = hex.trim();
+  const full = /^#([\da-fA-F]{6})$/;
+  const match = normalized.match(full);
+  if (!match?.[1]) return hex;
+
+  const raw = match[1];
+  const brighten = (channel: string) => {
+    const base = Number.parseInt(channel, 16);
+    return Math.max(0, Math.min(255, Math.round(base + (255 - base) * amount)));
+  };
+
+  const r = brighten(raw.slice(0, 2));
+  const g = brighten(raw.slice(2, 4));
+  const b = brighten(raw.slice(4, 6));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 function buildMapPinShape(
   places: MapSessionPlace[],
   itineraryIds: Set<string>,
+  opts?: { useBrightDarkModeColors?: boolean },
 ): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {
     type: "FeatureCollection",
@@ -155,7 +175,9 @@ function buildMapPinShape(
       },
       properties: {
         placeId: p.id,
-        color: pinColorForCategory(p.category),
+        color: opts?.useBrightDarkModeColors
+          ? brightenHex(pinColorForCategory(p.category), 0.22)
+          : pinColorForCategory(p.category),
         priority: itineraryIds.has(p.id) ? 3 : p.isFeatured ? 2 : p.isCurated ? 1 : 0,
       },
     })),
@@ -256,6 +278,8 @@ type PlaceDetail = {
 };
 
 export function InteractiveMapScreen() {
+  const isFocused = useIsFocused();
+  const navigation = useNavigation();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -302,6 +326,9 @@ export function InteractiveMapScreen() {
   const cameraIntentRef = useRef(0);
   const liveZoomFrameRef = useRef<number | null>(null);
   const pendingLiveZoomRef = useRef(12);
+  const suppressSessionClearEffectsRef = useRef(false);
+  const allowNextBeforeRemoveRef = useRef(false);
+  const goToExploreOnNextBackRef = useRef(false);
 
   const searchDebounced = useDebounce(search, 320);
 
@@ -311,6 +338,12 @@ export function InteractiveMapScreen() {
   useEffect(() => {
     if (session) setPickedDestination(null);
   }, [session]);
+
+  useEffect(() => {
+    if (session || pickedDestination) {
+      goToExploreOnNextBackRef.current = false;
+    }
+  }, [session, pickedDestination]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: destination scope changes require resetting filters + pin anchor
   useEffect(() => {
@@ -394,7 +427,11 @@ export function InteractiveMapScreen() {
       return res.data;
     },
     enabled: Boolean(
-      locPermission === "granted" && nearbyAnchorCoord && !mapsPlacesSourceId && !session,
+      isFocused &&
+        locPermission === "granted" &&
+        nearbyAnchorCoord &&
+        !mapsPlacesSourceId &&
+        !session,
     ),
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
@@ -673,6 +710,10 @@ export function InteractiveMapScreen() {
     }
     if (!hadSessionRef.current) return;
     hadSessionRef.current = false;
+    if (suppressSessionClearEffectsRef.current) {
+      suppressSessionClearEffectsRef.current = false;
+      return;
+    }
     if (locPermission === null) return;
     flyToUserRef.current();
   }, [session, locPermission]);
@@ -720,14 +761,15 @@ export function InteractiveMapScreen() {
   const filtersActive = useMemo(() => hasActiveMapFilters(filterPayload), [filterPayload]);
 
   const orderedPlaces = useMemo(() => {
-    if (session || pickedDestination || !userCoord) return filteredPlaces;
-    const [lng, lat] = userCoord;
+    const sortCoord = nearbyAnchorCoord ?? userCoord;
+    if (session || pickedDestination || !sortCoord) return filteredPlaces;
+    const [lng, lat] = sortCoord;
     return [...filteredPlaces].sort(
       (a, b) =>
         distanceKm(lat, lng, a.latitude, a.longitude) -
         distanceKm(lat, lng, b.latitude, b.longitude),
     );
-  }, [filteredPlaces, session, pickedDestination, userCoord]);
+  }, [filteredPlaces, nearbyAnchorCoord, session, pickedDestination, userCoord]);
 
   const pinsToRender = useMemo(() => {
     if (!destCenter) return filteredPlaces;
@@ -753,8 +795,10 @@ export function InteractiveMapScreen() {
   const nativePinsShape = useMemo(() => {
     const unselectedPins =
       selectedPlaceId == null ? pinsToRender : pinsToRender.filter((p) => p.id !== selectedPlaceId);
-    return buildMapPinShape(unselectedPins, itineraryPlaceIds);
-  }, [itineraryPlaceIds, pinsToRender, selectedPlaceId]);
+    return buildMapPinShape(unselectedPins, itineraryPlaceIds, {
+      useBrightDarkModeColors: colorScheme === "dark",
+    });
+  }, [colorScheme, itineraryPlaceIds, pinsToRender, selectedPlaceId]);
 
   const selectedPlace = useMemo(() => {
     const fromOrdered = orderedPlaces.find((p) => p.id === selectedPlaceId) ?? null;
@@ -908,6 +952,9 @@ export function InteractiveMapScreen() {
   const pinZoomScale = useMemo(() => pinZoomScaleFromZoom(livePinZoom), [livePinZoom]);
 
   const labelForeground = colorScheme === "dark" ? THEME.dark.foreground : THEME.light.foreground;
+  const pinHaloOpacity = colorScheme === "dark" ? 0.12 : 0.16;
+  const pinHaloBlur = colorScheme === "dark" ? 0.5 : 0.55;
+  const pinStrokeColor = colorScheme === "dark" ? "rgba(255,255,255,0.98)" : "#FFFFFF";
 
   const openAddToItinerary = useCallback(() => {
     if (!eligibleTrip || !selectedPlaceId) return;
@@ -951,12 +998,13 @@ export function InteractiveMapScreen() {
 
   const leaveMapSession = useCallback(() => {
     const href = session?.returnHref?.trim() ?? null;
+    suppressSessionClearEffectsRef.current = true;
     clearSession();
     setSelectedCategories(new Set());
-    if (href) {
-      if (router.canGoBack()) router.back();
-      else router.push(href as never);
-    }
+    goToExploreOnNextBackRef.current = false;
+    if (!href) return;
+    allowNextBeforeRemoveRef.current = true;
+    router.dismissTo(href as never);
   }, [session?.returnHref, clearSession, router]);
 
   const clearPickedDestination = useCallback(() => {
@@ -966,9 +1014,77 @@ export function InteractiveMapScreen() {
     flyToUserRef.current({ forceNearbyAnchor: true });
   }, [showPlaceList]);
 
+  const handleMapBack = useCallback(() => {
+    if (sheetMode === "detail") {
+      closeDetail();
+      return true;
+    }
+    if (session) {
+      leaveMapSession();
+      return true;
+    }
+    if (pickedDestination) {
+      clearPickedDestination();
+      return true;
+    }
+    if (goToExploreOnNextBackRef.current) {
+      goToExploreOnNextBackRef.current = false;
+      allowNextBeforeRemoveRef.current = true;
+      router.dismissTo("/(tabs)/explore" as never);
+      return true;
+    }
+    return false;
+  }, [
+    sheetMode,
+    closeDetail,
+    session,
+    leaveMapSession,
+    pickedDestination,
+    clearPickedDestination,
+    router,
+  ]);
+
+  const handleBeforeRemove = useCallback(
+    (event: { preventDefault: () => void; data: { action: object } }) => {
+      if (allowNextBeforeRemoveRef.current) {
+        allowNextBeforeRemoveRef.current = false;
+        return;
+      }
+      if (sheetMode === "detail") {
+        event.preventDefault();
+        closeDetail();
+        return;
+      }
+      if (session) {
+        event.preventDefault();
+        leaveMapSession();
+        return;
+      }
+      if (!pickedDestination) return;
+      event.preventDefault();
+      clearPickedDestination();
+    },
+    [clearPickedDestination, closeDetail, leaveMapSession, pickedDestination, session, sheetMode],
+  );
+
+  useEffect(() => {
+    const parentNavigation = navigation.getParent?.();
+    const rootNavigation = parentNavigation?.getParent?.();
+    const listeners = [navigation, parentNavigation, rootNavigation]
+      .filter((nav, index, list) => Boolean(nav) && list.indexOf(nav) === index)
+      .map((nav) => nav?.addListener?.("beforeRemove", handleBeforeRemove))
+      .filter(Boolean) as Array<() => void>;
+
+    return () => {
+      for (const unsubscribe of listeners) unsubscribe();
+    };
+  }, [handleBeforeRemove, navigation]);
+
   /** Leave map session / destination pick on the tab: remove pins & list, collapse sheet, pan freely (no back navigation). */
   const clearMapPlacesOverlay = useCallback(() => {
     centeredPickedDestinationRef.current = null;
+    suppressSessionClearEffectsRef.current = true;
+    goToExploreOnNextBackRef.current = true;
     clearSession();
     setPickedDestination(null);
     setSelectedCategories(new Set());
@@ -994,14 +1110,9 @@ export function InteractiveMapScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const href = session?.returnHref?.trim();
-      if (!href) return;
-      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-        leaveMapSession();
-        return true;
-      });
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => handleMapBack());
       return () => sub.remove();
-    }, [session?.returnHref, leaveMapSession]),
+    }, [handleMapBack]),
   );
 
   useEffect(() => {
@@ -1129,9 +1240,9 @@ export function InteractiveMapScreen() {
             zoomLevel: 12,
           }}
         />
-        {locPermission === "granted" ? (
+        {locPermission === "granted" && isFocused ? (
           <UserLocation
-            visible
+            visible={false}
             androidRenderMode="normal"
             showsUserHeadingIndicator={false}
             onUpdate={(loc) => {
@@ -1147,6 +1258,11 @@ export function InteractiveMapScreen() {
         ) : null}
         {mapReady ? (
           <>
+            {userCoord ? (
+              <MarkerView coordinate={userCoord} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
+                <MyLocationMarker />
+              </MarkerView>
+            ) : null}
             <ShapeSource
               id={MAP_PINS_SOURCE_ID}
               shape={nativePinsShape}
@@ -1184,8 +1300,9 @@ export function InteractiveMapScreen() {
                     16,
                     20,
                   ],
-                  circleOpacity: 0.16,
-                  circleBlur: 0.55,
+                  circleOpacity: pinHaloOpacity,
+                  circleBlur: pinHaloBlur,
+                  circleEmissiveStrength: 1,
                 }}
               />
               <CircleLayer
@@ -1209,7 +1326,7 @@ export function InteractiveMapScreen() {
                     16,
                     13.5,
                   ],
-                  circleStrokeColor: "#FFFFFF",
+                  circleStrokeColor: pinStrokeColor,
                   circleStrokeWidth: [
                     "case",
                     [">=", ["get", "priority"], 2],
@@ -1220,6 +1337,7 @@ export function InteractiveMapScreen() {
                   ],
                   circleOpacity: 0.98,
                   circleSortKey: ["+", ["*", ["get", "priority"], 10], 1],
+                  circleEmissiveStrength: 1,
                 }}
               />
             </ShapeSource>
@@ -1261,10 +1379,10 @@ export function InteractiveMapScreen() {
           style={{ backgroundColor: colorScheme === "dark" ? THEME.dark.card : THEME.light.card }}
         >
           <View className="flex-row items-center gap-2">
-            {session ? (
+            {sheetMode === "detail" || session || pickedDestination ? (
               <Pressable
                 onPress={() => {
-                  leaveMapSession();
+                  handleMapBack();
                 }}
                 className="h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/60 active:opacity-80"
               >
@@ -1673,6 +1791,40 @@ export function InteractiveMapScreen() {
           </BottomSheetScrollView>
         )}
       </BottomSheet>
+    </View>
+  );
+}
+
+function MyLocationMarker() {
+  return (
+    <View
+      pointerEvents="none"
+      style={{ width: 34, height: 34, alignItems: "center", justifyContent: "center" }}
+    >
+      <View
+        style={{
+          position: "absolute",
+          width: 30,
+          height: 30,
+          borderRadius: 999,
+          backgroundColor: "rgba(59,130,246,0.24)",
+        }}
+      />
+      <View
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 999,
+          backgroundColor: "#3B82F6",
+          borderWidth: 3,
+          borderColor: "#FFFFFF",
+          shadowColor: "#2563EB",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.4,
+          shadowRadius: 8,
+          elevation: 8,
+        }}
+      />
     </View>
   );
 }

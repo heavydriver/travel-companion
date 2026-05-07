@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import getSymbolFromCurrency from "currency-symbol-map";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowDownUp, ChevronLeft } from "lucide-react-native";
+import { ArrowDownUp, ArrowLeft } from "lucide-react-native";
 import { useColorScheme, useUnstableNativeVariable } from "nativewind";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { useEden } from "@/api/client";
-import { Screen } from "@/components/shared/Screen";
 import { CurrencySelect } from "@/components/shared/CurrencySelect";
+import { Screen } from "@/components/shared/Screen";
 
 type SupportedCurrency = { code: string; name: string; country: string };
 
@@ -67,6 +67,7 @@ export default function CurrencyConverterScreen() {
   const isDark = colorScheme === "dark";
   const placeholderColor = mutedFg ? `hsl(${mutedFg})` : isDark ? "#94a3b8" : "#64748b";
   const iconColor = foreground ? `hsl(${foreground})` : isDark ? "#e2e8f0" : "#334155";
+  const foregroundColor = foreground ? `hsl(${foreground})` : undefined;
 
   const params = useLocalSearchParams<{ base?: string; quote?: string }>();
 
@@ -166,18 +167,17 @@ export default function CurrencyConverterScreen() {
   return (
     <Screen scrollable contentClassName="pb-8">
       <View className="gap-6">
-        <View className="flex-row items-center justify-between">
+        <View className="mb-2 flex-row items-center justify-between">
           <Pressable
             onPress={() => router.back()}
-            className="flex-row items-center gap-1 active:opacity-80"
+            className="h-10 w-10 items-center justify-center rounded-full bg-card active:opacity-80"
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <ChevronLeft size={20} color="#3B82F6" />
-            <Text className="text-base font-semibold text-primary">Back</Text>
+            <ArrowLeft size={20} color={foregroundColor} />
           </Pressable>
-          <Text className="text-lg font-bold text-foreground">Currency Converter</Text>
-          <View className="w-16" />
+          <Text className="text-2xl font-bold text-foreground">Currency Converter</Text>
+          <View className="h-10 w-10" />
         </View>
 
         {supportedQuery.isLoading ? (
@@ -195,11 +195,7 @@ export default function CurrencyConverterScreen() {
               <Text className="text-sm font-medium text-muted-foreground">Base currency</Text>
               <View className="flex-row items-stretch gap-3">
                 <View className={TRIGGER_COL_CLASS}>
-                  <CurrencySelect
-                    value={baseCode}
-                    onChange={setBaseCode}
-                    currencies={currencies}
-                  />
+                  <CurrencySelect value={baseCode} onChange={setBaseCode} currencies={currencies} />
                 </View>
                 <TextInput
                   value={baseInput}

@@ -501,14 +501,6 @@ export default function WeatherScreen() {
         <View className="w-10" />
       </View>
 
-      <View className="border-b border-border px-4 py-2">
-        <Text className="text-xs text-muted-foreground">
-          Units follow{" "}
-          <Text className="font-semibold text-foreground">Settings → Units</Text> (
-          {unitSystem === "metric" ? "metric" : "imperial"}).
-        </Text>
-      </View>
-
       {query.isLoading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator />

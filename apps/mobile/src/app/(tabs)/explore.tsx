@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { Heart, LocateFixed, MapPin, Search, Star } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -199,6 +200,7 @@ function NearbyFavoriteCard({ place }: { place: NearbyPlace }) {
 }
 
 export default function ExploreScreen() {
+  const isFocused = useIsFocused();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { favoriteDestinations } = useDestinationFavorites();
@@ -250,6 +252,7 @@ export default function ExploreScreen() {
   }, [requestCurrentLocation]);
 
   useEffect(() => {
+    if (!isFocused) return;
     let mounted = true;
     async function loadLocation() {
       const result = await requestCurrentLocation();
@@ -261,7 +264,7 @@ export default function ExploreScreen() {
     return () => {
       mounted = false;
     };
-  }, [requestCurrentLocation]);
+  }, [isFocused, requestCurrentLocation]);
 
   const popularQuery = useQuery({
     queryKey: POPULAR_DESTINATIONS_QUERY_KEY,
@@ -280,7 +283,7 @@ export default function ExploreScreen() {
       if (!locationCoords) throw new Error("Location unavailable");
       return fetchNearbyFavorites(locationCoords);
     },
-    enabled: !!locationCoords,
+    enabled: isFocused && !!locationCoords,
   });
 
   const popularDestinations = useMemo(
