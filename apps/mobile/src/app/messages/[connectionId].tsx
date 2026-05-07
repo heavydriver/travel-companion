@@ -13,7 +13,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import {
+  KeyboardAvoidingView,
+  KeyboardEvents,
+  KeyboardGestureArea,
+} from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
 import { useAuthStore } from "@/store/authStore";
@@ -54,6 +58,8 @@ type ConnectionsResponse = {
   connections: ConnectionInboxRow[];
 };
 
+const CHAT_INPUT_NATIVE_ID = "message-thread-input";
+
 function formatMessageDay(iso: string) {
   const date = new Date(iso);
   const now = new Date();
@@ -74,7 +80,8 @@ export default function MessageThreadScreen() {
   const currentUserId = useAuthStore((s) => s.user?.id);
   const isConnected = useNetworkStore((s) => s.isConnected);
   const [draft, setDraft] = useState("");
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<FlatList<MessageItem>>(null);
+  const inputFocusedRef = useRef(false);
   const lastMarkedMessageIdRef = useRef<string | null>(null);
   const iconColor = useUnstableNativeVariable("--foreground");
   const resolvedIcon = iconColor ? `hsl(${iconColor})` : "hsl(220 20% 10%)";
@@ -187,10 +194,17 @@ export default function MessageThreadScreen() {
   }, [connectionId, currentUserId, messagesData?.messages, queryClient]);
 
   const messages = (messagesData?.messages ?? []) as MessageItem[];
+  const latestMessageId = messages.at(-1)?.id;
   const connection = (connectionData?.connections ?? []).find(
     (row: ConnectionInboxRow) => row.id === connectionId,
   ) as ConnectionInboxRow | undefined;
   const canSend = draft.trim().length > 0 && !sendMutation.isPending && isConnected;
+
+  const scrollToLatest = useCallback((animated = false) => {
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
 
   const handleSend = () => {
     if (!canSend) return;
@@ -201,6 +215,25 @@ export default function MessageThreadScreen() {
     const d = new Date(iso);
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
+
+  useEffect(() => {
+    if (!latestMessageId) return;
+    scrollToLatest(false);
+  }, [latestMessageId, scrollToLatest]);
+
+  useEffect(() => {
+    const willShowSub = KeyboardEvents.addListener("keyboardWillShow", () => {
+      scrollToLatest(false);
+    });
+    const didShowSub = KeyboardEvents.addListener("keyboardDidShow", () => {
+      scrollToLatest(false);
+    });
+
+    return () => {
+      willShowSub.remove();
+      didShowSub.remove();
+    };
+  }, [scrollToLatest]);
 
   const renderStatusIcon = (item: MessageItem) => {
     if (item.senderId !== currentUserId) return null;
@@ -255,99 +288,120 @@ export default function MessageThreadScreen() {
           </View>
         )}
 
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          className="flex-1"
-          contentContainerClassName="gap-1 px-3 pb-4 pt-3"
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          renderItem={({ item, index }) => {
-            const isMe = item.senderId === currentUserId;
-            const previousMessage = index > 0 ? messages[index - 1] : null;
-            const showDayLabel =
-              !previousMessage ||
-              formatMessageDay(previousMessage.createdAt) !== formatMessageDay(item.createdAt);
-            return (
-              <View>
-                {showDayLabel ? (
-                  <View className="items-center py-3">
-                    <View className="rounded-full border border-border/70 bg-card/90 px-3 py-1">
-                      <Text className="text-[11px] font-medium uppercase tracking-[1px] text-muted-foreground">
-                        {formatMessageDay(item.createdAt)}
-                      </Text>
+        <KeyboardGestureArea
+          interpolator="ios"
+          style={{ flex: 1 }}
+          textInputNativeID={CHAT_INPUT_NATIVE_ID}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            className="flex-1"
+            contentContainerClassName="gap-1 px-3 pb-4 pt-3"
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onContentSizeChange={() => scrollToLatest(false)}
+            onLayout={() => {
+              if (inputFocusedRef.current) {
+                scrollToLatest(false);
+              }
+            }}
+            renderItem={({ item, index }) => {
+              const isMe = item.senderId === currentUserId;
+              const previousMessage = index > 0 ? messages[index - 1] : null;
+              const showDayLabel =
+                !previousMessage ||
+                formatMessageDay(previousMessage.createdAt) !== formatMessageDay(item.createdAt);
+              return (
+                <View>
+                  {showDayLabel ? (
+                    <View className="items-center py-3">
+                      <View className="rounded-full border border-border/70 bg-card/90 px-3 py-1">
+                        <Text className="text-[11px] font-medium uppercase tracking-[1px] text-muted-foreground">
+                          {formatMessageDay(item.createdAt)}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ) : null}
+                  ) : null}
 
-                <View className={`mb-1 max-w-[82%] ${isMe ? "self-end" : "self-start"}`}>
-                  <View
-                    className={`px-4 py-2.5 ${
-                      isMe
-                        ? "rounded-[22px] rounded-br-md bg-primary"
-                        : "rounded-[22px] rounded-bl-md border border-border/70 bg-card"
-                    }`}
-                  >
-                    <Text
-                      className={`text-[15px] leading-5 ${isMe ? "text-primary-foreground" : "text-foreground"}`}
+                  <View className={`mb-1 max-w-[82%] ${isMe ? "self-end" : "self-start"}`}>
+                    <View
+                      className={`px-4 py-2.5 ${
+                        isMe
+                          ? "rounded-[22px] rounded-br-md bg-primary"
+                          : "rounded-[22px] rounded-bl-md border border-border/70 bg-card"
+                      }`}
                     >
-                      {item.content}
-                    </Text>
-                    <View className="mt-1.5 flex-row items-center justify-end gap-1">
                       <Text
-                        className={`text-[11px] ${
-                          isMe ? "text-primary-foreground/80" : "text-muted-foreground"
-                        }`}
+                        className={`text-[15px] leading-5 ${isMe ? "text-primary-foreground" : "text-foreground"}`}
                       >
-                        {formatTime(item.createdAt)}
+                        {item.content}
                       </Text>
-                      {renderStatusIcon(item)}
+                      <View className="mt-1.5 flex-row items-center justify-end gap-1">
+                        <Text
+                          className={`text-[11px] ${
+                            isMe ? "text-primary-foreground/80" : "text-muted-foreground"
+                          }`}
+                        >
+                          {formatTime(item.createdAt)}
+                        </Text>
+                        {renderStatusIcon(item)}
+                      </View>
                     </View>
                   </View>
                 </View>
-              </View>
-            );
-          }}
-          ListEmptyComponent={
-            !isMessagesLoading ? (
-              <View className="flex-1 items-center justify-center px-8 py-16">
-                <View className="rounded-[28px] border border-border bg-card px-6 py-8">
-                  <Text className="text-center text-base font-semibold text-foreground">
-                    No messages yet
-                  </Text>
-                  <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
-                    Break ice. Start with travel plan, favorite spot, or quick hello.
-                  </Text>
+              );
+            }}
+            ListEmptyComponent={
+              !isMessagesLoading ? (
+                <View className="flex-1 items-center justify-center px-8 py-16">
+                  <View className="rounded-[28px] border border-border bg-card px-6 py-8">
+                    <Text className="text-center text-base font-semibold text-foreground">
+                      No messages yet
+                    </Text>
+                    <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
+                      Break ice. Start with travel plan, favorite spot, or quick hello.
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ) : null
-          }
-        />
+              ) : null
+            }
+          />
 
-        <View className="border-t border-border bg-background px-3 pb-3 pt-2">
-          <View className="flex-row items-end gap-2 rounded-[24px] border border-border/80 bg-card px-3 py-2">
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={isConnected ? "Type your message" : "You're offline"}
-              placeholderTextColor="hsl(218 11% 65%)"
-              editable={isConnected}
-              multiline
-              textAlignVertical="top"
-              className="max-h-24 min-h-9 flex-1 px-1 py-1 text-[15px] leading-5 text-foreground"
-              onSubmitEditing={handleSend}
-            />
-            <Pressable
-              onPress={handleSend}
-              disabled={!canSend}
-              className={`h-10 w-10 items-center justify-center rounded-full ${
-                canSend ? "bg-primary" : "bg-muted"
-              }`}
-            >
-              <Send size={18} color={canSend ? "white" : "hsl(218 11% 65%)"} />
-            </Pressable>
+          <View className="border-t border-border bg-background px-3 pb-3 pt-2">
+            <View className="flex-row items-end gap-2 rounded-[24px] border border-border/80 bg-card px-3 py-2">
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={isConnected ? "Type your message" : "You're offline"}
+                placeholderTextColor="hsl(218 11% 65%)"
+                editable={isConnected}
+                multiline
+                nativeID={CHAT_INPUT_NATIVE_ID}
+                textAlignVertical="top"
+                className="max-h-24 min-h-9 flex-1 px-1 py-1 text-[15px] leading-5 text-foreground"
+                onFocus={() => {
+                  inputFocusedRef.current = true;
+                  scrollToLatest(false);
+                }}
+                onBlur={() => {
+                  inputFocusedRef.current = false;
+                }}
+                onSubmitEditing={handleSend}
+              />
+              <Pressable
+                onPress={handleSend}
+                disabled={!canSend}
+                className={`h-10 w-10 items-center justify-center rounded-full ${
+                  canSend ? "bg-primary" : "bg-muted"
+                }`}
+              >
+                <Send size={18} color={canSend ? "white" : "hsl(218 11% 65%)"} />
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </KeyboardGestureArea>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
