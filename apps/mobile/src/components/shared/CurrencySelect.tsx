@@ -2,7 +2,6 @@ import { ChevronDown } from "lucide-react-native";
 import { useColorScheme } from "nativewind";
 import { useCallback, useMemo, useState } from "react";
 import {
-  Dimensions,
   FlatList,
   Modal,
   Platform,
@@ -10,14 +9,19 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
+import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CurrencyFlagEmoji } from "@/lib/currencyFlag";
 import { cn } from "@/lib/utils";
 
 export type CurrencyOption = { code: string; name: string; country: string };
 
-const LIST_MAX_HEIGHT = Math.round(Dimensions.get("window").height * 0.55);
+const SHEET_HEADER_HEIGHT = 124;
+const SHEET_MAX_HEIGHT_RATIO = 0.72;
+const LIST_MAX_HEIGHT_RATIO = 0.55;
+const SHEET_VERTICAL_MARGIN = 28;
 
 type CurrencySelectProps = {
   value: string;
@@ -33,9 +37,12 @@ export function CurrencySelect({
   triggerClassName,
 }: CurrencySelectProps) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
   const mutedFg = isDark ? "#94a3b8" : "#64748b";
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const keyboardHeight = useKeyboardState((state) => state.height);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -99,6 +106,29 @@ export function CurrencySelect({
 
   const keyExtractor = useCallback((item: CurrencyOption) => item.code, []);
 
+  const sheetMaxHeight = useMemo(() => {
+    const defaultMaxHeight = Math.round(windowHeight * SHEET_MAX_HEIGHT_RATIO);
+
+    if (!keyboardVisible || keyboardHeight <= 0) {
+      return defaultMaxHeight;
+    }
+
+    return Math.min(
+      defaultMaxHeight,
+      Math.max(0, windowHeight - keyboardHeight - insets.top - SHEET_VERTICAL_MARGIN),
+    );
+  }, [insets.top, keyboardHeight, keyboardVisible, windowHeight]);
+
+  const listMaxHeight = useMemo(() => {
+    const defaultMaxHeight = Math.round(windowHeight * LIST_MAX_HEIGHT_RATIO);
+    const availableHeight = Math.max(
+      0,
+      sheetMaxHeight - SHEET_HEADER_HEIGHT - Math.max(insets.bottom, 12),
+    );
+
+    return Math.min(defaultMaxHeight, availableHeight);
+  }, [insets.bottom, sheetMaxHeight, windowHeight]);
+
   return (
     <>
       <Pressable
@@ -124,52 +154,58 @@ export function CurrencySelect({
         onRequestClose={close}
         statusBarTranslucent
       >
-        <View className="flex-1 justify-end">
+        <View className="flex-1">
           <Pressable
-            className="flex-1 bg-black/50"
+            className="absolute inset-0 bg-black/50"
             onPress={close}
             accessibilityRole="button"
             accessibilityLabel="Close currency list"
           />
-          <View
-            className="rounded-t-2xl border-t border-border bg-card"
-            style={{
-              paddingBottom: Math.max(insets.bottom, 12),
-              maxHeight: LIST_MAX_HEIGHT + 120,
-            }}
-          >
-            <View className="border-b border-border px-4 pb-3 pt-3">
-              <Text className="text-center text-base font-semibold text-foreground">
-                Choose currency
-              </Text>
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search code or name"
-                placeholderTextColor={mutedFg}
-                className="mt-3 rounded-xl border border-border bg-background px-3 py-2.5 text-base text-foreground"
-                autoCapitalize="none"
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
-            </View>
-            <FlatList
-              data={filtered}
-              keyExtractor={keyExtractor}
-              renderItem={renderItem}
-              keyboardShouldPersistTaps="handled"
-              initialNumToRender={16}
-              maxToRenderPerBatch={24}
-              windowSize={8}
-              removeClippedSubviews={Platform.OS === "android"}
-              style={{ maxHeight: LIST_MAX_HEIGHT }}
-              ListEmptyComponent={
-                <View className="items-center py-10">
-                  <Text className="text-sm text-muted-foreground">No matches</Text>
+          <KeyboardAvoidingView behavior="padding" enabled={open} style={{ flex: 1 }}>
+            <View className="flex-1 justify-end">
+              <View
+                className="rounded-t-2xl border-t border-border bg-card"
+                style={{
+                  paddingBottom: Math.max(insets.bottom, 12),
+                  maxHeight: sheetMaxHeight,
+                }}
+              >
+                <View className="border-b border-border px-4 pb-3 pt-3">
+                  <Text className="text-center text-base font-semibold text-foreground">
+                    Choose currency
+                  </Text>
+                  <TextInput
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder="Search code or name"
+                    placeholderTextColor={mutedFg}
+                    className="mt-3 rounded-xl border border-border bg-background px-3 py-2.5 text-base text-foreground"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    clearButtonMode="while-editing"
+                    returnKeyType="search"
+                  />
                 </View>
-              }
-            />
-          </View>
+                <FlatList
+                  data={filtered}
+                  keyExtractor={keyExtractor}
+                  renderItem={renderItem}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                  initialNumToRender={16}
+                  maxToRenderPerBatch={24}
+                  windowSize={8}
+                  removeClippedSubviews={Platform.OS === "android"}
+                  style={{ maxHeight: listMaxHeight }}
+                  ListEmptyComponent={
+                    <View className="items-center py-10">
+                      <Text className="text-sm text-muted-foreground">No matches</Text>
+                    </View>
+                  }
+                />
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </>
