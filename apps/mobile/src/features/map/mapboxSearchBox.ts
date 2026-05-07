@@ -226,3 +226,28 @@ export async function retrieveMapboxSearchFeature(args: {
   }
   return null;
 }
+
+export async function reverseMapboxSearchByCoordinate(args: {
+  coordinate: [number, number];
+  language?: string | null;
+  limit?: number;
+}): Promise<MapboxSearchBoxFeature[]> {
+  const params = new URLSearchParams({
+    longitude: String(args.coordinate[0]),
+    latitude: String(args.coordinate[1]),
+    access_token: getMapboxSearchAccessToken(),
+    limit: String(args.limit ?? 5),
+  });
+  if (args.language?.trim()) params.set("language", args.language.trim());
+
+  const response = await fetch(`${MAPBOX_SEARCH_BOX_BASE_URL}/reverse?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Mapbox reverse failed (${response.status})`);
+  }
+
+  const data = (await response.json()) as RawMapboxSearchRetrieveResponse;
+  const features = Array.isArray(data.features) ? data.features : [];
+  return features
+    .map((feature) => normalizeMapboxFeature(feature as RawMapboxSearchRetrieveFeature))
+    .filter((feature): feature is MapboxSearchBoxFeature => feature != null);
+}

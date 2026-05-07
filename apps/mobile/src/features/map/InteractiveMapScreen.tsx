@@ -73,6 +73,7 @@ import {
   formatMapboxSearchSubtitle,
   type MapboxSearchBoxSuggestion,
   mapboxFeatureZoom,
+  reverseMapboxSearchByCoordinate,
   retrieveMapboxSearchFeature,
 } from "./mapboxSearchBox";
 
@@ -287,6 +288,24 @@ function isSearchDetailFeatureType(featureType: string): boolean {
   return featureType === "poi" || featureType === "address";
 }
 
+function reverseResultPriority(featureType: string): number {
+  switch (featureType) {
+    case "poi":
+      return 0;
+    case "address":
+      return 1;
+    case "street":
+      return 2;
+    case "neighborhood":
+    case "locality":
+      return 3;
+    case "place":
+      return 4;
+    default:
+      return 5;
+  }
+}
+
 type PlaceDetail = {
   id: string;
   destinationId: string;
@@ -394,6 +413,8 @@ export function InteractiveMapScreen() {
   const [searchSelection, setSearchSelection] = useState<SearchSelection | null>(null);
   const [selectedExternalPlace, setSelectedExternalPlace] =
     useState<ExternalSearchPlaceDetail | null>(null);
+  const [pendingDropPinCoord, setPendingDropPinCoord] = useState<[number, number] | null>(null);
+  const [inspectingLongPress, setInspectingLongPress] = useState(false);
   const [retrievingSuggestionId, setRetrievingSuggestionId] = useState<string | null>(null);
 
   const cameraRef = useRef<ElementRef<typeof Camera>>(null);
@@ -408,6 +429,7 @@ export function InteractiveMapScreen() {
   const allowNextBeforeRemoveRef = useRef(false);
   const goToExploreOnNextBackRef = useRef(false);
   const mapboxSearchSessionRef = useRef(createMapboxSearchSessionToken());
+  const inspectCoordinateRequestRef = useRef(0);
 
   const searchDebounced = useDebounce(search, 320);
   const localeTag = useMemo(
@@ -431,6 +453,8 @@ export function InteractiveMapScreen() {
     setPickedDestination(null);
     setSearchSelection(null);
     setSelectedExternalPlace(null);
+    setPendingDropPinCoord(null);
+    setInspectingLongPress(false);
   }, [session]);
 
   useEffect(() => {
@@ -679,6 +703,8 @@ export function InteractiveMapScreen() {
   const showPlaceList = useCallback((nextIndex = 2) => {
     setSelectedPlaceId(null);
     setSelectedExternalPlace(null);
+    setPendingDropPinCoord(null);
+    setInspectingLongPress(false);
     setSheetMode("list");
     requestAnimationFrame(() => {
       sheetRef.current?.snapToIndex(nextIndex);
@@ -687,6 +713,8 @@ export function InteractiveMapScreen() {
 
   const showPlaceDetail = useCallback((id: string, nextIndex = 1) => {
     setSelectedExternalPlace(null);
+    setPendingDropPinCoord(null);
+    setInspectingLongPress(false);
     setSelectedPlaceId(id);
     setSheetMode("detail");
     requestAnimationFrame(() => {
@@ -697,6 +725,8 @@ export function InteractiveMapScreen() {
   const showExternalPlaceDetail = useCallback((place: ExternalSearchPlaceDetail, nextIndex = 1) => {
     setSelectedPlaceId(null);
     setSelectedExternalPlace(place);
+    setPendingDropPinCoord(null);
+    setInspectingLongPress(false);
     setSheetMode("detail");
     requestAnimationFrame(() => {
       sheetRef.current?.snapToIndex(nextIndex);
@@ -1050,6 +1080,88 @@ export function InteractiveMapScreen() {
       showPlaceDetail(id, 1);
     },
     [orderedPlaces, basePlaces, mapZoom, moveCamera, nextCameraIntent, showPlaceDetail],
+  );
+
+  const inspectCoordinate = useCallback(
+    async (coord: [number, number]) => {
+      inspectCoordinateRequestRef.current += 1;
+      const requestId = inspectCoordinateRequestRef.current;
+      setPendingDropPinCoord(coord);
+      setInspectingLongPress(true);
+      setSelectedPlaceId(null);
+      setSelectedExternalPlace(null);
+      setSheetMode("detail");
+      requestAnimationFrame(() => {
+        sheetRef.current?.snapToIndex(1);
+      });
+
+      nextCameraIntent();
+      moveCamera(coord, Math.max(mapZoom, 15), 260);
+
+      try {
+        const results = await reverseMapboxSearchByCoordinate({
+          coordinate: coord,
+          language: localeTag,
+          limit: 5,
+        });
+
+        const rankedResults = [...results].sort(
+          (a, b) => reverseResultPriority(a.featureType) - reverseResultPriority(b.featureType),
+        );
+
+        for (const feature of rankedResults) {
+          if (requestId !== inspectCoordinateRequestRef.current) return;
+          const matchedPlace = findMatchingSavedPlace(basePlaces, {
+            name: feature.name,
+            coordinate: coord,
+          });
+          if (matchedPlace) {
+            openPlace(matchedPlace.id);
+            return;
+          }
+        }
+
+        const feature = rankedResults[0];
+        if (requestId !== inspectCoordinateRequestRef.current) return;
+        if (!feature) {
+          showExternalPlaceDetail({
+            mapboxId: `dropped-pin-${coord[0]}-${coord[1]}`,
+            name: "Dropped pin",
+            subtitle: null,
+            fullAddress: null,
+            address: null,
+            featureType: "poi",
+            displayCategory: "Dropped Pin",
+            coordinate: coord,
+          });
+          return;
+        }
+
+        showExternalPlaceDetail({
+          mapboxId: feature.mapboxId,
+          name: feature.name,
+          subtitle: formatMapboxSearchSubtitle(feature),
+          fullAddress: feature.fullAddress,
+          address: feature.address ?? feature.placeFormatted,
+          featureType: feature.featureType,
+          displayCategory: feature.poiCategory ?? formatMapboxPoiCategory(feature.featureType),
+          coordinate: coord,
+        });
+      } catch {
+        if (requestId !== inspectCoordinateRequestRef.current) return;
+        showExternalPlaceDetail({
+          mapboxId: `dropped-pin-${coord[0]}-${coord[1]}`,
+          name: "Dropped pin",
+          subtitle: null,
+          fullAddress: null,
+          address: null,
+          featureType: "poi",
+          displayCategory: "Dropped Pin",
+          coordinate: coord,
+        });
+      }
+    },
+    [basePlaces, localeTag, mapZoom, moveCamera, nextCameraIntent, openPlace, showExternalPlaceDetail],
   );
 
   useEffect(() => {
@@ -1522,6 +1634,14 @@ export function InteractiveMapScreen() {
         onDidFinishLoadingMap={() => setMapReady(true)}
         onCameraChanged={onCameraChanged}
         onMapIdle={onMapIdle}
+        onLongPress={(event) => {
+          const coords = event.geometry?.coordinates;
+          if (!Array.isArray(coords) || coords.length < 2) return;
+          const lng = coords[0];
+          const lat = coords[1];
+          if (typeof lng !== "number" || typeof lat !== "number") return;
+          void inspectCoordinate([lng, lat]);
+        }}
       >
         <Camera
           ref={cameraRef}
@@ -1661,6 +1781,17 @@ export function InteractiveMapScreen() {
                   selected
                   zoomScale={pinZoomScale}
                   onPress={() => showExternalPlaceDetail(selectedExternalPlace)}
+                />
+              </MarkerView>
+            ) : null}
+            {inspectingLongPress && pendingDropPinCoord && !selectedPlace && !selectedExternalPlace ? (
+              <MarkerView coordinate={pendingDropPinCoord} anchor={{ x: 0.5, y: 1 }} allowOverlap>
+                <MapPinMarker
+                  name="Finding place..."
+                  category="poi"
+                  selected
+                  zoomScale={pinZoomScale}
+                  onPress={() => {}}
                 />
               </MarkerView>
             ) : null}
@@ -2017,7 +2148,12 @@ export function InteractiveMapScreen() {
                 <X size={22} color="#A1A1AA" />
               </Pressable> */}
             </View>
-            {selectedPlaceId && placeDetailQuery.fetchStatus === "fetching" ? (
+            {inspectingLongPress ? (
+              <View className="items-center py-10">
+                <ActivityIndicator />
+                <Text className="mt-3 text-sm text-muted-foreground">Looking up this spot…</Text>
+              </View>
+            ) : selectedPlaceId && placeDetailQuery.fetchStatus === "fetching" ? (
               <View className="items-center py-10">
                 <ActivityIndicator />
               </View>
