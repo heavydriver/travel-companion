@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getOfflinePhrasesForLanguage, useOfflinePackQuery } from "@/features/offline/pack";
 import { useLanguagePhrasesInfiniteQuery, useLanguagesQuery } from "@/features/language-guide/api";
 import { usePhraseAudio } from "@/features/language-guide/audio";
 import {
@@ -49,6 +50,8 @@ export default function LanguageGuideScreen() {
     typeof params.destinationId === "string" && params.destinationId.length > 0
       ? params.destinationId
       : undefined;
+  const offlinePackQuery = useOfflinePackQuery(scopedDestinationId);
+  const offlinePack = offlinePackQuery.data;
   const [activeCategory, setActiveCategory] = useState<CategoryFilter | null>(null);
   const [selectedLanguageId, setSelectedLanguageId] = useState<string | null>(null);
   const [languageTriggerWidth, setLanguageTriggerWidth] = useState(0);
@@ -67,7 +70,11 @@ export default function LanguageGuideScreen() {
     isLoading: isLanguagesLoading,
     error: languagesError,
   } = useLanguagesQuery();
-  const languages = languageData?.languages ?? [];
+  const languages =
+    offlinePack?.languages ??
+    offlinePack?.destination.languages.map((entry) => entry.language) ??
+    languageData?.languages ??
+    [];
 
   const selectedLanguage = useMemo(
     () => languages.find((language) => language.id === selectedLanguageId) ?? null,
@@ -107,11 +114,19 @@ export default function LanguageGuideScreen() {
     selectedLanguageId,
     scopedDestinationId,
   );
-  const allPhrases = useMemo(
-    () => phrasesQuery.data?.pages.flatMap((page) => page.phrases) ?? [],
-    [phrasesQuery.data?.pages],
+  const offlinePhrases = useMemo(
+    () => getOfflinePhrasesForLanguage(offlinePack, selectedLanguageId),
+    [offlinePack, selectedLanguageId],
   );
-  const totalPhrases = phrasesQuery.data?.pages[0]?.total ?? allPhrases.length;
+  const allPhrases = useMemo(
+    () =>
+      offlinePhrases.length > 0
+        ? offlinePhrases
+        : phrasesQuery.data?.pages.flatMap((page) => page.phrases) ?? [],
+    [offlinePhrases, phrasesQuery.data?.pages],
+  );
+  const totalPhrases =
+    offlinePhrases.length > 0 ? offlinePhrases.length : phrasesQuery.data?.pages[0]?.total ?? allPhrases.length;
 
   const { favoriteSet, toggleFavorite } = useLanguageFavorites(selectedLanguageId);
   const { playPhrase } = usePhraseAudio();
@@ -140,6 +155,7 @@ export default function LanguageGuideScreen() {
   };
 
   const onEndReached = () => {
+    if (offlinePhrases.length > 0) return;
     if (!phrasesQuery.hasNextPage || phrasesQuery.isFetchingNextPage) {
       return;
     }
@@ -204,7 +220,7 @@ export default function LanguageGuideScreen() {
         </View>
       );
     }
-    if (phrasesQuery.isLoading) {
+    if (phrasesQuery.isLoading && offlinePhrases.length === 0) {
       return (
         <View className="items-center py-8">
           <ActivityIndicator />
@@ -249,7 +265,7 @@ export default function LanguageGuideScreen() {
             <Select value={selectedLanguageOption} onValueChange={onSelectLanguage}>
               <SelectTrigger
                 className="h-auto min-h-14 rounded-2xl border-border bg-card px-4 py-3"
-                disabled={isLanguagesLoading || languages.length === 0}
+                disabled={(!offlinePack && isLanguagesLoading) || languages.length === 0}
                 aria-label="Select target language"
                 onLayout={(event) => {
                   const nextWidth = Math.round(event.nativeEvent.layout.width);
@@ -264,7 +280,9 @@ export default function LanguageGuideScreen() {
                 ) : (
                   <SelectValue
                     className="text-lg text-card-foreground"
-                    placeholder={isLanguagesLoading ? "Loading languages..." : "Select a language"}
+                    placeholder={
+                      !offlinePack && isLanguagesLoading ? "Loading languages..." : "Select a language"
+                    }
                   />
                 )}
               </SelectTrigger>
@@ -289,10 +307,10 @@ export default function LanguageGuideScreen() {
               </SelectContent>
             </Select>
 
-            {languagesError ? (
+            {languagesError && !offlinePack ? (
               <Text className="mt-2 text-sm text-destructive">{languagesError.message}</Text>
             ) : null}
-            {phrasesQuery.error ? (
+            {phrasesQuery.error && offlinePhrases.length === 0 ? (
               <Text className="mt-2 text-sm text-destructive">{phrasesQuery.error.message}</Text>
             ) : null}
 
@@ -367,7 +385,7 @@ export default function LanguageGuideScreen() {
         }
         ListEmptyComponent={emptyState}
         ListFooterComponent={
-          phrasesQuery.isFetchingNextPage ? (
+          phrasesQuery.isFetchingNextPage && offlinePhrases.length === 0 ? (
             <View className="items-center py-5">
               <ActivityIndicator />
             </View>

@@ -13,6 +13,7 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { Progress } from "@/components/ui/progress";
+import { seedOfflineTripItinerary, updateOfflineTripItem } from "@/features/offline/itinerary";
 import {
   formatDate,
   formatDateRange,
@@ -21,6 +22,8 @@ import {
   toDateOnly,
 } from "@/lib/utils";
 import { useMapSessionStore } from "@/store/mapSessionStore";
+import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
+import { useOfflineStore } from "@/store/offlineStore";
 import { type Trip, useTripStore } from "@/store/tripStore";
 
 type ItineraryItem = {
@@ -122,12 +125,17 @@ export default function ItineraryTabScreen() {
   const trips = useTripStore((s) => s.trips);
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
   const setMapSession = useMapSessionStore((s) => s.setSession);
-  const mutedFg = useUnstableNativeVariable("--muted-foreground");
-  const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
-
   const activeTrips = getActiveTrips(trips);
   const singleActiveTrip =
     activeTrips.length === 1 ? activeTrips[0] : undefined;
+  const offlineTripItems = useOfflineItineraryStore((state) =>
+    singleActiveTrip?.id ? state.tripItems[singleActiveTrip.id] : undefined,
+  );
+  const activeTripHasOfflinePack = useOfflineStore((state) =>
+    singleActiveTrip?.destination.id ? state.isDownloaded(singleActiveTrip.destination.id) : false,
+  );
+  const mutedFg = useUnstableNativeVariable("--muted-foreground");
+  const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
 
   useEffect(() => {
     if (singleActiveTrip) {
@@ -172,6 +180,12 @@ export default function ItineraryTabScreen() {
       itemId: string;
       isDone: boolean;
     }) => {
+      const trip = activeTrips.find((entry) => entry.id === tripId);
+      if (trip?.destination.id && useOfflineStore.getState().isDownloaded(trip.destination.id)) {
+        const updated = await updateOfflineTripItem(tripId, itemId, { isDone });
+        if (!updated) throw new Error("Failed to update");
+        return { tripId };
+      }
       const res = await client.api.v1["itinerary-items"]({ id: itemId }).patch({
         isDone,
       });
@@ -189,6 +203,11 @@ export default function ItineraryTabScreen() {
 
       if (!item.placeId) {
         router.push(`/trip/${singleActiveTrip.id}` as never);
+        return;
+      }
+
+      if (useOfflineStore.getState().isDownloaded(singleActiveTrip.destination.id)) {
+        router.push(`/place/${item.placeId}` as never);
         return;
       }
 
@@ -221,11 +240,22 @@ export default function ItineraryTabScreen() {
         });
         router.push("/(tabs)/map" as never);
       } catch {
-        router.push(`/trip/${singleActiveTrip.id}` as never);
+        router.push(`/place/${item.placeId}` as never);
       }
     },
     [router, setMapSession, singleActiveTrip],
   );
+
+  useEffect(() => {
+    if (!singleActiveTrip?.id || !activeTripHasOfflinePack || !itemsQuery.data?.items) return;
+    void seedOfflineTripItinerary(
+      singleActiveTrip.id,
+      ((itemsQuery.data?.items ?? []) as ItineraryItem[]).map((item) => ({
+        ...item,
+        tripId: singleActiveTrip.id,
+      })),
+    );
+  }, [singleActiveTrip?.id, activeTripHasOfflinePack, itemsQuery.data?.items]);
 
   if (trips.length === 0) {
     return (
@@ -306,7 +336,9 @@ export default function ItineraryTabScreen() {
   }
 
   const activeTrip = singleActiveTrip;
-  const items = (itemsQuery.data?.items ?? []) as ItineraryItem[];
+  const items = activeTripHasOfflinePack
+    ? ((offlineTripItems ?? itemsQuery.data?.items ?? []) as ItineraryItem[])
+    : ((itemsQuery.data?.items ?? []) as ItineraryItem[]);
   const grouped = groupByDate(items);
   const doneCount = items.filter((i) => i.isDone).length;
   const progress = items.length > 0 ? doneCount / items.length : 0;

@@ -24,6 +24,7 @@ import { usePushRegistration } from "@/hooks/usePushRegistration";
 import { queryCachePersister, queryClient } from "@/lib/queryClient";
 import { NAV_THEME } from "@/lib/theme";
 import { useNetworkStore } from "@/store/networkStore";
+import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 import { useAuthStore } from "@/store/authStore";
@@ -82,6 +83,7 @@ export default function RootLayout() {
 function RootLayoutInner() {
   const { colorScheme } = useColorScheme();
   const startListening = useNetworkStore((s) => s.startListening);
+  const hydrateOfflineItinerary = useOfflineItineraryStore((s) => s.hydrate);
   const hydrateOffline = useOfflineStore((s) => s.hydrate);
   const hydratePreferences = usePreferencesStore((s) => s.hydrateFromStorage);
   usePushRegistration();
@@ -90,9 +92,10 @@ function RootLayoutInner() {
   useEffect(() => {
     const unsubscribe = startListening();
     hydrateOffline();
+    void hydrateOfflineItinerary();
     void hydratePreferences();
     return unsubscribe;
-  }, [startListening, hydrateOffline, hydratePreferences]);
+  }, [startListening, hydrateOffline, hydrateOfflineItinerary, hydratePreferences]);
 
   const posthogApiKey = process.env.EXPO_PUBLIC_POSTHOG_API_KEY ?? "";
 

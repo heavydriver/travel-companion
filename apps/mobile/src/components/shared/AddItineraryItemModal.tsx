@@ -6,7 +6,9 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Platform, Pressable, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { client } from "@/api/client";
+import { addOfflineTripItem } from "@/features/offline/itinerary";
 import { formatDate, toDateOnly } from "@/lib/utils";
+import { useOfflineStore } from "@/store/offlineStore";
 import { Button } from "./Button";
 import { IOSDateTimePickerModal } from "./IOSDateTimePickerModal";
 import { KeyboardSheetModal } from "./KeyboardSheetModal";
@@ -17,6 +19,7 @@ type AddItineraryItemModalProps = {
   defaultDate: Date;
   tripStartDate?: Date;
   tripEndDate?: Date;
+  offlineDestinationId?: string | null;
   initialTitle?: string;
   initialPlaceId?: string | null;
   onClose: () => void;
@@ -35,6 +38,7 @@ export function AddItineraryItemModal({
   defaultDate,
   tripStartDate,
   tripEndDate,
+  offlineDestinationId,
   initialTitle,
   initialPlaceId,
   onClose,
@@ -44,6 +48,9 @@ export function AddItineraryItemModal({
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
   const { height: screenHeight } = useWindowDimensions();
+  const isOfflineDestinationDownloaded = useOfflineStore((state) =>
+    offlineDestinationId ? state.isDownloaded(offlineDestinationId) : false,
+  );
 
   const [selectedDate, setSelectedDate] = useState(defaultDate);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -84,6 +91,19 @@ export function AddItineraryItemModal({
         throw new Error("Start time must be earlier than end time");
       }
       const dateStr = toDateOnly(selectedDate);
+      if (isOfflineDestinationDownloaded) {
+        await addOfflineTripItem(tripId, {
+          tripId,
+          title: values.title,
+          date: new Date(dateStr).toISOString(),
+          startTime: startTimeDate ? formatTime(startTimeDate) : null,
+          endTime: endTimeDate ? formatTime(endTimeDate) : null,
+          notes: values.notes || null,
+          placeId: linkedPlaceId,
+          isDone: false,
+        });
+        return values.title;
+      }
       const res = await client.api.v1.trips({ tripId })["itinerary-items"].post({
         title: values.title,
         date: new Date(dateStr).toISOString(),

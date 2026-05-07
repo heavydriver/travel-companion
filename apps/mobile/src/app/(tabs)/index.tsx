@@ -504,6 +504,10 @@ export default function HomeScreen() {
                     router.push({
                       pathname: "/weather",
                       params: {
+                        destinationId:
+                          typeof (weatherDestination as { id?: string }).id === "string"
+                            ? (weatherDestination as { id: string }).id
+                            : activeHeroTrip?.destination.id,
                         lat: String(weatherDestination.latitude),
                         lng: String(weatherDestination.longitude),
                         timezone: weatherDestination.timezone,
@@ -526,6 +530,7 @@ export default function HomeScreen() {
                       params: {
                         base: activeTripCurrencyCode,
                         quote: "USD",
+                        destinationId: activeHeroTrip?.destination.id,
                       },
                     } as never)
                   }

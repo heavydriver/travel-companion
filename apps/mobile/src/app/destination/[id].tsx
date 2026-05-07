@@ -20,11 +20,17 @@ import { ActivityIndicator, Dimensions, Pressable, ScrollView, Text, View } from
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
 import { showAppToast } from "@/components/shared/AppToast";
-import { formatTempFromC } from "@/lib/units";
 import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDestinationFavorites } from "@/features/destination/favorites";
+import {
+  buildOfflineMapSession,
+  sliceOfflineWeatherData,
+  useOfflinePackQuery,
+} from "@/features/offline/pack";
+import { formatTempFromC } from "@/lib/units";
 import { usePreferencesStore } from "@/store/preferencesStore";
-import { hasEligibleTripForDestination, type Trip } from "@/store/tripStore";
+import { useNetworkStore } from "@/store/networkStore";
+import { hasEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 import { useMapSessionStore, type MapSessionPlace } from "@/store/mapSessionStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -288,12 +294,16 @@ export default function DestinationDetailsScreen() {
   const setMapSession = useMapSessionStore((s) => s.setSession);
   const insets = useSafeAreaInsets();
   const { isFavorite, toggleFavorite } = useDestinationFavorites();
+  const isConnected = useNetworkStore((state) => state.isConnected);
+  const storeTrips = useTripStore((state) => state.trips);
   const primaryVar = useUnstableNativeVariable("--primary");
   const accentColor = primaryVar ? `hsl(${primaryVar})` : "#3B82F6";
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
 
   const [now, setNow] = useState(() => new Date());
   const [timeMode, setTimeMode] = useState<"local" | "gmt">("local");
+  const offlinePackQuery = useOfflinePackQuery(id);
+  const offlinePack = offlinePackQuery.data;
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(tick);
@@ -316,14 +326,18 @@ export default function DestinationDetailsScreen() {
   const [shuffledCuratedPlaces, setShuffledCuratedPlaces] = useState<PlacePreview[]>([]);
   const [shuffledOtherPlaces, setShuffledOtherPlaces] = useState<PlacePreview[]>([]);
 
-  const curatedPlacesSource = useMemo(
-    () => (destinationQuery.data?.curatedPlaces ?? []) as PlacePreview[],
-    [destinationQuery.data?.curatedPlaces],
-  );
-  const otherPlacesSource = useMemo(
-    () => (destinationQuery.data?.otherPlaces ?? []) as PlacePreview[],
-    [destinationQuery.data?.otherPlaces],
-  );
+  const curatedPlacesSource = useMemo(() => {
+    if (destinationQuery.data?.curatedPlaces) {
+      return destinationQuery.data.curatedPlaces as PlacePreview[];
+    }
+    return (offlinePack?.curatedPlaces ?? []) as PlacePreview[];
+  }, [destinationQuery.data?.curatedPlaces, offlinePack?.curatedPlaces]);
+  const otherPlacesSource = useMemo(() => {
+    if (destinationQuery.data?.otherPlaces) {
+      return destinationQuery.data.otherPlaces as PlacePreview[];
+    }
+    return (offlinePack?.otherPlaces ?? []) as PlacePreview[];
+  }, [destinationQuery.data?.otherPlaces, offlinePack?.otherPlaces]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: dataUpdatedAt triggers reshuffle after refetch when TanStack keeps same place array refs
   useEffect(() => {
@@ -331,7 +345,9 @@ export default function DestinationDetailsScreen() {
     setShuffledOtherPlaces(shufflePlaces(otherPlacesSource));
   }, [destinationQuery.dataUpdatedAt, curatedPlacesSource, otherPlacesSource]);
 
-  const destForQueries = destinationQuery.data?.destination as DestinationDetail | undefined;
+  const destForQueries =
+    (destinationQuery.data?.destination as DestinationDetail | undefined) ??
+    (offlinePack?.destination as DestinationDetail | undefined);
 
   const tripsForDestinationQuery = useQuery({
     queryKey: ["trips", "destination", id],
@@ -368,15 +384,15 @@ export default function DestinationDetailsScreen() {
       if (res.error) throw new Error("Weather failed");
       return res.data;
     },
-    enabled: Boolean(destForQueries),
+    enabled: Boolean(destForQueries && isConnected),
     staleTime: 10 * 60 * 1000,
   });
 
   const allPlaces = useMemo(() => {
-    const curated = (destinationQuery.data?.curatedPlaces ?? []) as PlacePreview[];
-    const other = (destinationQuery.data?.otherPlaces ?? []) as PlacePreview[];
+    const curated = curatedPlacesSource as PlacePreview[];
+    const other = otherPlacesSource as PlacePreview[];
     return [...curated, ...other];
-  }, [destinationQuery.data?.curatedPlaces, destinationQuery.data?.otherPlaces]);
+  }, [curatedPlacesSource, otherPlacesSource]);
 
   const ratingStats = useMemo(() => aggregatePlaceRatings(allPlaces), [allPlaces]);
 
@@ -394,7 +410,7 @@ export default function DestinationDetailsScreen() {
     [router],
   );
 
-  if (destinationQuery.isLoading) {
+  if (destinationQuery.isLoading && !offlinePack) {
     return (
       <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
         <View className="flex-1 items-center justify-center">
@@ -404,7 +420,9 @@ export default function DestinationDetailsScreen() {
     );
   }
 
-  const destination = destinationQuery.data?.destination as DestinationDetail | undefined;
+  const destination =
+    (destinationQuery.data?.destination as DestinationDetail | undefined) ??
+    (offlinePack?.destination as DestinationDetail | undefined);
 
   if (!destination) {
     return (
@@ -420,10 +438,14 @@ export default function DestinationDetailsScreen() {
   const kindLabel = formatKindLabel(destination.kind);
   const languageForGuide = pickNonEnglishDestinationLanguage(destination.languages ?? []);
   const hasActiveOrUpcomingTrip = hasEligibleTripForDestination(
-    (tripsForDestinationQuery.data?.trips ?? []) as Trip[],
+    (((tripsForDestinationQuery.data?.trips ?? []) as Trip[]).length > 0
+      ? ((tripsForDestinationQuery.data?.trips ?? []) as Trip[])
+      : storeTrips) as Trip[],
     destination.id,
   );
-  const peekTempC = readOpenMeteoCurrentTempC(weatherPeekQuery.data);
+  const peekTempC = readOpenMeteoCurrentTempC(
+    (weatherPeekQuery.data as unknown) ?? sliceOfflineWeatherData(offlinePack, 7),
+  );
 
   return (
     <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
@@ -550,6 +572,7 @@ export default function DestinationDetailsScreen() {
               router.push({
                 pathname: "/weather",
                 params: {
+                  destinationId: destination.id,
                   lat: String(destination.latitude),
                   lng: String(destination.longitude),
                   timezone: destination.timezone,
@@ -585,6 +608,7 @@ export default function DestinationDetailsScreen() {
                 params: {
                   base: destination.currencyCode.toUpperCase(),
                   quote: "USD",
+                  destinationId: destination.id,
                 },
               } as never)
             }
@@ -604,16 +628,23 @@ export default function DestinationDetailsScreen() {
               <Text className="text-lg font-bold text-foreground">Must-Visit Places</Text>
               <Pressable
                 onPress={() => {
-                  setMapSession({
-                    destinationId: destination.id,
-                    destinationName: destination.name,
-                    latitude: destination.latitude,
-                    longitude: destination.longitude,
-                    timezone: destination.timezone,
-                    places: toMapSessionPlaces(allPlaces),
-                    returnHref: `/destination/${destination.id}`,
-                    startWithCuratedPlacesOnly: true,
-                  });
+                  setMapSession(
+                    offlinePack
+                      ? buildOfflineMapSession(offlinePack, {
+                          returnHref: `/destination/${destination.id}`,
+                          startWithCuratedPlacesOnly: true,
+                        })
+                      : {
+                          destinationId: destination.id,
+                          destinationName: destination.name,
+                          latitude: destination.latitude,
+                          longitude: destination.longitude,
+                          timezone: destination.timezone,
+                          places: toMapSessionPlaces(allPlaces),
+                          returnHref: `/destination/${destination.id}`,
+                          startWithCuratedPlacesOnly: true,
+                        },
+                  );
                   router.push("/(tabs)/map" as never);
                 }}
                 hitSlop={8}

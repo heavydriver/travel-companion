@@ -31,6 +31,12 @@ import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import {
+  buildOfflineMapSession,
+  findOfflinePackByPlaceId,
+  getOfflinePlaceFromPack,
+} from "@/features/offline/pack";
+import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
+import {
   createCurrentLocationNavigationPoint,
   useMapNavigationStore,
 } from "@/store/mapNavigationStore";
@@ -339,7 +345,23 @@ export default function PlaceDetailsScreen() {
     enabled: !!id,
   });
 
-  const place = placeQuery.data?.place as PlaceDetail | undefined;
+  const offlinePackByPlaceQuery = useQuery({
+    queryKey: ["offline-place-pack", id],
+    queryFn: async () => {
+      if (!id) return null;
+      return findOfflinePackByPlaceId(id);
+    },
+    enabled: !!id,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+  const offlinePack = offlinePackByPlaceQuery.data;
+  const offlinePlace = useMemo(
+    () => (id ? (getOfflinePlaceFromPack(offlinePack, id) as PlaceDetail | null) : null),
+    [offlinePack, id],
+  );
+
+  const place = (placeQuery.data?.place as PlaceDetail | undefined) ?? offlinePlace ?? undefined;
 
   const tripsForDestinationQuery = useQuery({
     queryKey: ["trips", "destination", place?.destinationId],
@@ -363,6 +385,10 @@ export default function PlaceDetailsScreen() {
       : storeTrips.filter((t) => t.destination.id === place.destinationId);
     return getEligibleTripForDestination(list, place.destinationId);
   }, [place, tripsForDestinationQuery.data, tripsForDestinationQuery.isSuccess, storeTrips]);
+
+  const offlineTripItems = useOfflineItineraryStore((state) =>
+    eligibleTrip?.id ? state.tripItems[eligibleTrip.id] : undefined,
+  );
 
   const destinationMetaQuery = useQuery({
     queryKey: ["destination-details", place?.destinationId],
@@ -405,10 +431,12 @@ export default function PlaceDetailsScreen() {
   );
 
   const destinationTimeZone = useMemo(() => {
-    const dest = destinationMetaQuery.data?.destination as { timezone?: string } | undefined;
+    const dest =
+      (destinationMetaQuery.data?.destination as { timezone?: string } | undefined) ??
+      offlinePack?.destination;
     const tz = dest?.timezone?.trim();
     return tz && tz.length > 0 ? tz : null;
-  }, [destinationMetaQuery.data]);
+  }, [destinationMetaQuery.data, offlinePack?.destination]);
 
   const openingParsed = useMemo(
     () => parseOpeningHours(place?.openingHours),
@@ -452,11 +480,27 @@ export default function PlaceDetailsScreen() {
 
   const placeInItinerary = Boolean(
     place &&
-      itineraryQuery.data?.items?.some((it: { placeId: string | null }) => it.placeId === place.id),
+      ((eligibleTrip?.destination.id && offlinePack?.destination.id === eligibleTrip.destination.id
+        ? offlineTripItems
+        : itineraryQuery.data?.items) ?? []
+      ).some((it: { placeId: string | null }) => it.placeId === place.id),
   );
 
   const openOnMap = useCallback(() => {
     if (!place) return;
+    if (offlinePack) {
+      setMapSession(
+        buildOfflineMapSession(offlinePack, {
+          focusLatitude: place.latitude,
+          focusLongitude: place.longitude,
+          focusZoomLevel: 15,
+          focusPlaceId: place.id,
+          returnHref: `/place/${place.id}`,
+        }),
+      );
+      router.push("/(tabs)/map" as never);
+      return;
+    }
     const dest = destinationMetaQuery.data?.destination as
       | { name: string; latitude: number; longitude: number; timezone?: string }
       | undefined;
@@ -475,10 +519,36 @@ export default function PlaceDetailsScreen() {
       returnHref: `/place/${place.id}`,
     });
     router.push("/(tabs)/map" as never);
-  }, [place, destinationMetaQuery.data, setMapSession, router]);
+  }, [place, offlinePack, destinationMetaQuery.data, setMapSession, router]);
 
   const openNavigationPreview = useCallback(() => {
     if (!place) return;
+    if (offlinePack) {
+      setMapSession(
+        buildOfflineMapSession(offlinePack, {
+          focusLatitude: place.latitude,
+          focusLongitude: place.longitude,
+          focusZoomLevel: 15,
+          focusPlaceId: place.id,
+          returnHref: `/place/${place.id}`,
+        }),
+      );
+      setMapNavigationDraft({
+        origin: createCurrentLocationNavigationPoint(),
+        destination: {
+          id: `place-${place.id}`,
+          label: place.name,
+          subtitle: place.address?.trim() || offlinePack.destination.name,
+          coordinate: [place.longitude, place.latitude],
+          kind: "place",
+        },
+        waypoints: [],
+        mode: "driving",
+        autoOpenPlanner: true,
+      });
+      router.push("/(tabs)/map" as never);
+      return;
+    }
     const dest = destinationMetaQuery.data?.destination as
       | { name: string; latitude: number; longitude: number; timezone?: string }
       | undefined;
@@ -511,7 +581,7 @@ export default function PlaceDetailsScreen() {
       autoOpenPlanner: true,
     });
     router.push("/(tabs)/map" as never);
-  }, [place, destinationMetaQuery.data, router, setMapNavigationDraft, setMapSession]);
+  }, [place, offlinePack, destinationMetaQuery.data, router, setMapNavigationDraft, setMapSession]);
 
   const openWebsite = useCallback(() => {
     if (!place?.websiteUrl?.trim()) return;
@@ -526,7 +596,7 @@ export default function PlaceDetailsScreen() {
     void Linking.openURL(`tel:${raw}`);
   }, [place?.phoneNumber]);
 
-  if (placeQuery.isLoading) {
+  if (placeQuery.isLoading && offlinePackByPlaceQuery.isLoading && !offlinePlace) {
     return (
       <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
         <View className="flex-1 items-center justify-center">
@@ -833,6 +903,7 @@ export default function PlaceDetailsScreen() {
           defaultDate={clampDateToTrip(new Date(), eligibleTrip.startDate, eligibleTrip.endDate)}
           tripStartDate={new Date(eligibleTrip.startDate)}
           tripEndDate={new Date(eligibleTrip.endDate)}
+          offlineDestinationId={eligibleTrip.destination.id}
           initialTitle={place.name}
           initialPlaceId={place.id}
           onClose={() => setShowAddModal(false)}

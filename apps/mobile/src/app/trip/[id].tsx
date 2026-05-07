@@ -36,8 +36,16 @@ import { IOSDateTimePickerModal } from "@/components/shared/IOSDateTimePickerMod
 import { KeyboardSheetModal } from "@/components/shared/KeyboardSheetModal";
 import { Screen } from "@/components/shared/Screen";
 import { Progress } from "@/components/ui/progress";
+import {
+  deleteOfflineTripItem,
+  seedOfflineTripItinerary,
+  updateOfflineTripItem,
+} from "@/features/offline/itinerary";
+import { downloadOfflinePack, getOfflinePackCounts } from "@/features/offline/pack";
+import type { OfflinePackData } from "@/features/offline/types";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { formatDate, formatItineraryTimeRange, toDateOnly } from "@/lib/utils";
+import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { analytics } from "@/utils/analytics";
 
@@ -52,12 +60,6 @@ type ItineraryItem = {
   order: number;
   isDone: boolean;
   placeId: string | null;
-};
-
-type OfflinePackPayload = {
-  packVersion?: number;
-  places?: unknown[];
-  phrases?: unknown[];
 };
 
 function parseTimeToDate(time: string | null): Date | null {
@@ -177,8 +179,15 @@ export default function TripDetailScreen() {
     enabled: !!id,
   });
 
+  const offlineTripItems = useOfflineItineraryStore((state) => (id ? state.tripItems[id] : undefined));
+
   const toggleDone = useMutation({
     mutationFn: async ({ itemId, isDone }: { itemId: string; isDone: boolean }) => {
+      if (id && trip?.destination?.id && useOfflineStore.getState().isDownloaded(trip.destination.id)) {
+        const updated = await updateOfflineTripItem(id, itemId, { isDone });
+        if (!updated) throw new Error("Failed to update");
+        return updated;
+      }
       const res = await client.api.v1["itinerary-items"]({ id: itemId }).patch({
         isDone,
       });
@@ -190,6 +199,10 @@ export default function TripDetailScreen() {
 
   const deleteItem = useMutation({
     mutationFn: async (itemId: string) => {
+      if (id && trip?.destination?.id && useOfflineStore.getState().isDownloaded(trip.destination.id)) {
+        await deleteOfflineTripItem(id, itemId);
+        return { success: true };
+      }
       const res = await client.api.v1["itinerary-items"]({ id: itemId }).delete();
       if (res.error) throw new Error("Failed to delete");
       return res.data;
@@ -210,11 +223,6 @@ export default function TripDetailScreen() {
     },
   });
 
-  const items = (itemsQuery.data?.items ?? []) as ItineraryItem[];
-  const grouped = groupByDate(items);
-  const doneCount = items.filter((i) => i.isDone).length;
-  const progress = items.length > 0 ? doneCount / items.length : 0;
-
   const destId = trip?.destination?.id;
   const isPackDownloaded = useOfflineStore((s) => (destId ? s.isDownloaded(destId) : false));
   const packMeta = useOfflineStore((s) => (destId ? s.getPackMeta(destId) : undefined));
@@ -226,30 +234,54 @@ export default function TripDetailScreen() {
     mutationFn: async () => {
       if (!destId) throw new Error("No destination");
       setDownloading(destId);
-      const res = await client.api.v1["offline-pack"]({ destinationId: destId }).get();
-      if (res.error) throw new Error("Failed to download pack");
-      return res.data;
+      return downloadOfflinePack(destId);
     },
     onSuccess: (data) => {
       if (!destId || !trip || !data) return;
-      const pack = data as OfflinePackPayload;
-      savePack(
+      const pack = data as OfflinePackData;
+      const counts = getOfflinePackCounts(pack);
+      void savePack(
         {
           destinationId: destId,
           destinationName: trip.destination.name,
           country: trip.destination.countryCode,
           countryCode: trip.destination.countryCode,
-          packVersion: pack.packVersion ?? 1,
-          downloadedAt: new Date().toISOString(),
-          placesCount: (pack.places ?? []).length,
-          phrasesCount: (pack.phrases ?? []).length,
+          packVersion: pack.packVersion,
+          downloadedAt: pack.downloadedAt,
+          placesCount: counts.placesCount,
+          phrasesCount: counts.phrasesCount,
         },
         data,
+      );
+      void seedOfflineTripItinerary(
+        id!,
+        ((itemsQuery.data?.items ?? []) as ItineraryItem[]).map((item) => ({
+          ...item,
+          tripId: id!,
+        })),
       );
       analytics.packDownloaded(destId);
     },
     onError: () => setDownloading(null),
   });
+
+  useEffect(() => {
+    if (!id || !isPackDownloaded || !itemsQuery.data?.items) return;
+    void seedOfflineTripItinerary(
+      id,
+      ((itemsQuery.data?.items ?? []) as ItineraryItem[]).map((item) => ({
+        ...item,
+        tripId: id,
+      })),
+    );
+  }, [id, isPackDownloaded, itemsQuery.data?.items]);
+
+  const items = isPackDownloaded
+    ? ((offlineTripItems ?? itemsQuery.data?.items ?? []) as ItineraryItem[])
+    : ((itemsQuery.data?.items ?? []) as ItineraryItem[]);
+  const grouped = groupByDate(items);
+  const doneCount = items.filter((i) => i.isDone).length;
+  const progress = items.length > 0 ? doneCount / items.length : 0;
 
   const shareTrip = async () => {
     if (!trip) return;
@@ -407,7 +439,7 @@ export default function TripDetailScreen() {
                     {downloading === destId ? "Downloading..." : "Download Offline Pack"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    Save places & phrases for offline use
+                    Save destination details, places, phrases, weather, currency, maps, itinerary, and images
                   </Text>
                 </View>
                 {downloading === destId && <ActivityIndicator size="small" />}
@@ -537,6 +569,7 @@ export default function TripDetailScreen() {
         defaultDate={addDate}
         tripStartDate={trip ? new Date(trip.startDate) : undefined}
         tripEndDate={trip ? new Date(trip.endDate) : undefined}
+        offlineDestinationId={trip?.destination.id}
         initialTitle={addModalPrefill?.title}
         initialPlaceId={addModalPrefill?.placeId ?? null}
         onClose={() => {
@@ -569,6 +602,8 @@ export default function TripDetailScreen() {
       {editingItem && (
         <EditItemModal
           visible={!!editingItem}
+          tripId={id!}
+          useOfflineLocalOnly={Boolean(trip?.destination.id && isPackDownloaded)}
           item={editingItem}
           tripStartDate={trip ? new Date(trip.startDate) : undefined}
           tripEndDate={trip ? new Date(trip.endDate) : undefined}
@@ -745,6 +780,8 @@ function EditTripModal({
 
 function EditItemModal({
   visible,
+  tripId,
+  useOfflineLocalOnly,
   item,
   tripStartDate,
   tripEndDate,
@@ -752,6 +789,8 @@ function EditItemModal({
   onSuccess,
 }: {
   visible: boolean;
+  tripId: string;
+  useOfflineLocalOnly: boolean;
   item: ItineraryItem;
   tripStartDate?: Date;
   tripEndDate?: Date;
@@ -791,6 +830,17 @@ function EditItemModal({
     mutationFn: async () => {
       if (hasInvalidTimeRange(startTimeDate, endTimeDate)) {
         throw new Error("Start time must be earlier than end time");
+      }
+      if (useOfflineLocalOnly) {
+        const updated = await updateOfflineTripItem(tripId, item.id, {
+          title,
+          date: selectedDate.toISOString(),
+          startTime: startTimeDate ? fmtTime(startTimeDate) : null,
+          endTime: endTimeDate ? fmtTime(endTimeDate) : null,
+          notes: notes || null,
+        });
+        if (!updated) throw new Error("Failed to update item");
+        return updated;
       }
       const res = await client.api.v1["itinerary-items"]({ id: item.id }).patch({
         title,
