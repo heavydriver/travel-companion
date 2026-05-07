@@ -11,6 +11,7 @@ import {
   Globe,
   MapPin,
   Phone,
+  Route,
   Star,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
@@ -26,9 +27,13 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
-import { showAppToast } from "@/components/shared/AppToast";
 import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal";
+import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
+import {
+  createCurrentLocationNavigationPoint,
+  useMapNavigationStore,
+} from "@/store/mapNavigationStore";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 
@@ -248,12 +253,14 @@ function InfoRow({
   label,
   value,
   onPress,
+  trailing,
   valueClassName,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
   onPress?: () => void;
+  trailing?: ReactNode;
   valueClassName?: string;
 }) {
   const body = (
@@ -267,6 +274,7 @@ function InfoRow({
           {value}
         </Text>
       </View>
+      {trailing ? <View className="justify-center">{trailing}</View> : null}
       {onPress ? <ExternalLink size={16} color="#9CA3AF" /> : null}
     </View>
   );
@@ -305,6 +313,7 @@ export default function PlaceDetailsScreen() {
   const queryClient = useQueryClient();
   const storeTrips = useTripStore((state) => state.trips);
   const setMapSession = useMapSessionStore((s) => s.setSession);
+  const setMapNavigationDraft = useMapNavigationStore((s) => s.setDraft);
   const primaryVar = useUnstableNativeVariable("--primary");
   const accentColor = primaryVar ? `hsl(${primaryVar})` : "#3B82F6";
   const mutedVar = useUnstableNativeVariable("--muted-foreground");
@@ -468,6 +477,42 @@ export default function PlaceDetailsScreen() {
     router.push("/(tabs)/map" as never);
   }, [place, destinationMetaQuery.data, setMapSession, router]);
 
+  const openNavigationPreview = useCallback(() => {
+    if (!place) return;
+    const dest = destinationMetaQuery.data?.destination as
+      | { name: string; latitude: number; longitude: number; timezone?: string }
+      | undefined;
+    if (!dest) return;
+
+    setMapSession({
+      destinationId: place.destinationId,
+      destinationName: dest.name,
+      latitude: dest.latitude,
+      longitude: dest.longitude,
+      timezone: dest.timezone?.trim() ?? null,
+      places: [placeDetailToMapSessionPlace(place)],
+      focusLatitude: place.latitude,
+      focusLongitude: place.longitude,
+      focusZoomLevel: 15,
+      focusPlaceId: place.id,
+      returnHref: `/place/${place.id}`,
+    });
+    setMapNavigationDraft({
+      origin: createCurrentLocationNavigationPoint(),
+      destination: {
+        id: `place-${place.id}`,
+        label: place.name,
+        subtitle: place.address?.trim() || dest.name,
+        coordinate: [place.longitude, place.latitude],
+        kind: "place",
+      },
+      waypoints: [],
+      mode: "driving",
+      autoOpenPlanner: true,
+    });
+    router.push("/(tabs)/map" as never);
+  }, [place, destinationMetaQuery.data, router, setMapNavigationDraft, setMapSession]);
+
   const openWebsite = useCallback(() => {
     if (!place?.websiteUrl?.trim()) return;
     let url = place.websiteUrl.trim();
@@ -625,6 +670,16 @@ export default function PlaceDetailsScreen() {
                 icon={<MapPin size={18} color={accentColor} />}
                 label="Address"
                 value={locationLines}
+                trailing={
+                  <Pressable
+                    onPress={openNavigationPreview}
+                    hitSlop={8}
+                    accessibilityLabel="Navigate to this place"
+                    className="h-10 w-10 items-center justify-center rounded-xl bg-primary/12 active:opacity-80"
+                  >
+                    <Route size={18} color={accentColor} />
+                  </Pressable>
+                }
               />
             ) : null}
             {place.phoneNumber?.trim() ? (

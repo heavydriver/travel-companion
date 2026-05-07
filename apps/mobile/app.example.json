@@ -75,6 +75,13 @@
           "supportsOpeningDocumentsInPlace": true,
           "enableFileSharing": true
         }
+      ],
+      [
+        "@badatgil/expo-mapbox-navigation",
+        {
+          "accessToken": "<YOUR_TOKEN>",
+          "mapboxMapsVersion": "<MAPBOX_MAPS_VERSION>"
+        }
       ]
     ],
     "experiments": {

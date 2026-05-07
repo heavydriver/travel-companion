@@ -13,6 +13,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@badatgil/expo-mapbox-navigation": "^1.6.2",
     "@elysiajs/eden": "^1.4.8",
     "@expo/metro-runtime": "^55.0.6",
     "@gorhom/bottom-sheet": "^5.2.9",
@@ -45,6 +46,7 @@
     "eden-tanstack-react-query": "^0.1.9",
     "expo": "~55.0.4",
     "expo-apple-authentication": "^55.0.8",
+    "expo-build-properties": "~55.0.13",
     "expo-constants": "~55.0.7",
     "expo-device": "~55.0.9",
     "expo-file-system": "~55.0.17",
