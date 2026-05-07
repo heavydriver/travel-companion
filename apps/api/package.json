@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch ./src/index.ts",
-    "build": "bun build ./src/index.ts --target bun --outdir dist --external pg",
+    "build": "bun build ./src/index.ts --target bun --outdir dist --external pg --external expo-server-sdk",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov"
@@ -39,7 +39,8 @@
     "google-auth-library": "^10.6.2",
     "jose": "^6.2.0",
     "sharp": "^0.34.5",
-    "posthog-node": "^5.9.1"
+    "posthog-node": "^5.9.1",
+    "pg": "^8.19.0"
   },
   "devDependencies": {
     "@tsconfig/bun": "^1.0.10",

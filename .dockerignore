@@ -6,9 +6,12 @@
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
 !turbo.json
+!patches/**
 
 # Required source for API runtime and local workspace deps.
 !apps/api/**
+# pnpm needs every workspace package.json for a valid install (no mobile sources).
+!apps/mobile/package.json
 !packages/db/**
 !packages/types/**
 
