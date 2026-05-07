@@ -6,3 +6,4 @@ nodeLinker: hoisted
 
 patchedDependencies:
   '@react-navigation/routers@7.5.3': patches/@react-navigation__routers@7.5.3.patch
+  '@badatgil/expo-mapbox-navigation@1.6.2': patches/@badatgil__expo-mapbox-navigation@1.6.2.patch

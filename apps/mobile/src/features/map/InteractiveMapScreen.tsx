@@ -1,3 +1,4 @@
+import { MapboxNavigationView } from "@badatgil/expo-mapbox-navigation";
 import BottomSheet, {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
@@ -9,6 +10,7 @@ import { useIsFocused, useNavigation } from "@react-navigation/native";
 import {
   Camera,
   CircleLayer,
+  LineLayer,
   type MapState,
   MapView,
   MarkerView,
@@ -21,12 +23,17 @@ import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
+  ArrowUpDown,
+  Bike,
+  CarFront,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
+  Footprints,
   LocateFixed,
   Navigation,
   Plus,
+  Route,
   Search,
   Star,
   X,
@@ -34,6 +41,7 @@ import {
 import { useColorScheme, useUnstableNativeVariable } from "nativewind";
 import {
   type ElementRef,
+  type ReactNode,
   startTransition,
   useCallback,
   useEffect,
@@ -44,6 +52,7 @@ import {
 import {
   ActivityIndicator,
   BackHandler,
+  Platform,
   Pressable,
   ScrollView,
   Switch,
@@ -51,14 +60,24 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
+import { KeyboardSheetModal } from "@/components/shared/KeyboardSheetModal";
 import { PlaceCard } from "@/components/shared/PlaceCard";
 import { useDebounce } from "@/hooks/useDebounce";
 import { THEME } from "@/lib/theme";
 import { formatDistanceFromKm } from "@/lib/units";
 import { isTripPast } from "@/lib/utils";
+import {
+  createCurrentLocationNavigationPoint,
+  MAX_MAP_NAVIGATION_WAYPOINTS,
+  type MapNavigationDraft,
+  type MapNavigationPoint,
+  type MapNavigationRouteMode,
+  useMapNavigationStore,
+} from "@/store/mapNavigationStore";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
@@ -66,6 +85,7 @@ import { pinColorForCategory } from "./categoryPinColor";
 import { ensureMapboxToken } from "./ensureMapboxToken";
 import { applyMapFilters, deriveCategories, type MapFilterControls } from "./filterMapPlaces";
 import { MapPinMarker } from "./MapPinMarker";
+import { fetchMapboxRoutePreview, type MapboxDirectionsProfile } from "./mapboxDirections";
 import {
   createMapboxSearchSessionToken,
   fetchMapboxSearchSuggestions,
@@ -73,8 +93,8 @@ import {
   formatMapboxSearchSubtitle,
   type MapboxSearchBoxSuggestion,
   mapboxFeatureZoom,
-  reverseMapboxSearchByCoordinate,
   retrieveMapboxSearchFeature,
+  reverseMapboxSearchByCoordinate,
 } from "./mapboxSearchBox";
 
 const DARK_MAP_STYLE = "mapbox://styles/varun-11/cmo7dh5kl001001qshs9chyef";
@@ -371,6 +391,85 @@ function findMatchingSavedPlace(
   return best?.place ?? null;
 }
 
+type NavigationFieldTarget =
+  | { kind: "origin" }
+  | { kind: "destination" }
+  | { kind: "waypoint"; index: number };
+
+function formatRouteDuration(seconds: number): string {
+  const totalMinutes = Math.max(1, Math.round(seconds / 60));
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (minutes === 0) return `${hours} hr`;
+  return `${hours} hr ${minutes} min`;
+}
+
+function routeProfileForMode(mode: MapNavigationRouteMode): MapboxDirectionsProfile {
+  switch (mode) {
+    case "walking":
+      return "mapbox/walking";
+    case "cycling":
+      return "mapbox/cycling";
+    default:
+      return "mapbox/driving-traffic";
+  }
+}
+
+function nativeNavigationProfileForMode(mode: MapNavigationRouteMode): string {
+  const profile = routeProfileForMode(mode);
+  return Platform.OS === "android" ? profile.replace("mapbox/", "") : profile;
+}
+
+function toNavigationPointFromSavedPlace(place: MapSessionPlace): MapNavigationPoint {
+  return {
+    id: `place-${place.id}`,
+    label: place.name,
+    subtitle: place.description,
+    coordinate: [place.longitude, place.latitude],
+    kind: "place",
+  };
+}
+
+function toNavigationPointFromPlaceDetail(place: PlaceDetail): MapNavigationPoint {
+  return {
+    id: `place-${place.id}`,
+    label: place.name,
+    subtitle: place.address?.trim() || null,
+    coordinate: [place.longitude, place.latitude],
+    kind: "place",
+  };
+}
+
+function toNavigationPointFromExternalPlace(place: ExternalSearchPlaceDetail): MapNavigationPoint {
+  return {
+    id: `external-${place.mapboxId}`,
+    label: place.name,
+    subtitle: place.fullAddress ?? place.address ?? place.subtitle,
+    coordinate: place.coordinate,
+    kind: place.featureType === "poi" ? "search" : "dropped_pin",
+  };
+}
+
+function toNavigationPointFromSearchSuggestion(selection: SearchSelection): MapNavigationPoint {
+  return {
+    id: `search-${selection.mapboxId}`,
+    label: selection.name,
+    subtitle: selection.subtitle,
+    coordinate: selection.coordinate,
+    kind: "search",
+  };
+}
+
+function resolveNavigationPointCoordinate(
+  point: MapNavigationPoint | null,
+  userCoord: [number, number] | null,
+): [number, number] | null {
+  if (!point) return null;
+  if (point.usesLiveLocation) return userCoord;
+  return point.coordinate;
+}
+
 export function InteractiveMapScreen() {
   const isFocused = useIsFocused();
   const navigation = useNavigation();
@@ -385,6 +484,11 @@ export function InteractiveMapScreen() {
   const sessionRevision = useMapSessionStore((s) => s.sessionRevision);
   const clearSession = useMapSessionStore((s) => s.clearSession);
   const storeTrips = useTripStore((s) => s.trips);
+  const navigationDraft = useMapNavigationStore((s) => s.draft);
+  const navigationDraftRevision = useMapNavigationStore((s) => s.draftRevision);
+  const setNavigationDraft = useMapNavigationStore((s) => s.setDraft);
+  const updateNavigationDraft = useMapNavigationStore((s) => s.updateDraft);
+  const clearNavigationDraft = useMapNavigationStore((s) => s.clearDraft);
 
   const [mapReady, setMapReady] = useState(false);
   const [tokenOk, setTokenOk] = useState(() => ensureMapboxToken());
@@ -416,6 +520,11 @@ export function InteractiveMapScreen() {
   const [pendingDropPinCoord, setPendingDropPinCoord] = useState<[number, number] | null>(null);
   const [inspectingLongPress, setInspectingLongPress] = useState(false);
   const [retrievingSuggestionId, setRetrievingSuggestionId] = useState<string | null>(null);
+  const [activeTurnByTurn, setActiveTurnByTurn] = useState(false);
+  const [editingNavigationField, setEditingNavigationField] =
+    useState<NavigationFieldTarget | null>(null);
+  const [navigationFieldQuery, setNavigationFieldQuery] = useState("");
+  const [resolvingNavigationFieldId, setResolvingNavigationFieldId] = useState<string | null>(null);
 
   const cameraRef = useRef<ElementRef<typeof Camera>>(null);
   const sheetRef = useRef<BottomSheet>(null);
@@ -430,12 +539,17 @@ export function InteractiveMapScreen() {
   const goToExploreOnNextBackRef = useRef(false);
   const mapboxSearchSessionRef = useRef(createMapboxSearchSessionToken());
   const inspectCoordinateRequestRef = useRef(0);
+  const navigationFieldSessionRef = useRef(createMapboxSearchSessionToken());
+  const handledNavigationDraftRevisionRef = useRef(-1);
+  const lastFittedRouteKeyRef = useRef<string | null>(null);
 
   const searchDebounced = useDebounce(search, 320);
+  const navigationFieldQueryDebounced = useDebounce(navigationFieldQuery, 260);
   const localeTag = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().locale?.split("-")[0] ?? "en",
     [],
   );
+  const navigationPlannerVisible = Boolean(navigationDraft);
   const allowSearchBoxApi = !session && !pickedDestination;
   const normalizedSearch = useMemo(() => normalizeSearchQuery(search), [search]);
   const normalizedSelectedSearch = useMemo(
@@ -1008,6 +1122,92 @@ export function InteractiveMapScreen() {
         : null,
     [basePlaces, searchSelection],
   );
+  const activeNavigationDestination = useMemo(() => {
+    if (placeDetail) return toNavigationPointFromPlaceDetail(placeDetail);
+    if (selectedExternalPlace) return toNavigationPointFromExternalPlace(selectedExternalPlace);
+    if (selectedPlace) return toNavigationPointFromSavedPlace(selectedPlace);
+    if (searchSelection) return toNavigationPointFromSearchSuggestion(searchSelection);
+    return null;
+  }, [placeDetail, searchSelection, selectedExternalPlace, selectedPlace]);
+
+  const effectiveNavigationOriginCoord = useMemo(
+    () => resolveNavigationPointCoordinate(navigationDraft?.origin ?? null, userCoord),
+    [navigationDraft?.origin, userCoord],
+  );
+
+  const effectiveNavigationWaypointCoords = useMemo(
+    () =>
+      (navigationDraft?.waypoints ?? [])
+        .map((point) => resolveNavigationPointCoordinate(point, userCoord))
+        .filter((point): point is [number, number] => point != null),
+    [navigationDraft?.waypoints, userCoord],
+  );
+
+  const effectiveNavigationDestinationCoord = useMemo(
+    () => resolveNavigationPointCoordinate(navigationDraft?.destination ?? null, userCoord),
+    [navigationDraft?.destination, userCoord],
+  );
+
+  const routePreviewCoordinates = useMemo(() => {
+    if (!effectiveNavigationOriginCoord || !effectiveNavigationDestinationCoord) return [];
+    return [
+      effectiveNavigationOriginCoord,
+      ...effectiveNavigationWaypointCoords,
+      effectiveNavigationDestinationCoord,
+    ];
+  }, [
+    effectiveNavigationDestinationCoord,
+    effectiveNavigationOriginCoord,
+    effectiveNavigationWaypointCoords,
+  ]);
+
+  const routePreviewKey = useMemo(
+    () =>
+      routePreviewCoordinates
+        .map((point) => `${point[0].toFixed(4)},${point[1].toFixed(4)}`)
+        .join(";"),
+    [routePreviewCoordinates],
+  );
+
+  const navigationFieldSuggestionsQuery = useQuery({
+    queryKey: [
+      "mapbox-navigation-field-suggest",
+      editingNavigationField?.kind,
+      editingNavigationField?.kind === "waypoint" ? editingNavigationField.index : null,
+      navigationFieldQueryDebounced,
+      userCoord?.[0],
+      userCoord?.[1],
+    ],
+    queryFn: async () =>
+      fetchMapboxSearchSuggestions({
+        query: navigationFieldQueryDebounced,
+        sessionToken: navigationFieldSessionRef.current,
+        proximity: userCoord,
+        language: localeTag,
+        limit: 6,
+      }),
+    enabled: Boolean(editingNavigationField && navigationFieldQueryDebounced.trim().length >= 2),
+    staleTime: 30 * 1000,
+  });
+
+  const routePreviewQuery = useQuery({
+    queryKey: [
+      "mapbox-route-preview",
+      navigationDraft?.mode,
+      routePreviewKey,
+      localeTag,
+      navigationPlannerVisible,
+    ],
+    queryFn: async ({ signal }) =>
+      fetchMapboxRoutePreview({
+        coordinates: routePreviewCoordinates,
+        profile: routeProfileForMode(navigationDraft?.mode ?? "driving"),
+        language: localeTag,
+        signal,
+      }),
+    enabled: Boolean(navigationPlannerVisible && routePreviewCoordinates.length >= 2),
+    staleTime: 60 * 1000,
+  });
 
   const detailOwnerDestinationQuery = useQuery({
     queryKey: ["destination-details", placeDetail?.destinationId],
@@ -1053,6 +1253,44 @@ export function InteractiveMapScreen() {
     mapsPlacesSourceId,
     detailOwnerDestinationQuery.data,
   ]);
+  const navigationFieldSuggestions = useMemo(
+    () => (navigationFieldSuggestionsQuery.data ?? []) as MapboxSearchBoxSuggestion[],
+    [navigationFieldSuggestionsQuery.data],
+  );
+  const routePreview = routePreviewQuery.data ?? null;
+  const routePreviewShape = useMemo(() => {
+    if (!routePreview) return null;
+    return {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: routePreview.geometry,
+          properties: {},
+        },
+      ],
+    } as GeoJSON.FeatureCollection<GeoJSON.LineString>;
+  }, [routePreview]);
+  const turnByTurnCoordinates = useMemo(
+    () =>
+      routePreviewCoordinates.map((point) => ({
+        latitude: point[1],
+        longitude: point[0],
+      })),
+    [routePreviewCoordinates],
+  );
+  const routeSummaryBackgroundColor =
+    colorScheme === "dark" ? THEME.dark.background : THEME.light.background;
+  const navigationTripProgressTextColor =
+    colorScheme === "dark" ? THEME.dark.foreground : THEME.light.foreground;
+  const navigationTripProgressSecondaryTextColor =
+    colorScheme === "dark" ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const plannerModeLabel =
+    navigationDraft?.mode === "walking"
+      ? "Walk"
+      : navigationDraft?.mode === "cycling"
+        ? "Cycle"
+        : "Drive";
 
   const snapPoints = useMemo(() => ["8%", "30%", "45%", "88%"], []);
 
@@ -1161,7 +1399,15 @@ export function InteractiveMapScreen() {
         });
       }
     },
-    [basePlaces, localeTag, mapZoom, moveCamera, nextCameraIntent, openPlace, showExternalPlaceDetail],
+    [
+      basePlaces,
+      localeTag,
+      mapZoom,
+      moveCamera,
+      nextCameraIntent,
+      openPlace,
+      showExternalPlaceDetail,
+    ],
   );
 
   useEffect(() => {
@@ -1177,9 +1423,209 @@ export function InteractiveMapScreen() {
     selectedSavedPlaceFromSearch,
   ]);
 
+  useEffect(() => {
+    if (!navigationDraft) {
+      handledNavigationDraftRevisionRef.current = -1;
+      return;
+    }
+    if (navigationDraftRevision <= handledNavigationDraftRevisionRef.current) return;
+    handledNavigationDraftRevisionRef.current = navigationDraftRevision;
+    requestAnimationFrame(() => {
+      sheetRef.current?.snapToIndex(1);
+    });
+    if (!navigationDraft.autoOpenPlanner) return;
+    updateNavigationDraft((draft) => (draft ? { ...draft, autoOpenPlanner: false } : draft));
+  }, [navigationDraft, navigationDraftRevision, updateNavigationDraft]);
+
+  useEffect(() => {
+    if (!navigationPlannerVisible || !routePreview || routePreviewCoordinates.length < 2) return;
+    const fitKey = `${navigationDraftRevision}:${navigationDraft?.mode ?? "driving"}:${routePreviewKey}`;
+    if (lastFittedRouteKeyRef.current === fitKey) return;
+    lastFittedRouteKeyRef.current = fitKey;
+
+    const lngs = routePreviewCoordinates.map((point) => point[0]);
+    const lats = routePreviewCoordinates.map((point) => point[1]);
+    const ne: [number, number] = [Math.max(...lngs), Math.max(...lats)];
+    const sw: [number, number] = [Math.min(...lngs), Math.min(...lats)];
+    const topPadding = navigationPlannerVisible ? 164 : 220;
+    const bottomPadding = tabBarHeight + (navigationPlannerVisible ? 280 : 260);
+
+    requestAnimationFrame(() => {
+      cameraRef.current?.fitBounds(ne, sw, [topPadding, 36, bottomPadding, 36], 420);
+    });
+  }, [
+    navigationDraft?.mode,
+    navigationDraftRevision,
+    navigationPlannerVisible,
+    routePreview,
+    routePreviewCoordinates,
+    routePreviewKey,
+    tabBarHeight,
+  ]);
+
   const closeDetail = useCallback(() => {
     showPlaceList(2);
   }, [showPlaceList]);
+
+  const closeNavigationPlanner = useCallback(() => {
+    setEditingNavigationField(null);
+    setNavigationFieldQuery("");
+    setResolvingNavigationFieldId(null);
+    clearNavigationDraft();
+  }, [clearNavigationDraft]);
+
+  const openNavigationPlanner = useCallback(
+    (destinationOverride?: MapNavigationPoint | null) => {
+      const destination = destinationOverride ?? activeNavigationDestination;
+      const nextDraft: MapNavigationDraft = {
+        origin: navigationDraft?.origin ?? createCurrentLocationNavigationPoint(),
+        destination: destination ?? navigationDraft?.destination ?? null,
+        waypoints: navigationDraft?.waypoints ?? [],
+        mode: navigationDraft?.mode ?? "driving",
+        autoOpenPlanner: true,
+      };
+      setNavigationDraft(nextDraft);
+    },
+    [activeNavigationDestination, navigationDraft, setNavigationDraft],
+  );
+
+  const openNavigationFieldPicker = useCallback((target: NavigationFieldTarget) => {
+    setEditingNavigationField(target);
+    setNavigationFieldQuery("");
+    setResolvingNavigationFieldId(null);
+    navigationFieldSessionRef.current = createMapboxSearchSessionToken();
+  }, []);
+
+  const applyNavigationFieldPoint = useCallback(
+    (target: NavigationFieldTarget, point: MapNavigationPoint) => {
+      updateNavigationDraft((draft) => {
+        if (!draft) return draft;
+        if (target.kind === "origin") return { ...draft, origin: point };
+        if (target.kind === "destination") return { ...draft, destination: point };
+        const nextWaypoints = [...draft.waypoints];
+        nextWaypoints[target.index] = point;
+        return { ...draft, waypoints: nextWaypoints };
+      });
+    },
+    [updateNavigationDraft],
+  );
+
+  const removeNavigationWaypoint = useCallback(
+    (index: number) => {
+      updateNavigationDraft((draft) => {
+        if (!draft) return draft;
+        return {
+          ...draft,
+          waypoints: draft.waypoints.filter((_, waypointIndex) => waypointIndex !== index),
+        };
+      });
+    },
+    [updateNavigationDraft],
+  );
+
+  const addNavigationWaypoint = useCallback(() => {
+    updateNavigationDraft((draft) => {
+      if (!draft || draft.waypoints.length >= MAX_MAP_NAVIGATION_WAYPOINTS) return draft;
+      return {
+        ...draft,
+        waypoints: [
+          ...draft.waypoints,
+          {
+            id: `waypoint-${draft.waypoints.length + 1}`,
+            label: "Choose a stop",
+            subtitle: null,
+            coordinate: null,
+            kind: "waypoint",
+          },
+        ],
+      };
+    });
+  }, [updateNavigationDraft]);
+
+  const swapNavigationEndpoints = useCallback(() => {
+    updateNavigationDraft((draft) => {
+      if (!draft) return draft;
+      return {
+        ...draft,
+        origin: draft.destination,
+        destination: draft.origin,
+      };
+    });
+  }, [updateNavigationDraft]);
+
+  const setNavigationRouteMode = useCallback(
+    (mode: MapNavigationRouteMode) => {
+      updateNavigationDraft((draft) => (draft ? { ...draft, mode } : draft));
+    },
+    [updateNavigationDraft],
+  );
+
+  const useCurrentLocationForOrigin = useCallback(() => {
+    applyNavigationFieldPoint({ kind: "origin" }, createCurrentLocationNavigationPoint());
+    setEditingNavigationField(null);
+    setNavigationFieldQuery("");
+  }, [applyNavigationFieldPoint]);
+
+  const selectNavigationSuggestion = useCallback(
+    async (suggestion: MapboxSearchBoxSuggestion) => {
+      if (!editingNavigationField) return;
+      setResolvingNavigationFieldId(suggestion.mapboxId);
+      try {
+        const feature = await retrieveMapboxSearchFeature({
+          mapboxId: suggestion.mapboxId,
+          sessionToken: navigationFieldSessionRef.current,
+          language: localeTag,
+        });
+        if (!feature) {
+          throw new Error("Could not load that location");
+        }
+        applyNavigationFieldPoint(editingNavigationField, {
+          id: `search-${feature.mapboxId}`,
+          label: feature.name,
+          subtitle: feature.fullAddress ?? feature.address ?? feature.placeFormatted,
+          coordinate: feature.coordinate,
+          kind: "search",
+        });
+        setEditingNavigationField(null);
+        setNavigationFieldQuery("");
+        navigationFieldSessionRef.current = createMapboxSearchSessionToken();
+      } catch {
+        showAppToast({
+          variant: "error",
+          title: "Could not use that stop",
+          message: "Please try another search result.",
+        });
+      } finally {
+        setResolvingNavigationFieldId(null);
+      }
+    },
+    [applyNavigationFieldPoint, editingNavigationField, localeTag],
+  );
+
+  const startTurnByTurnNavigation = useCallback(() => {
+    if (!routePreview || routePreviewCoordinates.length < 2) return;
+    setActiveTurnByTurn(true);
+  }, [routePreview, routePreviewCoordinates.length]);
+
+  const previewNavigationToSavedPlace = useCallback(
+    (place: PlaceDetail | MapSessionPlace) => {
+      openNavigationPlanner({
+        id: `place-${place.id}`,
+        label: place.name,
+        subtitle: "address" in place ? place.address?.trim() || null : place.description,
+        coordinate: [place.longitude, place.latitude],
+        kind: "place",
+      });
+    },
+    [openNavigationPlanner],
+  );
+
+  const previewNavigationToExternalPlace = useCallback(
+    (place: ExternalSearchPlaceDetail) => {
+      openNavigationPlanner(toNavigationPointFromExternalPlace(place));
+    },
+    [openNavigationPlanner],
+  );
 
   const clearCategoryFilter = useCallback(() => {
     setSelectedCategories(new Set());
@@ -1204,19 +1650,6 @@ export function InteractiveMapScreen() {
     showPlaceList(2);
     flyToUserRef.current({ forceNearbyAnchor: true });
   }, [showPlaceList]);
-
-  const recenterDestination = useCallback(() => {
-    const c = searchSelection
-      ? { lat: searchSelection.coordinate[1], lng: searchSelection.coordinate[0] }
-      : (destCenter ?? mapCoreCenter ?? MAP_BOOTSTRAP_CENTER);
-    showPlaceList(2);
-    nextCameraIntent();
-    moveCamera(
-      [c.lng, c.lat],
-      searchSelection ? mapboxFeatureZoom(searchSelection.featureType) : 12,
-      450,
-    );
-  }, [destCenter, mapCoreCenter, moveCamera, nextCameraIntent, searchSelection, showPlaceList]);
 
   const onCameraChanged = useCallback((state: MapState) => {
     pendingLiveZoomRef.current = state.properties.zoom;
@@ -1282,12 +1715,13 @@ export function InteractiveMapScreen() {
     const href = session?.returnHref?.trim() ?? null;
     suppressSessionClearEffectsRef.current = true;
     clearSession();
+    clearNavigationDraft();
     setSelectedCategories(new Set());
     goToExploreOnNextBackRef.current = false;
     if (!href) return;
     allowNextBeforeRemoveRef.current = true;
     router.dismissTo(href as never);
-  }, [session?.returnHref, clearSession, router]);
+  }, [session?.returnHref, clearNavigationDraft, clearSession, router]);
 
   const clearPickedDestination = useCallback(() => {
     centeredPickedDestinationRef.current = null;
@@ -1329,6 +1763,10 @@ export function InteractiveMapScreen() {
   ]);
 
   const handleMapBack = useCallback(() => {
+    if (navigationPlannerVisible) {
+      closeNavigationPlanner();
+      return true;
+    }
     if (sheetMode === "detail") {
       closeDetail();
       return true;
@@ -1356,6 +1794,8 @@ export function InteractiveMapScreen() {
     sheetMode,
     closeDetail,
     session,
+    navigationPlannerVisible,
+    closeNavigationPlanner,
     leaveMapSession,
     pickedDestination,
     clearPickedDestination,
@@ -1368,6 +1808,11 @@ export function InteractiveMapScreen() {
     (event: { preventDefault: () => void; data: { action: object } }) => {
       if (allowNextBeforeRemoveRef.current) {
         allowNextBeforeRemoveRef.current = false;
+        return;
+      }
+      if (navigationPlannerVisible) {
+        event.preventDefault();
+        closeNavigationPlanner();
         return;
       }
       if (sheetMode === "detail") {
@@ -1390,10 +1835,12 @@ export function InteractiveMapScreen() {
       clearPickedDestination();
     },
     [
+      closeNavigationPlanner,
       clearPickedDestination,
       clearSearchSelection,
       closeDetail,
       leaveMapSession,
+      navigationPlannerVisible,
       pickedDestination,
       searchSelection,
       session,
@@ -1421,6 +1868,7 @@ export function InteractiveMapScreen() {
     goToExploreOnNextBackRef.current = true;
     mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
     clearSession();
+    clearNavigationDraft();
     setPickedDestination(null);
     setSearchSelection(null);
     setSelectedCategories(new Set());
@@ -1431,7 +1879,7 @@ export function InteractiveMapScreen() {
     setFiltersExpanded(false);
     setCuratedOnly(false);
     showPlaceList(0);
-  }, [clearSession, showPlaceList]);
+  }, [clearNavigationDraft, clearSession, showPlaceList]);
 
   const handleSearchChange = useCallback(
     (next: string) => {
@@ -1560,6 +2008,39 @@ export function InteractiveMapScreen() {
     );
   }
 
+  if (activeTurnByTurn) {
+    return (
+      <SafeAreaView
+        edges={["top"]}
+        style={{ flex: 1, backgroundColor: routeSummaryBackgroundColor }}
+      >
+        <MapboxNavigationView
+          style={{ flex: 1 }}
+          coordinates={turnByTurnCoordinates}
+          routeProfile={nativeNavigationProfileForMode(navigationDraft?.mode ?? "driving")}
+          locale={localeTag}
+          mapStyle={mapStyle}
+          followingZoom={15.5}
+          mute={true}
+          disableAlternativeRoutes
+          tripProgressBarBackgroundColor={routeSummaryBackgroundColor}
+          tripProgressBarTextColor={navigationTripProgressTextColor}
+          tripProgressBarSecondaryTextColor={navigationTripProgressSecondaryTextColor}
+          onCancelNavigation={() => setActiveTurnByTurn(false)}
+          onFinalDestinationArrival={() => setActiveTurnByTurn(false)}
+          onRouteFailedToLoad={() => {
+            setActiveTurnByTurn(false);
+            showAppToast({
+              variant: "error",
+              title: "Navigation could not start",
+              message: "Please check the route preview and try again.",
+            });
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
+
   if (locPermission === null) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -1668,6 +2149,32 @@ export function InteractiveMapScreen() {
         ) : null}
         {mapReady ? (
           <>
+            {routePreviewShape ? (
+              <ShapeSource id="map-navigation-route" shape={routePreviewShape}>
+                <LineLayer
+                  id="map-navigation-route-outline"
+                  style={{
+                    lineCap: "round",
+                    lineJoin: "round",
+                    lineColor: colorScheme === "dark" ? "#0b1731" : "#FFFFFF",
+                    lineWidth: 8,
+                    lineOpacity: 0.9,
+                    lineEmissiveStrength: 1,
+                  }}
+                />
+                <LineLayer
+                  id="map-navigation-route-line"
+                  style={{
+                    lineCap: "round",
+                    lineJoin: "round",
+                    lineColor: primaryIconColor,
+                    lineWidth: 5,
+                    lineOpacity: 0.96,
+                    lineEmissiveStrength: 1,
+                  }}
+                />
+              </ShapeSource>
+            ) : null}
             {userCoord ? (
               <MarkerView coordinate={userCoord} anchor={{ x: 0.5, y: 0.5 }} allowOverlap>
                 <MyLocationMarker />
@@ -1777,14 +2284,19 @@ export function InteractiveMapScreen() {
               >
                 <MapPinMarker
                   name={selectedExternalPlace.name}
-                  category={selectedExternalPlace.displayCategory ?? selectedExternalPlace.featureType}
+                  category={
+                    selectedExternalPlace.displayCategory ?? selectedExternalPlace.featureType
+                  }
                   selected
                   zoomScale={pinZoomScale}
                   onPress={() => showExternalPlaceDetail(selectedExternalPlace)}
                 />
               </MarkerView>
             ) : null}
-            {inspectingLongPress && pendingDropPinCoord && !selectedPlace && !selectedExternalPlace ? (
+            {inspectingLongPress &&
+            pendingDropPinCoord &&
+            !selectedPlace &&
+            !selectedExternalPlace ? (
               <MarkerView coordinate={pendingDropPinCoord} anchor={{ x: 0.5, y: 1 }} allowOverlap>
                 <MapPinMarker
                   name="Finding place..."
@@ -1805,234 +2317,340 @@ export function InteractiveMapScreen() {
         </View>
       ) : null}
 
-      {/* Search + filters (solid panel) */}
-      <View
-        className="absolute left-0 right-0 px-3"
-        style={{ paddingTop: insets.top }}
-        pointerEvents="box-none"
-      >
+      {navigationPlannerVisible ? (
         <View
-          className="overflow-hidden rounded-2xl border border-border bg-card px-2.5 py-2 shadow-md"
-          style={{ backgroundColor: colorScheme === "dark" ? THEME.dark.card : THEME.light.card }}
+          className="absolute left-0 right-0 px-3"
+          style={{ paddingTop: insets.top }}
+          pointerEvents="box-none"
         >
-          <View className="flex-row items-center gap-2">
-            {sheetMode === "detail" || session || pickedDestination || searchSelection ? (
-              <Pressable
-                onPress={() => {
-                  handleMapBack();
-                }}
-                className="h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/60 active:opacity-80"
-              >
-                <ChevronLeft size={20} color={labelForeground} />
-              </Pressable>
-            ) : null}
-            <View className="min-w-0 h-11 flex-1 flex-row items-center rounded-2xl border border-border/70 bg-background/70 px-3">
-              <Search size={18} color="#9CA3AF" />
-              <TextInput
-                value={search}
-                onChangeText={handleSearchChange}
-                placeholder="Search cities, landmarks, or neighborhoods"
-                placeholderTextColor="#9CA3AF"
-                className="ml-2 flex-1 py-0 text-[15px] text-foreground"
-                returnKeyType="search"
-              />
-              {retrievingSuggestionId || mapboxSuggestionsFetching ? (
-                <ActivityIndicator size="small" />
-              ) : search.trim().length > 0 ? (
-                <Pressable
-                  onPress={() => {
-                    if (searchSelection) {
-                      clearSearchSelection();
-                      return;
-                    }
-                    setSearch("");
-                    mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
-                  }}
-                  accessibilityLabel="Clear search"
-                  className="ml-2 h-7 w-7 items-center justify-center rounded-full bg-muted/70 active:opacity-80"
-                >
-                  <X size={14} color={labelForeground} />
-                </Pressable>
-              ) : null}
-            </View>
-            {session ? (
-              <Pressable
-                onPress={clearMapPlacesOverlay}
-                accessibilityLabel="Clear places and pins from map"
-                className="h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/60 active:opacity-80"
-              >
-                <X size={18} color={labelForeground} />
-              </Pressable>
-            ) : null}
-            <Pressable
-              onPress={() => setFiltersExpanded((v) => !v)}
-              accessibilityLabel={filtersExpanded ? "Hide filters" : "Show filters"}
-              className="h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/60 active:opacity-80"
-            >
-              {filtersExpanded ? (
-                <ChevronUp size={18} color={labelForeground} />
-              ) : (
-                <ChevronDown size={18} color={labelForeground} />
-              )}
-            </Pressable>
-          </View>
-
-          {activeScope ? (
-            <View className="mt-2 flex-row items-center gap-2 rounded-2xl border border-primary/25 bg-primary/10 px-3 py-2">
-              <View className="h-8 w-8 items-center justify-center rounded-xl bg-background/70">
-                <Navigation size={15} color={primaryIconColor} />
-              </View>
-              <View className="min-w-0 flex-1">
-                <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                  {activeScope.title}
-                </Text>
-                <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-                  {activeScope.subtitle}
-                </Text>
-              </View>
-              <Pressable
-                onPress={activeScope.onClear}
-                accessibilityLabel="Clear search scope"
-                className="h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-background/70 active:opacity-80"
-              >
-                <X size={16} color={labelForeground} />
-              </Pressable>
-            </View>
-          ) : null}
-
-          {searchResultsVisible ? (
-            <View className="mt-2 overflow-hidden rounded-2xl border border-border/70 bg-background/95">
-              {mapboxSuggestions.length > 0 ? (
-                <View className="border-b border-border/60 px-3 pb-1 pt-2">
-                  <Text className="text-[10px] font-bold uppercase tracking-[1px] text-muted-foreground">
-                    Search suggestions
-                  </Text>
-                </View>
-              ) : null}
-              {mapboxSuggestions.map((suggestion) => (
-                <Pressable
-                  key={suggestion.mapboxId}
-                  onPress={() => {
-                    void pickMapboxSuggestion(suggestion);
-                  }}
-                  className="flex-row items-center gap-3 px-3 py-3 active:bg-muted/50"
-                >
-                  <View className="h-9 w-9 items-center justify-center rounded-xl bg-muted/70">
-                    {retrievingSuggestionId === suggestion.mapboxId ? (
-                      <ActivityIndicator size="small" />
-                    ) : (
-                      <Navigation size={15} color={primaryIconColor} />
-                    )}
-                  </View>
-                  <View className="min-w-0 flex-1">
-                    <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                      {suggestion.name}
-                    </Text>
-                    <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-                      {formatMapboxSearchSubtitle(suggestion)}
-                    </Text>
-                  </View>
-                  <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {suggestion.featureType}
-                  </Text>
-                </Pressable>
-              ))}
-
-              {mapboxSuggestionsFetching && mapboxSuggestions.length === 0 ? (
-                <View className="flex-row items-center gap-3 px-3 py-3">
-                  <ActivityIndicator size="small" />
-                  <Text className="text-sm text-muted-foreground">Searching Mapbox…</Text>
-                </View>
-              ) : null}
-
-              {mapboxSuggestions.length > 0 ? (
-                <Text className="px-3 pb-2 pt-1 text-[10px] text-muted-foreground">
-                  Powered by Mapbox Search Box
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-
-          <View className="mt-2">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 6, paddingRight: 8, alignItems: "center" }}
-            >
-              <Pressable
-                onPress={clearCategoryFilter}
-                className={`rounded-full border px-2.5 py-1 ${
-                  selectedCategories.size === 0
-                    ? "border-primary bg-primary/15"
-                    : "border-border bg-muted/70"
-                }`}
-              >
-                <Text
-                  className={`text-[11px] font-semibold ${
-                    selectedCategories.size === 0 ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  All
-                </Text>
-              </Pressable>
-              {allCategories.map((cat) => {
-                const inFilter = selectedCategories.has(cat);
-                const active = selectedCategories.size === 0 ? false : inFilter;
-                const accent = pinColorForCategory(cat);
-                return (
-                  <Pressable
-                    key={cat}
-                    onPress={() => toggleCategory(cat)}
-                    className="rounded-full border px-2.5 py-1"
-                    style={{
-                      borderColor: accent,
-                      backgroundColor: active ? withOpacity(accent, 0.16) : "transparent",
-                    }}
+          <View
+            className="rounded-[28px] border border-border bg-card px-3 py-3 shadow-md"
+            style={{ backgroundColor: colorScheme === "dark" ? THEME.dark.card : THEME.light.card }}
+          >
+            <View className="flex-row items-start gap-3">
+              <View className="flex-1">
+                <NavigationPlannerCompactField
+                  icon={<LocateFixed size={15} color={primaryIconColor} />}
+                  value={navigationDraft?.origin?.label ?? "Choose starting point"}
+                  subtitle={navigationDraft?.origin?.subtitle ?? null}
+                  onPress={() => openNavigationFieldPicker({ kind: "origin" })}
+                />
+                {navigationDraft?.waypoints.length ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    className="mt-2"
+                    contentContainerStyle={{ gap: 8, paddingRight: 8 }}
                   >
-                    <Text
-                      className={`text-[11px] font-semibold ${active ? "" : "text-muted-foreground"}`}
-                      style={active ? { color: accent } : undefined}
-                      numberOfLines={1}
-                    >
-                      {formatCategoryLabel(cat)}
+                    {navigationDraft.waypoints.map((waypoint, index) => (
+                      <NavigationWaypointChip
+                        key={`${waypoint.id}-${index}`}
+                        label={waypoint.coordinate ? waypoint.label : `Stop ${index + 1}`}
+                        onPress={() => openNavigationFieldPicker({ kind: "waypoint", index })}
+                        onRemove={() => removeNavigationWaypoint(index)}
+                      />
+                    ))}
+                  </ScrollView>
+                ) : null}
+                <View className="ml-[18px] mt-1 h-3 border-l border-dashed border-border/80" />
+                <NavigationPlannerCompactField
+                  icon={<Navigation size={15} color="#E25547" />}
+                  value={navigationDraft?.destination?.label ?? "Choose destination"}
+                  subtitle={navigationDraft?.destination?.subtitle ?? null}
+                  onPress={() => openNavigationFieldPicker({ kind: "destination" })}
+                />
+              </View>
+              <View className="gap-2">
+                <Pressable
+                  onPress={closeNavigationPlanner}
+                  hitSlop={8}
+                  accessibilityLabel="Close route planner"
+                  className="h-10 w-10 items-center justify-center rounded-2xl border border-border bg-background active:opacity-80"
+                >
+                  <X size={18} color={labelForeground} />
+                </Pressable>
+                <Pressable
+                  onPress={swapNavigationEndpoints}
+                  hitSlop={8}
+                  accessibilityLabel="Swap route endpoints"
+                  className="h-10 w-10 items-center justify-center rounded-2xl border border-border bg-background active:opacity-80"
+                >
+                  <ArrowUpDown size={16} color={labelForeground} />
+                </Pressable>
+              </View>
+            </View>
+
+            <View
+              className="mt-3 flex-row items-center justify-between rounded-2xl border border-border/70 px-3 py-2"
+              style={{ backgroundColor: routeSummaryBackgroundColor }}
+            >
+              <View className="min-w-0 flex-1">
+                <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {plannerModeLabel}
+                </Text>
+                {navigationDraft?.origin?.usesLiveLocation && !userCoord ? (
+                  <Text className="mt-0.5 text-sm text-muted-foreground">
+                    Waiting for your live location…
+                  </Text>
+                ) : routePreviewQuery.isPending ? (
+                  <Text className="mt-0.5 text-sm text-muted-foreground">Loading route…</Text>
+                ) : routePreview ? (
+                  <Text className="mt-0.5 text-base font-semibold text-foreground">
+                    {formatRouteDuration(routePreview.durationSeconds)} ·{" "}
+                    {formatDistanceFromKm(routePreview.distanceMeters / 1000, unitSystem)}
+                  </Text>
+                ) : routePreviewQuery.isError ? (
+                  <Text className="mt-0.5 text-sm text-destructive" numberOfLines={1}>
+                    {(routePreviewQuery.error as Error | undefined)?.message ??
+                      "Could not preview route."}
+                  </Text>
+                ) : (
+                  <Text className="mt-0.5 text-sm text-muted-foreground">
+                    Pick both endpoints to preview the route.
+                  </Text>
+                )}
+              </View>
+              <Pressable
+                onPress={startTurnByTurnNavigation}
+                disabled={
+                  !routePreview || routePreviewQuery.isPending || routePreviewCoordinates.length < 2
+                }
+                className="ml-3 rounded-full bg-primary px-4 py-2 active:opacity-90 disabled:opacity-50"
+              >
+                <Text className="text-sm font-semibold text-primary-foreground">Start</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View
+          className="absolute left-0 right-0 px-3"
+          style={{ paddingTop: insets.top }}
+          pointerEvents="box-none"
+        >
+          <View
+            className="overflow-hidden rounded-2xl border border-border bg-card px-2.5 py-2 shadow-md"
+            style={{ backgroundColor: colorScheme === "dark" ? THEME.dark.card : THEME.light.card }}
+          >
+            <View className="flex-row items-center gap-2">
+              {sheetMode === "detail" || session || pickedDestination || searchSelection ? (
+                <Pressable
+                  onPress={() => {
+                    handleMapBack();
+                  }}
+                  className="h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/60 active:opacity-80"
+                >
+                  <ChevronLeft size={20} color={labelForeground} />
+                </Pressable>
+              ) : null}
+              <View className="min-w-0 h-11 flex-1 flex-row items-center rounded-2xl border border-border/70 bg-background/70 px-3">
+                <Search size={18} color="#9CA3AF" />
+                <TextInput
+                  value={search}
+                  onChangeText={handleSearchChange}
+                  placeholder="Search cities, landmarks, or neighborhoods"
+                  placeholderTextColor="#9CA3AF"
+                  className="ml-2 flex-1 py-0 text-[15px] text-foreground"
+                  returnKeyType="search"
+                />
+                {retrievingSuggestionId || mapboxSuggestionsFetching ? (
+                  <ActivityIndicator size="small" />
+                ) : search.trim().length > 0 ? (
+                  <Pressable
+                    onPress={() => {
+                      if (searchSelection) {
+                        clearSearchSelection();
+                        return;
+                      }
+                      setSearch("");
+                      mapboxSearchSessionRef.current = createMapboxSearchSessionToken();
+                    }}
+                    accessibilityLabel="Clear search"
+                    className="ml-2 h-7 w-7 items-center justify-center rounded-full bg-muted/70 active:opacity-80"
+                  >
+                    <X size={14} color={labelForeground} />
+                  </Pressable>
+                ) : null}
+              </View>
+              {session ? (
+                <Pressable
+                  onPress={clearMapPlacesOverlay}
+                  accessibilityLabel="Clear places and pins from map"
+                  className="h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/60 active:opacity-80"
+                >
+                  <X size={18} color={labelForeground} />
+                </Pressable>
+              ) : null}
+              <Pressable
+                onPress={() => setFiltersExpanded((v) => !v)}
+                accessibilityLabel={filtersExpanded ? "Hide filters" : "Show filters"}
+                className="h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/60 active:opacity-80"
+              >
+                {filtersExpanded ? (
+                  <ChevronUp size={18} color={labelForeground} />
+                ) : (
+                  <ChevronDown size={18} color={labelForeground} />
+                )}
+              </Pressable>
+            </View>
+
+            {activeScope ? (
+              <View className="mt-2 flex-row items-center gap-2 rounded-2xl border border-primary/25 bg-primary/10 px-3 py-2">
+                <View className="h-8 w-8 items-center justify-center rounded-xl bg-background/70">
+                  <Navigation size={15} color={primaryIconColor} />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                    {activeScope.title}
+                  </Text>
+                  <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                    {activeScope.subtitle}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={activeScope.onClear}
+                  accessibilityLabel="Clear search scope"
+                  className="h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-background/70 active:opacity-80"
+                >
+                  <X size={16} color={labelForeground} />
+                </Pressable>
+              </View>
+            ) : null}
+
+            {searchResultsVisible ? (
+              <View className="mt-2 overflow-hidden rounded-2xl border border-border/70 bg-background/95">
+                {mapboxSuggestions.length > 0 ? (
+                  <View className="border-b border-border/60 px-3 pb-1 pt-2">
+                    <Text className="text-[10px] font-bold uppercase tracking-[1px] text-muted-foreground">
+                      Search suggestions
+                    </Text>
+                  </View>
+                ) : null}
+                {mapboxSuggestions.map((suggestion) => (
+                  <Pressable
+                    key={suggestion.mapboxId}
+                    onPress={() => {
+                      void pickMapboxSuggestion(suggestion);
+                    }}
+                    className="flex-row items-center gap-3 px-3 py-3 active:bg-muted/50"
+                  >
+                    <View className="h-9 w-9 items-center justify-center rounded-xl bg-muted/70">
+                      {retrievingSuggestionId === suggestion.mapboxId ? (
+                        <ActivityIndicator size="small" />
+                      ) : (
+                        <Navigation size={15} color={primaryIconColor} />
+                      )}
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                        {suggestion.name}
+                      </Text>
+                      <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                        {formatMapboxSearchSubtitle(suggestion)}
+                      </Text>
+                    </View>
+                    <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {suggestion.featureType}
                     </Text>
                   </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
+                ))}
 
-          {filtersExpanded ? (
-            <View className="mt-1.5 gap-1.5 border-t border-border/60 pt-2 flex-row">
+                {mapboxSuggestionsFetching && mapboxSuggestions.length === 0 ? (
+                  <View className="flex-row items-center gap-3 px-3 py-3">
+                    <ActivityIndicator size="small" />
+                    <Text className="text-sm text-muted-foreground">Searching Mapbox…</Text>
+                  </View>
+                ) : null}
+
+                {mapboxSuggestions.length > 0 ? (
+                  <Text className="px-3 pb-2 pt-1 text-[10px] text-muted-foreground">
+                    Powered by Mapbox Search Box
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            <View className="mt-2">
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 6, alignItems: "center" }}
+                contentContainerStyle={{ gap: 6, paddingRight: 8, alignItems: "center" }}
               >
-                <FilterChip
-                  label="⭐ 4+"
-                  active={minRating === 4}
-                  onPress={() => setMinRating((v) => (v === 4 ? null : 4))}
-                />
-                <FilterChip
-                  label="Curated"
-                  active={curatedOnly}
-                  onPress={() => setCuratedOnly((v) => !v)}
-                />
-                <FilterChip
-                  label="Open now"
-                  active={openNowOnly}
-                  onPress={() => setOpenNowOnly((v) => !v)}
-                />
+                <Pressable
+                  onPress={clearCategoryFilter}
+                  className={`rounded-full border px-2.5 py-1 ${
+                    selectedCategories.size === 0
+                      ? "border-primary bg-primary/15"
+                      : "border-border bg-muted/70"
+                  }`}
+                >
+                  <Text
+                    className={`text-[11px] font-semibold ${
+                      selectedCategories.size === 0 ? "text-primary" : "text-muted-foreground"
+                    }`}
+                  >
+                    All
+                  </Text>
+                </Pressable>
+                {allCategories.map((cat) => {
+                  const inFilter = selectedCategories.has(cat);
+                  const active = selectedCategories.size === 0 ? false : inFilter;
+                  const accent = pinColorForCategory(cat);
+                  return (
+                    <Pressable
+                      key={cat}
+                      onPress={() => toggleCategory(cat)}
+                      className="rounded-full border px-2.5 py-1"
+                      style={{
+                        borderColor: accent,
+                        backgroundColor: active ? withOpacity(accent, 0.16) : "transparent",
+                      }}
+                    >
+                      <Text
+                        className={`text-[11px] font-semibold ${active ? "" : "text-muted-foreground"}`}
+                        style={active ? { color: accent } : undefined}
+                        numberOfLines={1}
+                      >
+                        {formatCategoryLabel(cat)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
-              <View className="flex-row items-center justify-between rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1">
-                <Text className="text-[10px] font-bold text-foreground">Itinerary only</Text>
-                <Switch value={itineraryOnly} onValueChange={setItineraryOnly} />
-              </View>
             </View>
-          ) : null}
+
+            {filtersExpanded ? (
+              <View className="mt-1.5 gap-1.5 border-t border-border/60 pt-2 flex-row">
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6, alignItems: "center" }}
+                >
+                  <FilterChip
+                    label="⭐ 4+"
+                    active={minRating === 4}
+                    onPress={() => setMinRating((v) => (v === 4 ? null : 4))}
+                  />
+                  <FilterChip
+                    label="Curated"
+                    active={curatedOnly}
+                    onPress={() => setCuratedOnly((v) => !v)}
+                  />
+                  <FilterChip
+                    label="Open now"
+                    active={openNowOnly}
+                    onPress={() => setOpenNowOnly((v) => !v)}
+                  />
+                </ScrollView>
+                <View className="flex-row items-center justify-between rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1">
+                  <Text className="text-[10px] font-bold text-foreground">Itinerary only</Text>
+                  <Switch value={itineraryOnly} onValueChange={setItineraryOnly} />
+                </View>
+              </View>
+            ) : null}
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Direction (area) + my location — bottom right */}
       <View
@@ -2040,13 +2658,6 @@ export function InteractiveMapScreen() {
         style={{ bottom: insets.bottom + tabBarHeight + 50 }}
         pointerEvents="box-none"
       >
-        <Pressable
-          onPress={recenterDestination}
-          accessibilityLabel={searchSelection ? "Focus searched area" : "Focus destination area"}
-          className="h-12 w-12 items-center justify-center rounded-2xl border border-primary/30 bg-primary shadow-md active:opacity-90"
-        >
-          <Navigation size={20} color="#fff" />
-        </Pressable>
         <Pressable
           onPress={recenterUser}
           accessibilityLabel="My location"
@@ -2075,7 +2686,163 @@ export function InteractiveMapScreen() {
             colorScheme === "dark" ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
         }}
       >
-        {sheetMode === "list" ? (
+        {navigationPlannerVisible ? (
+          <BottomSheetScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingBottom: 16,
+              gap: 16,
+            }}
+          >
+            <View className="gap-4">
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="min-w-0 flex-1">
+                  <Text className="text-2xl font-bold text-foreground">{plannerModeLabel}</Text>
+                  <Text className="mt-1 text-sm text-muted-foreground">
+                    Tap the route fields above to change your start, destination, or stops.
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={closeNavigationPlanner}
+                  hitSlop={8}
+                  accessibilityLabel="Close route planner"
+                  className="h-11 w-11 items-center justify-center rounded-2xl border border-border bg-background active:opacity-80"
+                >
+                  <X size={20} color={labelForeground} />
+                </Pressable>
+              </View>
+
+              <View className="flex-row gap-2">
+                <NavigationModeChip
+                  label="Drive"
+                  icon={
+                    <CarFront
+                      size={15}
+                      color={navigationDraft?.mode === "driving" ? "#fff" : labelForeground}
+                    />
+                  }
+                  active={navigationDraft?.mode === "driving"}
+                  onPress={() => setNavigationRouteMode("driving")}
+                />
+                <NavigationModeChip
+                  label="Walk"
+                  icon={
+                    <Footprints
+                      size={15}
+                      color={navigationDraft?.mode === "walking" ? "#fff" : labelForeground}
+                    />
+                  }
+                  active={navigationDraft?.mode === "walking"}
+                  onPress={() => setNavigationRouteMode("walking")}
+                />
+                <NavigationModeChip
+                  label="Cycle"
+                  icon={
+                    <Bike
+                      size={15}
+                      color={navigationDraft?.mode === "cycling" ? "#fff" : labelForeground}
+                    />
+                  }
+                  active={navigationDraft?.mode === "cycling"}
+                  onPress={() => setNavigationRouteMode("cycling")}
+                />
+              </View>
+
+              <View
+                className="rounded-3xl border border-border/70 px-4 py-4"
+                style={{ backgroundColor: routeSummaryBackgroundColor }}
+              >
+                {navigationDraft?.origin?.usesLiveLocation && !userCoord ? (
+                  <Text className="text-sm text-muted-foreground">
+                    Waiting for your live location to preview the route.
+                  </Text>
+                ) : routePreviewQuery.isPending ? (
+                  <View className="flex-row items-center gap-3">
+                    <ActivityIndicator size="small" />
+                    <Text className="text-sm text-muted-foreground">Loading route overview…</Text>
+                  </View>
+                ) : routePreview ? (
+                  <>
+                    <Text className="text-3xl font-bold text-foreground">
+                      {formatRouteDuration(routePreview.durationSeconds)}
+                    </Text>
+                    <Text className="mt-2 text-base font-semibold text-foreground">
+                      {formatDistanceFromKm(routePreview.distanceMeters / 1000, unitSystem)}
+                    </Text>
+                    <Text className="mt-2 text-sm text-muted-foreground">
+                      Route overview loaded. Press Start when you’re ready for turn-by-turn
+                      guidance.
+                    </Text>
+                  </>
+                ) : routePreviewQuery.isError ? (
+                  <Text className="text-sm text-destructive">
+                    {(routePreviewQuery.error as Error | undefined)?.message ??
+                      "Could not preview this route right now."}
+                  </Text>
+                ) : (
+                  <Text className="text-sm text-muted-foreground">
+                    Pick both a starting point and destination to preview the route.
+                  </Text>
+                )}
+              </View>
+
+              <View className="gap-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-sm font-semibold text-foreground">Stops</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {navigationDraft?.waypoints.length ?? 0}/{MAX_MAP_NAVIGATION_WAYPOINTS}
+                  </Text>
+                </View>
+                {navigationDraft?.waypoints.length ? (
+                  <View className="flex-row flex-wrap gap-2">
+                    {navigationDraft.waypoints.map((waypoint, index) => (
+                      <NavigationWaypointChip
+                        key={`${waypoint.id}-${index}`}
+                        label={waypoint.coordinate ? waypoint.label : `Stop ${index + 1}`}
+                        onPress={() => openNavigationFieldPicker({ kind: "waypoint", index })}
+                        onRemove={() => removeNavigationWaypoint(index)}
+                      />
+                    ))}
+                  </View>
+                ) : (
+                  <Text className="text-sm text-muted-foreground">
+                    No stops yet. Add up to three waypoints.
+                  </Text>
+                )}
+              </View>
+
+              <View className="flex-row gap-2">
+                <Pressable
+                  onPress={addNavigationWaypoint}
+                  disabled={
+                    (navigationDraft?.waypoints.length ?? 0) >= MAX_MAP_NAVIGATION_WAYPOINTS
+                  }
+                  className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 active:opacity-80 disabled:opacity-50"
+                >
+                  <Plus size={16} color={labelForeground} />
+                  <Text className="text-sm font-semibold text-foreground">Add stop</Text>
+                </Pressable>
+                <Pressable
+                  onPress={swapNavigationEndpoints}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 active:opacity-80"
+                >
+                  <ArrowUpDown size={16} color={labelForeground} />
+                  <Text className="text-sm font-semibold text-foreground">Swap</Text>
+                </Pressable>
+              </View>
+
+              <Button
+                label="Start"
+                onPress={startTurnByTurnNavigation}
+                disabled={
+                  !routePreview || routePreviewQuery.isPending || routePreviewCoordinates.length < 2
+                }
+                className="w-full"
+              />
+            </View>
+          </BottomSheetScrollView>
+        ) : sheetMode === "list" ? (
           <BottomSheetFlatList
             data={orderedPlaces}
             keyExtractor={(item) => item.id}
@@ -2230,6 +2997,27 @@ export function InteractiveMapScreen() {
                     {placeDetail.description}
                   </Text>
                 ) : null}
+                {placeDetail.address ? (
+                  <View className="flex-row items-center gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-3">
+                    <View className="h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                      <Navigation size={16} color={primaryIconColor} />
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Address
+                      </Text>
+                      <Text className="mt-1 text-sm text-foreground">{placeDetail.address}</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => previewNavigationToSavedPlace(placeDetail)}
+                      hitSlop={8}
+                      accessibilityLabel="Navigate to this place"
+                      className="h-10 w-10 items-center justify-center rounded-xl bg-primary/15 active:opacity-80"
+                    >
+                      <Route size={18} color={primaryIconColor} />
+                    </Pressable>
+                  </View>
+                ) : null}
                 <View className="gap-3 pb-1">
                   {eligibleTrip && !placeInItinerary ? (
                     <Button
@@ -2303,13 +3091,49 @@ export function InteractiveMapScreen() {
                   </View>
                 </View>
                 {selectedExternalPlace.fullAddress ? (
-                  <Text className="text-sm leading-6 text-muted-foreground">
-                    {selectedExternalPlace.fullAddress}
-                  </Text>
+                  <View className="flex-row items-center gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-3">
+                    <View className="h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                      <Navigation size={16} color={primaryIconColor} />
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Address
+                      </Text>
+                      <Text className="mt-1 text-sm text-foreground">
+                        {selectedExternalPlace.fullAddress}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => previewNavigationToExternalPlace(selectedExternalPlace)}
+                      hitSlop={8}
+                      accessibilityLabel="Navigate to this place"
+                      className="h-10 w-10 items-center justify-center rounded-xl bg-primary/15 active:opacity-80"
+                    >
+                      <Route size={18} color={primaryIconColor} />
+                    </Pressable>
+                  </View>
                 ) : selectedExternalPlace.address ? (
-                  <Text className="text-sm leading-6 text-muted-foreground">
-                    {selectedExternalPlace.address}
-                  </Text>
+                  <View className="flex-row items-center gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-3">
+                    <View className="h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                      <Navigation size={16} color={primaryIconColor} />
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Address
+                      </Text>
+                      <Text className="mt-1 text-sm text-foreground">
+                        {selectedExternalPlace.address}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => previewNavigationToExternalPlace(selectedExternalPlace)}
+                      hitSlop={8}
+                      accessibilityLabel="Navigate to this place"
+                      className="h-10 w-10 items-center justify-center rounded-xl bg-primary/15 active:opacity-80"
+                    >
+                      <Route size={18} color={primaryIconColor} />
+                    </Pressable>
+                  </View>
                 ) : selectedExternalPlace.subtitle ? (
                   <Text className="text-sm leading-6 text-muted-foreground">
                     {selectedExternalPlace.subtitle}
@@ -2322,7 +3146,200 @@ export function InteractiveMapScreen() {
           </BottomSheetScrollView>
         )}
       </BottomSheet>
+      <KeyboardSheetModal
+        visible={editingNavigationField != null}
+        title={
+          editingNavigationField?.kind === "origin"
+            ? "Choose starting point"
+            : editingNavigationField?.kind === "destination"
+              ? "Choose destination"
+              : `Choose stop ${(editingNavigationField?.index ?? 0) + 1}`
+        }
+        onClose={() => {
+          setEditingNavigationField(null);
+          setNavigationFieldQuery("");
+          setResolvingNavigationFieldId(null);
+        }}
+        minHeight={340}
+        maxHeight={560}
+        footer={
+          editingNavigationField?.kind === "origin" ? (
+            <Button
+              label="Use my live location"
+              variant="secondary"
+              onPress={useCurrentLocationForOrigin}
+            />
+          ) : undefined
+        }
+      >
+        <View className="gap-3">
+          <View className="flex-row items-center rounded-2xl border border-border bg-background/80 px-3 py-2">
+            <Search size={16} color={labelForeground} />
+            <TextInput
+              value={navigationFieldQuery}
+              onChangeText={setNavigationFieldQuery}
+              placeholder="Search for a place or address"
+              placeholderTextColor={
+                colorScheme === "dark" ? THEME.dark.mutedForeground : THEME.light.mutedForeground
+              }
+              className="ml-2 flex-1 py-0 text-sm text-foreground"
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {navigationFieldQuery.length > 0 ? (
+              <Pressable
+                onPress={() => setNavigationFieldQuery("")}
+                hitSlop={6}
+                className="ml-2 h-7 w-7 items-center justify-center rounded-full bg-muted/80 active:opacity-80"
+              >
+                <X size={14} color={labelForeground} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {navigationFieldQueryDebounced.trim().length < 2 ? (
+            <Text className="text-sm text-muted-foreground">
+              Type at least 2 characters to search Mapbox for a stop.
+            </Text>
+          ) : navigationFieldSuggestionsQuery.isPending ? (
+            <View className="flex-row items-center gap-3 py-2">
+              <ActivityIndicator size="small" />
+              <Text className="text-sm text-muted-foreground">Searching Mapbox…</Text>
+            </View>
+          ) : navigationFieldSuggestions.length > 0 ? (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View className="gap-2 pb-2">
+                {navigationFieldSuggestions.map((suggestion) => (
+                  <Pressable
+                    key={suggestion.mapboxId}
+                    onPress={() => {
+                      void selectNavigationSuggestion(suggestion);
+                    }}
+                    className="flex-row items-center gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-3 active:opacity-80"
+                  >
+                    <View className="h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                      {resolvingNavigationFieldId === suggestion.mapboxId ? (
+                        <ActivityIndicator size="small" />
+                      ) : (
+                        <Navigation size={15} color={primaryIconColor} />
+                      )}
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                        {suggestion.name}
+                      </Text>
+                      <Text className="text-[11px] text-muted-foreground" numberOfLines={2}>
+                        {formatMapboxSearchSubtitle(suggestion)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          ) : navigationFieldSuggestionsQuery.isError ? (
+            <Text className="text-sm text-destructive">
+              {(navigationFieldSuggestionsQuery.error as Error | undefined)?.message ??
+                "Could not load search suggestions."}
+            </Text>
+          ) : (
+            <Text className="text-sm text-muted-foreground">No matching locations found.</Text>
+          )}
+        </View>
+      </KeyboardSheetModal>
     </View>
+  );
+}
+
+function NavigationPlannerCompactField({
+  icon,
+  value,
+  subtitle,
+  onPress,
+}: {
+  icon: ReactNode;
+  value: string;
+  subtitle: string | null;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center gap-3 rounded-2xl px-1.5 py-1.5 active:opacity-80"
+    >
+      <View className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">{icon}</View>
+      <View className="min-w-0 flex-1">
+        <Text className="text-xl font-medium text-foreground" numberOfLines={1}>
+          {value}
+        </Text>
+        {subtitle ? (
+          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function NavigationWaypointChip({
+  label,
+  onPress,
+  onRemove,
+}: {
+  label: string;
+  onPress: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center gap-2 rounded-full border border-border bg-background px-3 py-2 active:opacity-80"
+    >
+      <Route size={14} color="#E25547" />
+      <Text className="max-w-[140px] text-sm font-medium text-foreground" numberOfLines={1}>
+        {label}
+      </Text>
+      <Pressable
+        onPress={(event) => {
+          event.stopPropagation();
+          onRemove();
+        }}
+        hitSlop={6}
+        accessibilityLabel={`Remove ${label}`}
+        className="h-5 w-5 items-center justify-center rounded-full bg-muted"
+      >
+        <X size={11} color="#71717A" />
+      </Pressable>
+    </Pressable>
+  );
+}
+
+function NavigationModeChip({
+  label,
+  icon,
+  active,
+  onPress,
+}: {
+  label: string;
+  icon: ReactNode;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`flex-1 flex-row items-center justify-center gap-2 rounded-2xl px-3 py-2.5 ${
+        active ? "bg-primary" : "border border-border bg-background/70"
+      }`}
+    >
+      {icon}
+      <Text
+        className={`text-sm font-semibold ${active ? "text-primary-foreground" : "text-foreground"}`}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
