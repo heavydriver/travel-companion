@@ -53,10 +53,20 @@ export const languageService = {
       }
     }
 
-    const phraseWhere = {
-      languageId,
-      ...(destinationId ? { destinationId } : {}),
-    };
+    const phraseWhere: { languageId: string; destinationId?: string } = { languageId };
+
+    if (destinationId) {
+      const destinationScopedPhrase = await prisma.phrase.findFirst({
+        where: { languageId, destinationId },
+        select: { id: true },
+      });
+
+      // Prefer destination-specific phrases when they exist, but fall back to
+      // all phrases for the language so switching languages never looks empty.
+      if (destinationScopedPhrase) {
+        phraseWhere.destinationId = destinationId;
+      }
+    }
 
     const currentPage = Number.isFinite(page) && page > 0 ? page : 1;
     const skip = (currentPage - 1) * PAGE_SIZE;
