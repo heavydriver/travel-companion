@@ -64,10 +64,23 @@ export type OfflinePackCurrency = {
   rates: Record<string, number>;
 };
 
+export type OfflinePackBaseMapRegion = {
+  packName: string;
+  styleUrl: string;
+  bounds: [[number, number], [number, number]];
+  minZoom: number;
+  maxZoom: number;
+  downloadedAt: string;
+  completedTileCount: number;
+  completedResourceCount: number;
+  completedResourceSize: number;
+};
+
 export type OfflinePackMaps = {
   places: MapSessionPlace[];
   offlineBaseMapAvailable: boolean;
   offlineNavigationAvailable: boolean;
+  baseMapRegion: OfflinePackBaseMapRegion | null;
 };
 
 export type OfflinePackImages = {

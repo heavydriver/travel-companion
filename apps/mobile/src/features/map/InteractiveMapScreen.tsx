@@ -67,7 +67,11 @@ import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import { KeyboardSheetModal } from "@/components/shared/KeyboardSheetModal";
 import { PlaceCard } from "@/components/shared/PlaceCard";
-import { findOfflinePackByPlaceId, getOfflinePlaceFromPack } from "@/features/offline/pack";
+import {
+  findOfflinePackByPlaceId,
+  getOfflinePlaceFromPack,
+  useOfflinePackQuery,
+} from "@/features/offline/pack";
 import { useDebounce } from "@/hooks/useDebounce";
 import { THEME } from "@/lib/theme";
 import { formatDistanceFromKm } from "@/lib/units";
@@ -99,9 +103,8 @@ import {
   retrieveMapboxSearchFeature,
   reverseMapboxSearchByCoordinate,
 } from "./mapboxSearchBox";
+import { DARK_MAP_STYLE, LIGHT_MAP_STYLE } from "./mapStyles";
 
-const DARK_MAP_STYLE = "mapbox://styles/varun-11/cmo7dh5kl001001qshs9chyef";
-const LIGHT_MAP_STYLE = "mapbox://styles/varun-11/cmo7dnxyi003001ql58s51upl";
 const MAP_PINS_SOURCE_ID = "travel-map-pins";
 const MAP_PINS_HALO_LAYER_ID = "travel-map-pins-halo";
 const MAP_PINS_LAYER_ID = "travel-map-pins-circle";
@@ -479,6 +482,7 @@ export function InteractiveMapScreen() {
   const queryClient = useQueryClient();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const isConnected = useNetworkStore((s) => s.isConnected);
+  const hasInternetReachability = useNetworkStore((s) => s.isInternetReachable === true);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -760,6 +764,7 @@ export function InteractiveMapScreen() {
       : storeTrips.filter((t) => t.destination.id === tripDestinationScopeId);
     return getEligibleTripForDestination(list, tripDestinationScopeId);
   }, [tripDestinationScopeId, tripsQuery.data, tripsQuery.isSuccess, storeTrips]);
+  const offlineScopePackQuery = useOfflinePackQuery(tripDestinationScopeId);
 
   const activeNearbyTrips = useMemo(
     () => storeTrips.filter((trip) => !isTripPast(trip.endDate)),
@@ -2014,7 +2019,10 @@ export function InteractiveMapScreen() {
     showPlaceList,
   ]);
 
-  const mapStyle = colorScheme === "dark" ? DARK_MAP_STYLE : LIGHT_MAP_STYLE;
+  const offlineMapStyle = !(isConnected && hasInternetReachability)
+    ? offlineScopePackQuery.data?.maps.baseMapRegion?.styleUrl
+    : null;
+  const mapStyle = offlineMapStyle ?? (colorScheme === "dark" ? DARK_MAP_STYLE : LIGHT_MAP_STYLE);
 
   if (!tokenOk) {
     return (

@@ -17,6 +17,7 @@ export type OfflinePack = {
   downloadedAt: string;
   placesCount: number;
   phrasesCount: number;
+  offlineBaseMapAvailable?: boolean;
 };
 
 type OfflineState = {

@@ -1,7 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
+import Mapbox, { offlineManager } from "@rnmapbox/maps";
 import { Image } from "expo-image";
 import { client } from "@/api/client";
 import type { PhraseItem, LanguageListItem } from "@/features/language-guide/types";
+import { ensureMapboxToken } from "@/features/map/ensureMapboxToken";
+import {
+  OFFLINE_BASE_MAP_MAX_ZOOM,
+  OFFLINE_BASE_MAP_MIN_ZOOM,
+  OFFLINE_BASE_MAP_STYLE_URL,
+} from "@/features/map/mapStyles";
 import { useOfflineStore } from "@/store/offlineStore";
 import type { MapSession, MapSessionPlace } from "@/store/mapSessionStore";
 import type {
@@ -13,6 +20,8 @@ import type {
   OfflineTripItineraryItem,
 } from "./types";
 
+type OfflineMapBounds = [[number, number], [number, number]];
+
 type DestinationDetailResponse = {
   destination: OfflinePackDestination;
   curatedPlaces: OfflinePackPlaceSummary[];
@@ -20,6 +29,9 @@ type DestinationDetailResponse = {
 };
 
 type SupportedCurrency = { code: string; name: string; country: string };
+
+const OFFLINE_MAP_BOUNDS_PADDING_RATIO = 0.18;
+const OFFLINE_MAP_MIN_PAD_DEGREES = 0.04;
 
 function dedupeById<T extends { id: string }>(items: T[]) {
   return items.filter(
@@ -74,6 +86,167 @@ function placeDetailToMapPlace(place: OfflinePackPlaceDetail): MapSessionPlace {
     isFeatured: place.isFeatured,
     openingHours: place.openingHours ?? null,
   };
+}
+
+function clampLatitude(value: number) {
+  return Math.max(-85, Math.min(85, value));
+}
+
+function clampLongitude(value: number) {
+  return Math.max(-180, Math.min(180, value));
+}
+
+function buildOfflineBaseMapPackName(destinationId: string) {
+  return `travel-companion:${destinationId}:base-map:v1`;
+}
+
+function buildOfflineBaseMapBounds(
+  destination: Pick<OfflinePackDestination, "latitude" | "longitude">,
+  places: Array<Pick<OfflinePackPlaceSummary, "latitude" | "longitude">>,
+): OfflineMapBounds {
+  const coordinates = [
+    [destination.longitude, destination.latitude] as const,
+    ...places
+      .map((place) => [place.longitude, place.latitude] as const)
+      .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat)),
+  ];
+
+  let minLng = coordinates[0]?.[0] ?? destination.longitude;
+  let maxLng = minLng;
+  let minLat = coordinates[0]?.[1] ?? destination.latitude;
+  let maxLat = minLat;
+
+  for (const [lng, lat] of coordinates) {
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+
+  const lngSpan = Math.max(maxLng - minLng, OFFLINE_MAP_MIN_PAD_DEGREES * 2);
+  const latSpan = Math.max(maxLat - minLat, OFFLINE_MAP_MIN_PAD_DEGREES * 2);
+  const lngPad = Math.max(OFFLINE_MAP_MIN_PAD_DEGREES, lngSpan * OFFLINE_MAP_BOUNDS_PADDING_RATIO);
+  const latPad = Math.max(OFFLINE_MAP_MIN_PAD_DEGREES, latSpan * OFFLINE_MAP_BOUNDS_PADDING_RATIO);
+
+  return [
+    [clampLongitude(maxLng + lngPad), clampLatitude(maxLat + latPad)],
+    [clampLongitude(minLng - lngPad), clampLatitude(minLat - latPad)],
+  ];
+}
+
+function isOfflineBaseMapComplete(status: {
+  state: string | number;
+  percentage: number;
+  completedResourceCount: number;
+  requiredResourceCount: number;
+}) {
+  return (
+    status.state === Mapbox.OfflinePackDownloadState.Complete ||
+    status.percentage >= 100 ||
+    (status.requiredResourceCount > 0 &&
+      status.completedResourceCount >= status.requiredResourceCount)
+  );
+}
+
+async function downloadOfflineBaseMap(
+  destinationId: string,
+  destination: OfflinePackDestination,
+  places: OfflinePackPlaceSummary[],
+) {
+  if (!ensureMapboxToken()) {
+    return {
+      offlineBaseMapAvailable: false,
+      baseMapRegion: null,
+    } as const;
+  }
+
+  const packName = buildOfflineBaseMapPackName(destinationId);
+  const bounds = buildOfflineBaseMapBounds(destination, places);
+
+  try {
+    offlineManager.unsubscribe(packName);
+    const existingPack = await offlineManager.getPack(packName);
+    if (existingPack) {
+      await offlineManager.deletePack(packName);
+    }
+
+    const completedStatus = await new Promise<{
+      completedTileCount: number;
+      completedResourceCount: number;
+      completedResourceSize: number;
+    }>((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        offlineManager.unsubscribe(packName);
+      };
+
+      const resolveOnce = (value: {
+        completedTileCount: number;
+        completedResourceCount: number;
+        completedResourceSize: number;
+      }) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const rejectOnce = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error instanceof Error ? error : new Error("Offline base map download failed"));
+      };
+
+      void offlineManager
+        .createPack(
+          {
+            name: packName,
+            styleURL: OFFLINE_BASE_MAP_STYLE_URL,
+            bounds,
+            minZoom: OFFLINE_BASE_MAP_MIN_ZOOM,
+            maxZoom: OFFLINE_BASE_MAP_MAX_ZOOM,
+            metadata: {
+              destinationId,
+              scope: "offline-base-map",
+            },
+          },
+          (_pack, status) => {
+            if (!isOfflineBaseMapComplete(status)) return;
+            resolveOnce({
+              completedTileCount: status.completedTileCount,
+              completedResourceCount: status.completedResourceCount,
+              completedResourceSize: status.completedResourceSize,
+            });
+          },
+          (_pack, error) => {
+            rejectOnce(new Error(error.message || "Offline base map download failed"));
+          },
+        )
+        .catch(rejectOnce);
+    });
+
+    return {
+      offlineBaseMapAvailable: true,
+      baseMapRegion: {
+        packName,
+        styleUrl: OFFLINE_BASE_MAP_STYLE_URL,
+        bounds,
+        minZoom: OFFLINE_BASE_MAP_MIN_ZOOM,
+        maxZoom: OFFLINE_BASE_MAP_MAX_ZOOM,
+        downloadedAt: new Date().toISOString(),
+        completedTileCount: completedStatus.completedTileCount,
+        completedResourceCount: completedStatus.completedResourceCount,
+        completedResourceSize: completedStatus.completedResourceSize,
+      },
+    } as const;
+  } catch {
+    return {
+      offlineBaseMapAvailable: false,
+      baseMapRegion: null,
+    } as const;
+  }
 }
 
 async function fetchAllPhrasesForLanguage(language: LanguageListItem, destinationId: string) {
@@ -264,6 +437,11 @@ export async function downloadOfflinePack(destinationId: string) {
       },
     ),
   );
+  const offlineBaseMap = await downloadOfflineBaseMap(
+    destinationId,
+    destinationDetail.destination,
+    placesWithDetails,
+  );
 
   const downloadedAt = new Date().toISOString();
   const pack: OfflinePackData = {
@@ -280,8 +458,9 @@ export async function downloadOfflinePack(destinationId: string) {
     currency,
     maps: {
       places: mapPlaces,
-      offlineBaseMapAvailable: false,
+      offlineBaseMapAvailable: offlineBaseMap.offlineBaseMapAvailable,
       offlineNavigationAvailable: false,
+      baseMapRegion: offlineBaseMap.baseMapRegion,
     },
     images,
   };

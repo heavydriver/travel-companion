@@ -374,6 +374,7 @@ export default function TripDetailScreen() {
           downloadedAt: pack.downloadedAt,
           placesCount: counts.placesCount,
           phrasesCount: counts.phrasesCount,
+          offlineBaseMapAvailable: pack.maps.offlineBaseMapAvailable,
         },
         data,
       );
@@ -547,7 +548,8 @@ export default function TripDetailScreen() {
                     Offline pack downloaded
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    {packMeta?.placesCount} places · {packMeta?.phrasesCount} phrases
+                    {packMeta?.placesCount} places · {packMeta?.phrasesCount} phrases ·{" "}
+                    {packMeta?.offlineBaseMapAvailable ? "offline maps ready" : "maps unavailable"}
                   </Text>
                 </View>
               </View>
@@ -563,8 +565,8 @@ export default function TripDetailScreen() {
                     {downloading === destId ? "Downloading..." : "Download Offline Pack"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    Save destination details, places, phrases, weather, currency, maps, itinerary,
-                    and images
+                    Save destination details, places, phrases, weather, currency, itinerary,
+                    images, and a lightweight offline base map
                   </Text>
                 </View>
                 {downloading === destId && <ActivityIndicator size="small" />}
