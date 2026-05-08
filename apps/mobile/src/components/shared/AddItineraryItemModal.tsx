@@ -6,7 +6,14 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Platform, Pressable, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { client } from "@/api/client";
-import { formatDate, toDateOnly } from "@/lib/utils";
+import {
+  addOfflineTripItem,
+  addOptimisticTripItemToCache,
+  restoreOptimisticTripItems,
+} from "@/features/offline/itinerary";
+import { formatDate, toDeviceDateIso } from "@/lib/utils";
+import { useNetworkStore } from "@/store/networkStore";
+import { useOfflineStore } from "@/store/offlineStore";
 import { Button } from "./Button";
 import { IOSDateTimePickerModal } from "./IOSDateTimePickerModal";
 import { KeyboardSheetModal } from "./KeyboardSheetModal";
@@ -17,11 +24,21 @@ type AddItineraryItemModalProps = {
   defaultDate: Date;
   tripStartDate?: Date;
   tripEndDate?: Date;
+  offlineDestinationId?: string | null;
   initialTitle?: string;
   initialPlaceId?: string | null;
   onClose: () => void;
   onSuccess: () => void;
   onSuccessMessage?: (title: string) => void;
+};
+
+type AddItemMutationInput = {
+  title: string;
+  notes: string;
+  dateIso: string;
+  startTime: string | null;
+  endTime: string | null;
+  placeId: string | null;
 };
 
 function hasInvalidTimeRange(startTime: Date | null, endTime: Date | null) {
@@ -35,6 +52,7 @@ export function AddItineraryItemModal({
   defaultDate,
   tripStartDate,
   tripEndDate,
+  offlineDestinationId,
   initialTitle,
   initialPlaceId,
   onClose,
@@ -79,21 +97,76 @@ export function AddItineraryItemModal({
   const maxModalHeight = Math.min(screenHeight * 0.76, 640);
 
   const addMutation = useMutation({
-    mutationFn: async (values: { title: string; notes: string }) => {
+    networkMode: "always",
+    mutationFn: async (values: AddItemMutationInput) => {
       if (hasInvalidTimeRange(startTimeDate, endTimeDate)) {
         throw new Error("Start time must be earlier than end time");
       }
-      const dateStr = toDateOnly(selectedDate);
+      const networkState = useNetworkStore.getState();
+      const onlineNow =
+        networkState.isConnected && networkState.isInternetReachable === true;
+      const offlineDownloadedNow = offlineDestinationId
+        ? useOfflineStore.getState().isDownloaded(offlineDestinationId)
+        : false;
+      if (offlineDownloadedNow || !onlineNow) {
+        await addOfflineTripItem(tripId, {
+          tripId,
+          title: values.title,
+          date: values.dateIso,
+          startTime: values.startTime,
+          endTime: values.endTime,
+          notes: values.notes || null,
+          placeId: values.placeId,
+          isDone: false,
+        });
+        return values.title;
+      }
       const res = await client.api.v1.trips({ tripId })["itinerary-items"].post({
         title: values.title,
-        date: new Date(dateStr).toISOString(),
-        ...(startTimeDate && { startTime: formatTime(startTimeDate) }),
-        ...(endTimeDate && { endTime: formatTime(endTimeDate) }),
+        date: values.dateIso,
+        ...(values.startTime && { startTime: values.startTime }),
+        ...(values.endTime && { endTime: values.endTime }),
         ...(values.notes && { notes: values.notes }),
-        ...(linkedPlaceId ? { placeId: linkedPlaceId } : {}),
+        ...(values.placeId ? { placeId: values.placeId } : {}),
       });
       if (res.error) throw new Error("Failed to add item");
       return values.title;
+    },
+    onMutate: async (values) => {
+      const networkState = useNetworkStore.getState();
+      const onlineNow =
+        networkState.isConnected && networkState.isInternetReachable === true;
+      const offlineDownloadedNow = offlineDestinationId
+        ? useOfflineStore.getState().isDownloaded(offlineDestinationId)
+        : false;
+      if (offlineDownloadedNow || !onlineNow) {
+        return {
+          previousItems: null as ReturnType<typeof addOptimisticTripItemToCache>["previous"] | null,
+        };
+      }
+      const { previous } = addOptimisticTripItemToCache(tripId, {
+        tripId,
+        title: values.title,
+        date: values.dateIso,
+        startTime: values.startTime,
+        endTime: values.endTime,
+        notes: values.notes || null,
+        placeId: values.placeId,
+        isDone: false,
+      });
+      return { previousItems: previous };
+    },
+    onError: (_error, _vars, context) => {
+      const networkState = useNetworkStore.getState();
+      const onlineNow =
+        networkState.isConnected && networkState.isInternetReachable === true;
+      const offlineDownloadedNow = offlineDestinationId
+        ? useOfflineStore.getState().isDownloaded(offlineDestinationId)
+        : false;
+      if (offlineDownloadedNow || !onlineNow || !context?.previousItems) {
+        return;
+      }
+      restoreOptimisticTripItems(tripId, context.previousItems);
     },
     onSuccess: (title) => {
       reset();
@@ -104,6 +177,17 @@ export function AddItineraryItemModal({
       onSuccessMessage?.(title);
       onSuccess();
     },
+  });
+
+  const handleAdd = handleSubmit((values) => {
+    addMutation.mutate({
+      title: values.title,
+      notes: values.notes,
+      dateIso: toDeviceDateIso(selectedDate),
+      startTime: startTimeDate ? formatTime(startTimeDate) : null,
+      endTime: endTimeDate ? formatTime(endTimeDate) : null,
+      placeId: linkedPlaceId,
+    });
   });
 
   const handleClose = () => {
@@ -125,7 +209,7 @@ export function AddItineraryItemModal({
       footer={
         <Button
           label="Add to Itinerary"
-          onPress={() => void handleSubmit((v) => addMutation.mutate(v))()}
+          onPress={() => void handleAdd()}
           loading={addMutation.isPending}
           disabled={invalidTimeRange}
         />

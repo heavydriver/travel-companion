@@ -30,6 +30,7 @@ import { RichTextMessage } from "@/components/assistant/RichTextMessage";
 import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal";
 import { Button } from "@/components/shared/Button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { addOfflineTripItem } from "@/features/offline/itinerary";
 import {
   type AssistantReference,
   buildAssistantGrounding,
@@ -45,6 +46,8 @@ import type { PendingPlannerOperation } from "@/store/assistantStore";
 import { useAssistantStore } from "@/store/assistantStore";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
+import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
+import { useOfflineStore } from "@/store/offlineStore";
 import { useTripStore } from "@/store/tripStore";
 
 const STARTER_CHIPS = [
@@ -297,6 +300,12 @@ export default function AssistantScreen() {
   const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
   const activeTrip =
     (activeTripId ? trips.find((trip) => trip.id === activeTripId) : trips[0]) ?? null;
+  const activeTripOfflineItems = useOfflineItineraryStore((state) =>
+    activeTrip?.id ? state.tripItems[activeTrip.id] : undefined,
+  );
+  const activeTripHasOfflinePack = useOfflineStore((state) =>
+    activeTrip?.destination.id ? state.isDownloaded(activeTrip.destination.id) : false,
+  );
 
   const starterChips = useMemo(() => {
     const copy = [...STARTER_CHIPS];
@@ -321,8 +330,15 @@ export default function AssistantScreen() {
     const cached = queryClient.getQueryData<{
       items: Array<{ title: string; date: string }>;
     }>(["itinerary", activeTrip.id]);
-    return cached?.items ?? [];
-  }, [activeTrip?.id, activeThread?.messages.length]);
+    return activeTripHasOfflinePack
+      ? (activeTripOfflineItems ?? cached?.items ?? [])
+      : (cached?.items ?? []);
+  }, [
+    activeTrip?.id,
+    activeThread?.messages.length,
+    activeTripHasOfflinePack,
+    activeTripOfflineItems,
+  ]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -611,7 +627,7 @@ export default function AssistantScreen() {
     if (!activeTrip) {
       return;
     }
-    if (!isConnected) {
+    if (!isConnected && !activeTripHasOfflinePack) {
       Toast.show({
         type: "error",
         text1: "Internet required",
@@ -623,19 +639,34 @@ export default function AssistantScreen() {
     setAddingPlanMessageId(messageId);
     try {
       for (const item of proposal.itineraryItems) {
-        const res = await client.api.v1.trips({ tripId: activeTrip.id })["itinerary-items"].post({
-          title: item.title,
-          date: item.date,
-          startTime: item.startTime ?? undefined,
-          endTime: item.endTime ?? undefined,
-          notes: item.notes ?? undefined,
-        });
-        if (res.error) {
-          throw new Error(`Could not add "${item.title}" to the itinerary`);
+        if (activeTripHasOfflinePack) {
+          await addOfflineTripItem(activeTrip.id, {
+            tripId: activeTrip.id,
+            title: item.title,
+            date: item.date,
+            startTime: item.startTime ?? null,
+            endTime: item.endTime ?? null,
+            notes: item.notes ?? null,
+            placeId: null,
+            isDone: false,
+          });
+        } else {
+          const res = await client.api.v1.trips({ tripId: activeTrip.id })["itinerary-items"].post({
+            title: item.title,
+            date: item.date,
+            startTime: item.startTime ?? undefined,
+            endTime: item.endTime ?? undefined,
+            notes: item.notes ?? undefined,
+          });
+          if (res.error) {
+            throw new Error(`Could not add "${item.title}" to the itinerary`);
+          }
         }
       }
 
-      await queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip.id] });
+      if (!activeTripHasOfflinePack) {
+        await queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip.id] });
+      }
       Toast.show({
         type: "success",
         text1: "Itinerary updated",
@@ -660,7 +691,7 @@ export default function AssistantScreen() {
     if (!activeTrip || reference.type !== "place") {
       return;
     }
-    if (!isConnected) {
+    if (!isConnected && !activeTripHasOfflinePack) {
       Toast.show({
         type: "error",
         text1: "Internet required",
@@ -1064,6 +1095,7 @@ export default function AssistantScreen() {
           defaultDate={defaultItineraryDateForTrip(activeTrip)}
           tripStartDate={parseIsoDate(activeTrip.startDate) ?? undefined}
           tripEndDate={parseIsoDate(activeTrip.endDate) ?? undefined}
+          offlineDestinationId={activeTrip.destination.id}
           initialTitle={selectedPlaceReference.name}
           initialPlaceId={selectedPlaceReference.id}
           onClose={() => setSelectedPlaceReference(null)}

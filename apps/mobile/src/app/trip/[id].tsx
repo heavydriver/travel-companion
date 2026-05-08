@@ -17,7 +17,7 @@ import {
   Trash2,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -36,8 +36,26 @@ import { IOSDateTimePickerModal } from "@/components/shared/IOSDateTimePickerMod
 import { KeyboardSheetModal } from "@/components/shared/KeyboardSheetModal";
 import { Screen } from "@/components/shared/Screen";
 import { Progress } from "@/components/ui/progress";
+import {
+  deleteOfflineTripItem,
+  deleteOptimisticTripItemFromCache,
+  restoreOptimisticTripItems,
+  seedOfflineTripItinerary,
+  updateOfflineTripItem,
+  updateOptimisticTripItemInCache,
+} from "@/features/offline/itinerary";
+import { downloadOfflinePack, getOfflinePackCounts } from "@/features/offline/pack";
+import type { OfflinePackData } from "@/features/offline/types";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
-import { formatDate, formatItineraryTimeRange, toDateOnly } from "@/lib/utils";
+import {
+  formatDate,
+  formatItineraryTimeRange,
+  toDateOnly,
+  toDeviceCalendarDate,
+  toDeviceDateIso,
+} from "@/lib/utils";
+import { useNetworkStore } from "@/store/networkStore";
+import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { analytics } from "@/utils/analytics";
 
@@ -52,12 +70,6 @@ type ItineraryItem = {
   order: number;
   isDone: boolean;
   placeId: string | null;
-};
-
-type OfflinePackPayload = {
-  packVersion?: number;
-  places?: unknown[];
-  phrases?: unknown[];
 };
 
 function parseTimeToDate(time: string | null): Date | null {
@@ -115,6 +127,7 @@ export default function TripDetailScreen() {
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
   const foreground = useUnstableNativeVariable("--foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
+  const isOnline = useNetworkStore((s) => s.isConnected && s.isInternetReachable === true);
 
   const { guardAction } = useOfflineGuard();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -177,24 +190,116 @@ export default function TripDetailScreen() {
     enabled: !!id,
   });
 
+  const offlineTripItemsByTrip = useOfflineItineraryStore((state) => state.tripItems);
+  const offlineTripItems = id ? offlineTripItemsByTrip[id] : undefined;
+
   const toggleDone = useMutation({
+    networkMode: "always",
     mutationFn: async ({ itemId, isDone }: { itemId: string; isDone: boolean }) => {
+      const shouldUseLocalMutation = Boolean(
+        id &&
+          trip?.destination?.id &&
+          (isPackDownloaded ||
+            !(
+              useNetworkStore.getState().isConnected &&
+              useNetworkStore.getState().isInternetReachable === true
+            )),
+      );
+      if (shouldUseLocalMutation) {
+        const updated = await updateOfflineTripItem(id, itemId, { isDone });
+        if (!updated) throw new Error("Failed to update");
+        return updated;
+      }
       const res = await client.api.v1["itinerary-items"]({ id: itemId }).patch({
         isDone,
       });
       if (res.error) throw new Error("Failed to update");
       return res.data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["itinerary", id] }),
+    onMutate: async ({ itemId, isDone }) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        )
+      ) {
+        return { previousItems: null as ItineraryItem[] | null };
+      }
+      const { previous } = updateOptimisticTripItemInCache(id, itemId, { isDone });
+      return { previousItems: previous as ItineraryItem[] };
+    },
+    onError: (_error, _vars, context) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        ) ||
+        !context?.previousItems
+      ) {
+        return;
+      }
+      restoreOptimisticTripItems(id, context.previousItems);
+    },
+    onSuccess: () => {
+      refreshRemoteItinerary();
+    },
   });
 
   const deleteItem = useMutation({
+    networkMode: "always",
     mutationFn: async (itemId: string) => {
+      const shouldUseLocalMutation = Boolean(
+        id &&
+          trip?.destination?.id &&
+          (isPackDownloaded ||
+            !(
+              useNetworkStore.getState().isConnected &&
+              useNetworkStore.getState().isInternetReachable === true
+            )),
+      );
+      if (shouldUseLocalMutation) {
+        await deleteOfflineTripItem(id, itemId);
+        return { success: true };
+      }
       const res = await client.api.v1["itinerary-items"]({ id: itemId }).delete();
       if (res.error) throw new Error("Failed to delete");
       return res.data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["itinerary", id] }),
+    onMutate: async (itemId) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        )
+      ) {
+        return { previousItems: null as ItineraryItem[] | null };
+      }
+      const { previous } = deleteOptimisticTripItemFromCache(id, itemId);
+      return { previousItems: previous as ItineraryItem[] };
+    },
+    onError: (_error, _itemId, context) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        ) ||
+        !context?.previousItems
+      ) {
+        return;
+      }
+      restoreOptimisticTripItems(id, context.previousItems);
+    },
+    onSuccess: () => {
+      refreshRemoteItinerary();
+    },
   });
 
   const deleteTrip = useMutation({
@@ -210,46 +315,98 @@ export default function TripDetailScreen() {
     },
   });
 
-  const items = (itemsQuery.data?.items ?? []) as ItineraryItem[];
-  const grouped = groupByDate(items);
-  const doneCount = items.filter((i) => i.isDone).length;
-  const progress = items.length > 0 ? doneCount / items.length : 0;
-
   const destId = trip?.destination?.id;
   const isPackDownloaded = useOfflineStore((s) => (destId ? s.isDownloaded(destId) : false));
   const packMeta = useOfflineStore((s) => (destId ? s.getPackMeta(destId) : undefined));
   const downloading = useOfflineStore((s) => s.downloading);
   const savePack = useOfflineStore((s) => s.savePack);
   const setDownloading = useOfflineStore((s) => s.setDownloading);
+  const refreshRemoteItinerary = useCallback(() => {
+    if (
+      isPackDownloaded ||
+      !(
+        useNetworkStore.getState().isConnected &&
+        useNetworkStore.getState().isInternetReachable === true
+      )
+    ) {
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: ["itinerary", id] });
+  }, [id, isPackDownloaded, queryClient]);
+  const guardItineraryAction = useCallback(
+    (action: () => void) => {
+      if (isPackDownloaded || !isOnline) {
+        action();
+        return;
+      }
+      guardAction(action);
+    },
+    [guardAction, isOnline, isPackDownloaded],
+  );
+  const openItem = useCallback(
+    (item: ItineraryItem) => {
+      if (item.placeId) {
+        router.push(`/place/${item.placeId}` as never);
+        return;
+      }
+      guardItineraryAction(() => setEditingItem(item));
+    },
+    [guardItineraryAction, router],
+  );
 
   const downloadPack = useMutation({
     mutationFn: async () => {
       if (!destId) throw new Error("No destination");
       setDownloading(destId);
-      const res = await client.api.v1["offline-pack"]({ destinationId: destId }).get();
-      if (res.error) throw new Error("Failed to download pack");
-      return res.data;
+      return downloadOfflinePack(destId);
     },
     onSuccess: (data) => {
       if (!destId || !trip || !data) return;
-      const pack = data as OfflinePackPayload;
-      savePack(
+      const pack = data as OfflinePackData;
+      const counts = getOfflinePackCounts(pack);
+      void savePack(
         {
           destinationId: destId,
           destinationName: trip.destination.name,
           country: trip.destination.countryCode,
           countryCode: trip.destination.countryCode,
-          packVersion: pack.packVersion ?? 1,
-          downloadedAt: new Date().toISOString(),
-          placesCount: (pack.places ?? []).length,
-          phrasesCount: (pack.phrases ?? []).length,
+          packVersion: pack.packVersion,
+          downloadedAt: pack.downloadedAt,
+          placesCount: counts.placesCount,
+          phrasesCount: counts.phrasesCount,
+          offlineBaseMapAvailable: pack.maps.offlineBaseMapAvailable,
         },
         data,
+      );
+      void seedOfflineTripItinerary(
+        id!,
+        ((itemsQuery.data?.items ?? []) as ItineraryItem[]).map((item) => ({
+          ...item,
+          tripId: id!,
+        })),
       );
       analytics.packDownloaded(destId);
     },
     onError: () => setDownloading(null),
   });
+
+  useEffect(() => {
+    if (!id || !isPackDownloaded || !itemsQuery.data?.items) return;
+    void seedOfflineTripItinerary(
+      id,
+      ((itemsQuery.data?.items ?? []) as ItineraryItem[]).map((item) => ({
+        ...item,
+        tripId: id,
+      })),
+    );
+  }, [id, isPackDownloaded, itemsQuery.data?.items]);
+
+  const items = isPackDownloaded
+    ? ((offlineTripItems ?? itemsQuery.data?.items ?? []) as ItineraryItem[])
+    : ((itemsQuery.data?.items ?? []) as ItineraryItem[]);
+  const grouped = groupByDate(items);
+  const doneCount = items.filter((i) => i.isDone).length;
+  const progress = items.length > 0 ? doneCount / items.length : 0;
 
   const shareTrip = async () => {
     if (!trip) return;
@@ -391,7 +548,8 @@ export default function TripDetailScreen() {
                     Offline pack downloaded
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    {packMeta?.placesCount} places · {packMeta?.phrasesCount} phrases
+                    {packMeta?.placesCount} places · {packMeta?.phrasesCount} phrases ·{" "}
+                    {packMeta?.offlineBaseMapAvailable ? "offline maps ready" : "maps unavailable"}
                   </Text>
                 </View>
               </View>
@@ -407,7 +565,8 @@ export default function TripDetailScreen() {
                     {downloading === destId ? "Downloading..." : "Download Offline Pack"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    Save places & phrases for offline use
+                    Save destination details, places, phrases, weather, currency, itinerary,
+                    images, and a lightweight offline base map
                   </Text>
                 </View>
                 {downloading === destId && <ActivityIndicator size="small" />}
@@ -421,7 +580,7 @@ export default function TripDetailScreen() {
           <Text className="text-lg font-bold text-foreground">Itinerary</Text>
           <Pressable
             onPress={() =>
-              guardAction(() => {
+              guardItineraryAction(() => {
                 setAddDate(trip ? new Date(trip.startDate) : new Date());
                 setShowAddModal(true);
               })
@@ -466,12 +625,12 @@ export default function TripDetailScreen() {
               {dayItems.map((item) => (
                 <Pressable
                   key={item.id}
-                  onPress={() => guardAction(() => setEditingItem(item))}
+                  onPress={() => openItem(item)}
                   className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 active:opacity-90"
                 >
                   <Pressable
                     onPress={() =>
-                      guardAction(() =>
+                      guardItineraryAction(() =>
                         toggleDone.mutate({
                           itemId: item.id,
                           isDone: !item.isDone,
@@ -510,13 +669,21 @@ export default function TripDetailScreen() {
                     })()}
                   </View>
                   <Pressable
+                    onPress={() => guardItineraryAction(() => setEditingItem(item))}
+                    className="active:opacity-80"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${item.title}`}
+                  >
+                    <Edit3 size={18} color={mutedColor} />
+                  </Pressable>
+                  <Pressable
                     onPress={() =>
                       Alert.alert("Delete Item", `Remove "${item.title}"?`, [
                         { text: "Cancel", style: "cancel" },
                         {
                           text: "Delete",
                           style: "destructive",
-                          onPress: () => guardAction(() => deleteItem.mutate(item.id)),
+                          onPress: () => guardItineraryAction(() => deleteItem.mutate(item.id)),
                         },
                       ])
                     }
@@ -537,6 +704,7 @@ export default function TripDetailScreen() {
         defaultDate={addDate}
         tripStartDate={trip ? new Date(trip.startDate) : undefined}
         tripEndDate={trip ? new Date(trip.endDate) : undefined}
+        offlineDestinationId={trip?.destination.id}
         initialTitle={addModalPrefill?.title}
         initialPlaceId={addModalPrefill?.placeId ?? null}
         onClose={() => {
@@ -546,7 +714,7 @@ export default function TripDetailScreen() {
         onSuccess={() => {
           setShowAddModal(false);
           setAddModalPrefill(null);
-          queryClient.invalidateQueries({ queryKey: ["itinerary", id] });
+          refreshRemoteItinerary();
         }}
       />
 
@@ -569,13 +737,15 @@ export default function TripDetailScreen() {
       {editingItem && (
         <EditItemModal
           visible={!!editingItem}
+          tripId={id!}
+          useOfflineLocalOnly={Boolean(trip?.destination.id && (isPackDownloaded || !isOnline))}
           item={editingItem}
           tripStartDate={trip ? new Date(trip.startDate) : undefined}
           tripEndDate={trip ? new Date(trip.endDate) : undefined}
           onClose={() => setEditingItem(null)}
           onSuccess={() => {
             setEditingItem(null);
-            queryClient.invalidateQueries({ queryKey: ["itinerary", id] });
+            refreshRemoteItinerary();
           }}
         />
       )}
@@ -619,6 +789,7 @@ function EditTripModal({
   }, [visible, currentTitle, currentStartDate, currentEndDate]);
 
   const editMutation = useMutation({
+    networkMode: "always",
     mutationFn: async () => {
       const res = await client.api.v1.trips({ tripId }).patch({
         title,
@@ -745,6 +916,8 @@ function EditTripModal({
 
 function EditItemModal({
   visible,
+  tripId,
+  useOfflineLocalOnly,
   item,
   tripStartDate,
   tripEndDate,
@@ -752,6 +925,8 @@ function EditItemModal({
   onSuccess,
 }: {
   visible: boolean;
+  tripId: string;
+  useOfflineLocalOnly: boolean;
   item: ItineraryItem;
   tripStartDate?: Date;
   tripEndDate?: Date;
@@ -761,10 +936,13 @@ function EditItemModal({
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
   const { height: screenHeight } = useWindowDimensions();
+  const isOnline = useNetworkStore(
+    (state) => state.isConnected && state.isInternetReachable === true,
+  );
 
   const [title, setTitle] = useState(item.title);
   const [notes, setNotes] = useState(item.notes ?? "");
-  const [selectedDate, setSelectedDate] = useState(new Date(item.date));
+  const [selectedDate, setSelectedDate] = useState(toDeviceCalendarDate(item.date));
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
@@ -776,7 +954,7 @@ function EditItemModal({
   useEffect(() => {
     setTitle(item.title);
     setNotes(item.notes ?? "");
-    setSelectedDate(new Date(item.date));
+    setSelectedDate(toDeviceCalendarDate(item.date));
     setStartTimeDate(parseItineraryTime(item.startTime));
     setEndTimeDate(parseItineraryTime(item.endTime));
   }, [item]);
@@ -792,9 +970,20 @@ function EditItemModal({
       if (hasInvalidTimeRange(startTimeDate, endTimeDate)) {
         throw new Error("Start time must be earlier than end time");
       }
+      if (useOfflineLocalOnly) {
+        const updated = await updateOfflineTripItem(tripId, item.id, {
+          title,
+          date: toDeviceDateIso(selectedDate),
+          startTime: startTimeDate ? fmtTime(startTimeDate) : null,
+          endTime: endTimeDate ? fmtTime(endTimeDate) : null,
+          notes: notes || null,
+        });
+        if (!updated) throw new Error("Failed to update item");
+        return updated;
+      }
       const res = await client.api.v1["itinerary-items"]({ id: item.id }).patch({
         title,
-        date: selectedDate.toISOString(),
+        date: toDeviceDateIso(selectedDate),
         startTime: startTimeDate ? fmtTime(startTimeDate) : null,
         endTime: endTimeDate ? fmtTime(endTimeDate) : null,
         notes: notes || null,
@@ -802,8 +991,36 @@ function EditItemModal({
       if (res.error) throw new Error("Failed to update item");
       return res.data;
     },
+    onMutate: async () => {
+      if (useOfflineLocalOnly) {
+        return { previousItems: null as ItineraryItem[] | null };
+      }
+      const { previous } = updateOptimisticTripItemInCache(tripId, item.id, {
+        title,
+        date: toDeviceDateIso(selectedDate),
+        startTime: startTimeDate ? fmtTime(startTimeDate) : null,
+        endTime: endTimeDate ? fmtTime(endTimeDate) : null,
+        notes: notes || null,
+      });
+      return { previousItems: previous as ItineraryItem[] };
+    },
+    onError: (_error, _vars, context) => {
+      if (useOfflineLocalOnly || !context?.previousItems) {
+        return;
+      }
+      restoreOptimisticTripItems(tripId, context.previousItems);
+    },
     onSuccess,
   });
+
+  const handleSave = () => {
+    const shouldCloseOptimistically = !useOfflineLocalOnly && !isOnline;
+    editMutation.mutate();
+    if (!shouldCloseOptimistically) {
+      return;
+    }
+    onSuccess();
+  };
 
   return (
     <KeyboardSheetModal
@@ -815,7 +1032,7 @@ function EditItemModal({
       footer={
         <Button
           label="Save Changes"
-          onPress={() => editMutation.mutate()}
+          onPress={handleSave}
           loading={editMutation.isPending}
           disabled={!title.trim() || invalidTimeRange}
         />

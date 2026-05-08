@@ -6,7 +6,9 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { sliceOfflineWeatherData, useOfflinePackQuery } from "@/features/offline/pack";
 import { wmoIconForCode } from "@/features/weather/wmoIcon";
+import { useNetworkStore } from "@/store/networkStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat("en-US", { weekday: "long" });
@@ -341,6 +343,7 @@ function WeatherMainCard({
 export default function WeatherScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    destinationId?: string;
     lat?: string;
     lng?: string;
     timezone?: string;
@@ -353,6 +356,15 @@ export default function WeatherScreen() {
   const timezone = typeof params.timezone === "string" ? params.timezone : "auto";
   const label = typeof params.name === "string" ? params.name : "Weather";
   const forecastDays = Math.min(16, Math.max(1, Number(params.days) || 7));
+  const destinationId =
+    typeof params.destinationId === "string" && params.destinationId.length > 0
+      ? params.destinationId
+      : null;
+  const offlinePackQuery = useOfflinePackQuery(destinationId);
+  const offlineWeatherData = useMemo(
+    () => sliceOfflineWeatherData(offlinePackQuery.data, forecastDays) as OpenMeteoPayload | null,
+    [offlinePackQuery.data, forecastDays],
+  );
 
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   /** `null` = main card shows current conditions (when API has current + today in daily). Else daily index. Tap same card again toggles back to current. */
@@ -362,6 +374,7 @@ export default function WeatherScreen() {
   const foregroundColor = foreground ? `hsl(${foreground})` : "#111827";
   const primary = useUnstableNativeVariable("--primary");
   const primaryColor = primary ? `hsl(${primary})` : "#3B82F6";
+  const isConnected = useNetworkStore((state) => state.isConnected);
 
   const query = useQuery({
     queryKey: ["weather-forecast", lat, lng, timezone, forecastDays],
@@ -377,13 +390,16 @@ export default function WeatherScreen() {
       if (res.error) throw new Error("Failed to load weather");
       return res.data as OpenMeteoPayload;
     },
-    enabled: Number.isFinite(lat) && Number.isFinite(lng),
+    enabled: Number.isFinite(lat) && Number.isFinite(lng) && isConnected,
     staleTime: 10 * 60 * 1000,
   });
 
   const isMetric = unitSystem === "metric";
-  const current = query.data?.current;
-  const daily = query.data?.daily;
+  const weatherData = isConnected
+    ? (query.data as OpenMeteoPayload | undefined) ?? offlineWeatherData ?? undefined
+    : offlineWeatherData ?? (query.data as OpenMeteoPayload | undefined);
+  const current = weatherData?.current;
+  const daily = weatherData?.daily;
   const dailyTimes = useMemo(() => normalizeDailyTimeList(daily?.time), [daily?.time]);
   const now = new Date();
 
@@ -501,11 +517,11 @@ export default function WeatherScreen() {
         <View className="w-10" />
       </View>
 
-      {query.isLoading ? (
+      {query.isLoading && isConnected && !offlineWeatherData ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator />
         </View>
-      ) : query.isError ? (
+      ) : query.isError && !offlineWeatherData ? (
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-center text-muted-foreground">Could not load weather.</Text>
         </View>

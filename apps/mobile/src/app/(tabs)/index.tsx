@@ -11,6 +11,7 @@ import {
   Settings,
   Thermometer,
   User,
+  WifiOff,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
 import { type ReactNode, useCallback, useEffect, useRef } from "react";
@@ -29,6 +30,7 @@ import {
   isTripUpcoming,
 } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
+import { useNetworkStore } from "@/store/networkStore";
 import { type Trip, useTripStore } from "@/store/tripStore";
 
 type DestinationLanguageLink = {
@@ -266,6 +268,8 @@ export default function HomeScreen() {
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : undefined;
   const displayName = user?.name?.split(" ")[0] ?? "there";
 
+  const isConnected = useNetworkStore((s) => s.isConnected);
+
   const tripsQuery = useQuery({
     queryKey: ["trips"],
     queryFn: async () => {
@@ -367,23 +371,31 @@ export default function HomeScreen() {
                     : `${trips.length} ${trips.length === 1 ? "trip" : "trips"} planned`}
                 </Text>
               </View>
-              <View className="flex-row items-center gap-2">
-                <Pressable
-                  onPress={() => router.push("/profile" as never)}
-                  className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
-                  accessibilityRole="button"
-                  accessibilityLabel="Profile"
-                >
-                  <User size={20} color={iconColor} />
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push("/settings" as never)}
-                  className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
-                  accessibilityRole="button"
-                  accessibilityLabel="Settings"
-                >
-                  <Settings size={20} color={iconColor} />
-                </Pressable>
+              <View className="flex items-center gap-2">
+                <View className="flex-row items-center gap-2">
+                  <Pressable
+                    onPress={() => router.push("/profile" as never)}
+                    className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
+                    accessibilityRole="button"
+                    accessibilityLabel="Profile"
+                  >
+                    <User size={20} color={iconColor} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => router.push("/settings" as never)}
+                    className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
+                    accessibilityRole="button"
+                    accessibilityLabel="Settings"
+                  >
+                    <Settings size={20} color={iconColor} />
+                  </Pressable>
+                </View>
+                {!isConnected && (
+                  <View className="flex-row items-center justify-center gap-2 rounded-full bg-destructive/30 px-2 py-1">
+                    <WifiOff size={14} color={iconColor} />
+                    <Text className="text-xs font-light text-foreground">offline</Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -504,6 +516,10 @@ export default function HomeScreen() {
                     router.push({
                       pathname: "/weather",
                       params: {
+                        destinationId:
+                          typeof (weatherDestination as { id?: string }).id === "string"
+                            ? (weatherDestination as { id: string }).id
+                            : activeHeroTrip?.destination.id,
                         lat: String(weatherDestination.latitude),
                         lng: String(weatherDestination.longitude),
                         timezone: weatherDestination.timezone,
@@ -526,6 +542,7 @@ export default function HomeScreen() {
                       params: {
                         base: activeTripCurrencyCode,
                         quote: "USD",
+                        destinationId: activeHeroTrip?.destination.id,
                       },
                     } as never)
                   }

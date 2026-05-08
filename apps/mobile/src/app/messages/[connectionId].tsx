@@ -20,10 +20,10 @@ import {
 } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { invalidateMessageQueries } from "@/lib/socialQueries";
 import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { analytics } from "@/utils/analytics";
-import { invalidateMessageQueries } from "@/lib/socialQueries";
 
 type MessageItem = {
   id: string;
@@ -244,7 +244,7 @@ export default function MessageThreadScreen() {
   };
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-background">
+    <SafeAreaView edges={["top", "left", "right", "bottom"]} className="flex-1 bg-background">
       <KeyboardAvoidingView className="flex-1" behavior="padding" keyboardVerticalOffset={8}>
         <View className="border-b border-border bg-background px-4 pb-3 pt-2">
           <View className="flex-row items-center gap-3">

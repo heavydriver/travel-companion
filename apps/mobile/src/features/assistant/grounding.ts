@@ -1,4 +1,7 @@
 import { client } from "@/api/client";
+import { buildOfflineCurrencyTable, sliceOfflineWeatherData } from "@/features/offline/pack";
+import type { OfflinePackData } from "@/features/offline/types";
+import { useOfflineStore } from "@/store/offlineStore";
 
 type DestinationSummary = {
   id: string;
@@ -276,6 +279,10 @@ async function fetchDestinationDetail(destinationId: string) {
   };
 }
 
+async function loadOfflinePack(destinationId: string) {
+  return (await useOfflineStore.getState().getPackData(destinationId)) as OfflinePackData | null;
+}
+
 function scorePlace(place: PlaceSummary, message: string) {
   const normalizedMessage = normalize(message);
   const combinedText = `${place.name} ${place.category} ${place.description ?? ""}`.toLowerCase();
@@ -481,6 +488,86 @@ async function fetchCurrencySummary(destination: DestinationSummary, message: st
   return `Live currency data: 1 ${base} = ${rate.toFixed(4)} ${quote}. Destination currency for ${destination.name} is ${destinationCurrency}.`;
 }
 
+function fetchOfflineWeatherSummary(destination: DestinationSummary, pack: OfflinePackData) {
+  const data = sliceOfflineWeatherData(pack, 3) as {
+    current?: {
+      temperature_2m?: number;
+      apparent_temperature?: number;
+      weather_code?: number;
+    };
+    daily?: {
+      temperature_2m_max?: number[];
+      temperature_2m_min?: number[];
+      precipitation_probability_max?: number[];
+    };
+  } | null;
+
+  if (!data) {
+    return null;
+  }
+
+  const current = data.current ?? {};
+  const daily = data.daily ?? {};
+  const temp = typeof current.temperature_2m === "number" ? `${Math.round(current.temperature_2m)}C` : null;
+  const feelsLike =
+    typeof current.apparent_temperature === "number"
+      ? `${Math.round(current.apparent_temperature)}C`
+      : null;
+  const high =
+    typeof daily.temperature_2m_max?.[0] === "number"
+      ? `${Math.round(daily.temperature_2m_max[0])}C`
+      : null;
+  const low =
+    typeof daily.temperature_2m_min?.[0] === "number"
+      ? `${Math.round(daily.temperature_2m_min[0])}C`
+      : null;
+  const rain =
+    typeof daily.precipitation_probability_max?.[0] === "number"
+      ? `${Math.round(daily.precipitation_probability_max[0])}%`
+      : null;
+
+  return [
+    `Stored offline weather for ${destination.name}: ${describeWeatherCode(current.weather_code)}.`,
+    temp ? `Current temperature ${temp}.` : null,
+    feelsLike ? `Feels like ${feelsLike}.` : null,
+    high && low ? `Today's range ${low} to ${high}.` : null,
+    rain ? `Precipitation chance up to ${rain}.` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function fetchOfflineCurrencySummary(destination: DestinationSummary, message: string, pack: OfflinePackData) {
+  const destinationCurrency = destination.currencyCode?.toUpperCase();
+  if (!destinationCurrency || !pack.currency) {
+    return null;
+  }
+
+  const explicitCodes = parseCurrencyCodes(message);
+  let base = "USD";
+  let quote = destinationCurrency;
+
+  if (explicitCodes.length >= 2) {
+    [base, quote] = explicitCodes;
+  } else if (explicitCodes.length === 1) {
+    if (explicitCodes[0] === destinationCurrency) {
+      base = "USD";
+      quote = destinationCurrency;
+    } else {
+      base = explicitCodes[0];
+      quote = destinationCurrency;
+    }
+  }
+
+  const table = buildOfflineCurrencyTable(pack, base);
+  const rate = table[quote];
+  if (!rate) {
+    return `Stored destination currency for ${destination.name}: ${destinationCurrency}.`;
+  }
+
+  return `Stored offline currency data: 1 ${base} = ${rate.toFixed(4)} ${quote}. Destination currency for ${destination.name} is ${destinationCurrency}.`;
+}
+
 function buildPromptContext(input: {
   connectivity: "online" | "offline";
   matchedDestination: DestinationSummary | null;
@@ -597,27 +684,50 @@ export async function buildAssistantGrounding(input: {
   const connectivity = input.isConnected ? "online" : "offline";
 
   if (!input.isConnected) {
-    const matchedDestination = input.activeTripDestination
-      ? {
-          ...input.activeTripDestination,
-          country: "",
-        }
+    const offlinePack = input.activeTripDestination?.id
+      ? await loadOfflinePack(input.activeTripDestination.id)
       : null;
+    const matchedDestination = offlinePack?.destination
+      ? {
+          ...offlinePack.destination,
+        }
+      : input.activeTripDestination
+        ? {
+            ...input.activeTripDestination,
+            country: "",
+          }
+        : null;
+    const relatedPlaces = offlinePack?.places
+      ? selectRelevantPlaces(offlinePack.places as PlaceSummary[], input.message)
+      : [];
+    const wantsWeather = normalize(input.message).includes("weather");
+    const wantsCurrency =
+      normalize(input.message).includes("currency") ||
+      normalize(input.message).includes("exchange") ||
+      Boolean(parseCurrencyCodes(input.message).length);
+    const weatherSummary =
+      wantsWeather && matchedDestination && offlinePack
+        ? fetchOfflineWeatherSummary(matchedDestination, offlinePack)
+        : null;
+    const currencySummary =
+      wantsCurrency && matchedDestination && offlinePack
+        ? fetchOfflineCurrencySummary(matchedDestination, input.message, offlinePack)
+        : null;
 
     const grounding: AssistantGrounding = {
       connectivity,
       matchedDestination,
       relatedDestinations: matchedDestination ? [matchedDestination] : [],
-      relatedPlaces: [],
-      weatherSummary: null,
-      currencySummary: null,
+      relatedPlaces,
+      weatherSummary,
+      currencySummary,
       promptContext: buildPromptContext({
         connectivity,
         matchedDestination,
         relatedDestinations: matchedDestination ? [matchedDestination] : [],
-        relatedPlaces: [],
-        weatherSummary: null,
-        currencySummary: null,
+        relatedPlaces,
+        weatherSummary,
+        currencySummary,
       }),
     };
     return grounding;

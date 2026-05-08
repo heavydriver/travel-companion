@@ -31,10 +31,17 @@ import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import {
+  buildOfflineMapSession,
+  findOfflinePackByPlaceId,
+  getOfflinePlaceFromPack,
+} from "@/features/offline/pack";
+import {
   createCurrentLocationNavigationPoint,
   useMapNavigationStore,
 } from "@/store/mapNavigationStore";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
+import { useNetworkStore } from "@/store/networkStore";
+import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -318,6 +325,7 @@ export default function PlaceDetailsScreen() {
   const accentColor = primaryVar ? `hsl(${primaryVar})` : "#3B82F6";
   const mutedVar = useUnstableNativeVariable("--muted-foreground");
   const mutedIconColor = mutedVar ? `hsl(${mutedVar})` : "#9CA3AF";
+  const isOnline = useNetworkStore((state) => state.isConnected && state.isInternetReachable === true);
 
   const [now, setNow] = useState(() => new Date());
   const [showAddModal, setShowAddModal] = useState(false);
@@ -339,7 +347,27 @@ export default function PlaceDetailsScreen() {
     enabled: !!id,
   });
 
-  const place = placeQuery.data?.place as PlaceDetail | undefined;
+  const offlinePackByPlaceQuery = useQuery({
+    queryKey: ["offline-place-pack", id],
+    queryFn: async () => {
+      if (!id) return null;
+      return findOfflinePackByPlaceId(id);
+    },
+    enabled: !!id,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  const offlinePack = offlinePackByPlaceQuery.data;
+  const preferOfflinePack = !isOnline && Boolean(offlinePack);
+  const offlinePlace = useMemo(
+    () => (id ? (getOfflinePlaceFromPack(offlinePack, id) as PlaceDetail | null) : null),
+    [offlinePack, id],
+  );
+
+  const place = preferOfflinePack
+    ? (offlinePlace ?? (placeQuery.data?.place as PlaceDetail | undefined) ?? undefined)
+    : ((placeQuery.data?.place as PlaceDetail | undefined) ?? offlinePlace ?? undefined);
 
   const tripsForDestinationQuery = useQuery({
     queryKey: ["trips", "destination", place?.destinationId],
@@ -364,6 +392,10 @@ export default function PlaceDetailsScreen() {
     return getEligibleTripForDestination(list, place.destinationId);
   }, [place, tripsForDestinationQuery.data, tripsForDestinationQuery.isSuccess, storeTrips]);
 
+  const offlineTripItems = useOfflineItineraryStore((state) =>
+    eligibleTrip?.id ? state.tripItems[eligibleTrip.id] : undefined,
+  );
+
   const destinationMetaQuery = useQuery({
     queryKey: ["destination-details", place?.destinationId],
     queryFn: async () => {
@@ -377,6 +409,32 @@ export default function PlaceDetailsScreen() {
     enabled: Boolean(place?.destinationId),
     staleTime: 5 * 60 * 1000,
   });
+  const destinationMeta = useMemo(
+    () =>
+      preferOfflinePack
+        ? (offlinePack?.destination ??
+          (destinationMetaQuery.data?.destination as
+            | {
+                id: string;
+                name: string;
+                country: string;
+                latitude: number;
+                longitude: number;
+                timezone?: string;
+              }
+            | undefined))
+        : ((destinationMetaQuery.data?.destination as
+            | {
+                id: string;
+                name: string;
+                country: string;
+                latitude: number;
+                longitude: number;
+                timezone?: string;
+              }
+            | undefined) ?? offlinePack?.destination),
+    [preferOfflinePack, destinationMetaQuery.data?.destination, offlinePack?.destination],
+  );
 
   const itineraryQuery = useQuery({
     queryKey: ["itinerary", eligibleTrip?.id],
@@ -386,7 +444,7 @@ export default function PlaceDetailsScreen() {
       if (res.error) throw new Error("Failed to load itinerary");
       return res.data;
     },
-    enabled: Boolean(eligibleTrip?.id && place?.id),
+    enabled: Boolean(eligibleTrip?.id && place?.id && isOnline),
     staleTime: 30 * 1000,
   });
 
@@ -405,10 +463,9 @@ export default function PlaceDetailsScreen() {
   );
 
   const destinationTimeZone = useMemo(() => {
-    const dest = destinationMetaQuery.data?.destination as { timezone?: string } | undefined;
-    const tz = dest?.timezone?.trim();
+    const tz = destinationMeta?.timezone?.trim();
     return tz && tz.length > 0 ? tz : null;
-  }, [destinationMetaQuery.data]);
+  }, [destinationMeta]);
 
   const openingParsed = useMemo(
     () => parseOpeningHours(place?.openingHours),
@@ -452,14 +509,29 @@ export default function PlaceDetailsScreen() {
 
   const placeInItinerary = Boolean(
     place &&
-      itineraryQuery.data?.items?.some((it: { placeId: string | null }) => it.placeId === place.id),
+      (
+        (eligibleTrip?.destination.id && offlinePack?.destination.id === eligibleTrip.destination.id
+          ? offlineTripItems
+          : itineraryQuery.data?.items) ?? []
+      ).some((it: { placeId: string | null }) => it.placeId === place.id),
   );
 
   const openOnMap = useCallback(() => {
     if (!place) return;
-    const dest = destinationMetaQuery.data?.destination as
-      | { name: string; latitude: number; longitude: number; timezone?: string }
-      | undefined;
+    if (offlinePack) {
+      setMapSession(
+        buildOfflineMapSession(offlinePack, {
+          focusLatitude: place.latitude,
+          focusLongitude: place.longitude,
+          focusZoomLevel: 15,
+          focusPlaceId: place.id,
+          returnHref: `/place/${place.id}`,
+        }),
+      );
+      router.push("/(tabs)/map" as never);
+      return;
+    }
+    const dest = destinationMeta;
     if (!dest) return;
     setMapSession({
       destinationId: place.destinationId,
@@ -475,13 +547,37 @@ export default function PlaceDetailsScreen() {
       returnHref: `/place/${place.id}`,
     });
     router.push("/(tabs)/map" as never);
-  }, [place, destinationMetaQuery.data, setMapSession, router]);
+  }, [place, offlinePack, destinationMeta, setMapSession, router]);
 
   const openNavigationPreview = useCallback(() => {
     if (!place) return;
-    const dest = destinationMetaQuery.data?.destination as
-      | { name: string; latitude: number; longitude: number; timezone?: string }
-      | undefined;
+    if (offlinePack) {
+      setMapSession(
+        buildOfflineMapSession(offlinePack, {
+          focusLatitude: place.latitude,
+          focusLongitude: place.longitude,
+          focusZoomLevel: 15,
+          focusPlaceId: place.id,
+          returnHref: `/place/${place.id}`,
+        }),
+      );
+      setMapNavigationDraft({
+        origin: createCurrentLocationNavigationPoint(),
+        destination: {
+          id: `place-${place.id}`,
+          label: place.name,
+          subtitle: place.address?.trim() || offlinePack.destination.name,
+          coordinate: [place.longitude, place.latitude],
+          kind: "place",
+        },
+        waypoints: [],
+        mode: "driving",
+        autoOpenPlanner: true,
+      });
+      router.push("/(tabs)/map" as never);
+      return;
+    }
+    const dest = destinationMeta;
     if (!dest) return;
 
     setMapSession({
@@ -511,7 +607,7 @@ export default function PlaceDetailsScreen() {
       autoOpenPlanner: true,
     });
     router.push("/(tabs)/map" as never);
-  }, [place, destinationMetaQuery.data, router, setMapNavigationDraft, setMapSession]);
+  }, [place, offlinePack, destinationMeta, router, setMapNavigationDraft, setMapSession]);
 
   const openWebsite = useCallback(() => {
     if (!place?.websiteUrl?.trim()) return;
@@ -526,7 +622,7 @@ export default function PlaceDetailsScreen() {
     void Linking.openURL(`tel:${raw}`);
   }, [place?.phoneNumber]);
 
-  if (placeQuery.isLoading) {
+  if (placeQuery.isLoading && offlinePackByPlaceQuery.isLoading && !offlinePlace) {
     return (
       <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
         <View className="flex-1 items-center justify-center">
@@ -559,10 +655,12 @@ export default function PlaceDetailsScreen() {
   const coordsText = `${place.latitude.toFixed(5)}, ${place.longitude.toFixed(5)}`;
   const showAddToItinerary = Boolean(eligibleTrip) && !placeInItinerary;
   const itineraryFirstLoadPending =
-    Boolean(eligibleTrip) && !placeInItinerary && !itineraryQuery.isFetched;
-  const destinationForCreate = destinationMetaQuery.data?.destination as
-    | { id: string; name: string; country: string }
-    | undefined;
+    Boolean(eligibleTrip) &&
+    !placeInItinerary &&
+    isOnline &&
+    itineraryQuery.isLoading &&
+    !itineraryQuery.data;
+  const destinationForCreate = destinationMeta;
 
   return (
     <SafeAreaView edges={["bottom"]} className="flex-1 bg-background">
@@ -700,7 +798,7 @@ export default function PlaceDetailsScreen() {
             ) : null}
           </View>
 
-          {destinationMetaQuery.data?.destination ? (
+          {destinationMeta ? (
             <View className="mt-4">
               <Button
                 label="View on map"
@@ -833,12 +931,15 @@ export default function PlaceDetailsScreen() {
           defaultDate={clampDateToTrip(new Date(), eligibleTrip.startDate, eligibleTrip.endDate)}
           tripStartDate={new Date(eligibleTrip.startDate)}
           tripEndDate={new Date(eligibleTrip.endDate)}
+          offlineDestinationId={eligibleTrip.destination.id}
           initialTitle={place.name}
           initialPlaceId={place.id}
           onClose={() => setShowAddModal(false)}
           onSuccess={() => {
             setShowAddModal(false);
-            void queryClient.invalidateQueries({ queryKey: ["itinerary", eligibleTrip.id] });
+            if (isOnline) {
+              void queryClient.invalidateQueries({ queryKey: ["itinerary", eligibleTrip.id] });
+            }
           }}
           onSuccessMessage={(title) => {
             showAppToast({

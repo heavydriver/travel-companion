@@ -8,6 +8,8 @@ import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-nativ
 import { useEden } from "@/api/client";
 import { CurrencySelect } from "@/components/shared/CurrencySelect";
 import { Screen } from "@/components/shared/Screen";
+import { buildOfflineCurrencyTable, useOfflinePackQuery } from "@/features/offline/pack";
+import { useNetworkStore } from "@/store/networkStore";
 
 type SupportedCurrency = { code: string; name: string; country: string };
 
@@ -68,8 +70,15 @@ export default function CurrencyConverterScreen() {
   const placeholderColor = mutedFg ? `hsl(${mutedFg})` : isDark ? "#94a3b8" : "#64748b";
   const iconColor = foreground ? `hsl(${foreground})` : isDark ? "#e2e8f0" : "#334155";
   const foregroundColor = foreground ? `hsl(${foreground})` : undefined;
+  const isConnected = useNetworkStore((state) => state.isConnected);
 
-  const params = useLocalSearchParams<{ base?: string; quote?: string }>();
+  const params = useLocalSearchParams<{ base?: string; quote?: string; destinationId?: string }>();
+  const destinationId =
+    typeof params.destinationId === "string" && params.destinationId.length > 0
+      ? params.destinationId
+      : null;
+  const offlinePackQuery = useOfflinePackQuery(destinationId);
+  const offlineCurrency = offlinePackQuery.data?.currency ?? null;
 
   const initialBase = (params.base ?? "USD").toUpperCase();
   const hasBaseParam = typeof params.base === "string" && params.base.length > 0;
@@ -92,24 +101,35 @@ export default function CurrencyConverterScreen() {
 
   const supportedQuery = useQuery({
     ...eden.api.v1.currency.supported.get.queryOptions(),
+    enabled: isConnected,
     staleTime: 24 * 60 * 60 * 1000,
   });
 
-  const currencies = (supportedQuery.data?.currencies ?? []) as SupportedCurrency[];
+  const currencies = (offlineCurrency?.supported ??
+    supportedQuery.data?.currencies ??
+    []) as SupportedCurrency[];
   const baseSupported = currencies.some((c) => c.code === baseCode);
 
   const ratesQuery = useQuery({
     ...eden.api.v1.currency.rates({ base: baseCode }).get.queryOptions(),
-    enabled: baseSupported && currencies.length > 0,
+    enabled: baseSupported && currencies.length > 0 && isConnected,
     staleTime: 60 * 60 * 1000,
   });
 
   const ratesBody = ratesQuery.data as Record<string, unknown> | undefined;
   const rates = useMemo(
-    () => (ratesBody ? extractRateTable(ratesBody, baseCode) : {}),
-    [ratesBody, baseCode],
+    () =>
+      isConnected && ratesBody
+        ? extractRateTable(ratesBody, baseCode)
+        : offlineCurrency
+          ? buildOfflineCurrencyTable(offlinePackQuery.data, baseCode)
+          : {},
+    [isConnected, offlineCurrency, offlinePackQuery.data, ratesBody, baseCode],
   );
-  const rateDateRaw = ratesBody ? extractRatesDate(ratesBody) : null;
+  const rateDateRaw =
+    isConnected && ratesBody
+      ? extractRatesDate(ratesBody)
+      : (offlineCurrency?.fetchedAt.slice(0, 10) ?? null);
 
   const rate = rates[quoteCode] ?? 0;
 
@@ -180,12 +200,15 @@ export default function CurrencyConverterScreen() {
           <View className="h-10 w-10" />
         </View>
 
-        {supportedQuery.isLoading ? (
+        {(supportedQuery.isLoading && isConnected && !offlineCurrency) ||
+        (!isConnected && offlinePackQuery.isLoading) ? (
           <View className="items-center py-12">
             <ActivityIndicator size="large" />
-            <Text className="mt-3 text-sm text-muted-foreground">Loading currencies…</Text>
+            <Text className="mt-3 text-sm text-muted-foreground">
+              {isConnected ? "Loading currencies…" : "Loading offline currency data…"}
+            </Text>
           </View>
-        ) : supportedQuery.isError ? (
+        ) : supportedQuery.isError && !offlineCurrency ? (
           <View className="rounded-2xl border border-border bg-card px-4 py-4">
             <Text className="text-sm text-destructive">Could not load currencies.</Text>
           </View>

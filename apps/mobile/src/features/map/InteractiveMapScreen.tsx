@@ -17,7 +17,7 @@ import {
   ShapeSource,
   UserLocation,
 } from "@rnmapbox/maps";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { approximateNumber as approx } from "approximate-number";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
@@ -62,10 +62,16 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal";
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import { KeyboardSheetModal } from "@/components/shared/KeyboardSheetModal";
 import { PlaceCard } from "@/components/shared/PlaceCard";
+import {
+  findOfflinePackByPlaceId,
+  getOfflinePlaceFromPack,
+  useOfflinePackQuery,
+} from "@/features/offline/pack";
 import { useDebounce } from "@/hooks/useDebounce";
 import { THEME } from "@/lib/theme";
 import { formatDistanceFromKm } from "@/lib/units";
@@ -79,6 +85,7 @@ import {
   useMapNavigationStore,
 } from "@/store/mapNavigationStore";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
+import { useNetworkStore } from "@/store/networkStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 import { pinColorForCategory } from "./categoryPinColor";
@@ -96,9 +103,8 @@ import {
   retrieveMapboxSearchFeature,
   reverseMapboxSearchByCoordinate,
 } from "./mapboxSearchBox";
+import { DARK_MAP_STYLE, LIGHT_MAP_STYLE } from "./mapStyles";
 
-const DARK_MAP_STYLE = "mapbox://styles/varun-11/cmo7dh5kl001001qshs9chyef";
-const LIGHT_MAP_STYLE = "mapbox://styles/varun-11/cmo7dnxyi003001ql58s51upl";
 const MAP_PINS_SOURCE_ID = "travel-map-pins";
 const MAP_PINS_HALO_LAYER_ID = "travel-map-pins-halo";
 const MAP_PINS_LAYER_ID = "travel-map-pins-circle";
@@ -473,7 +479,10 @@ function resolveNavigationPointCoordinate(
 export function InteractiveMapScreen() {
   const isFocused = useIsFocused();
   const navigation = useNavigation();
+  const queryClient = useQueryClient();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const isConnected = useNetworkStore((s) => s.isConnected);
+  const hasInternetReachability = useNetworkStore((s) => s.isInternetReachable === true);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -525,6 +534,10 @@ export function InteractiveMapScreen() {
     useState<NavigationFieldTarget | null>(null);
   const [navigationFieldQuery, setNavigationFieldQuery] = useState("");
   const [resolvingNavigationFieldId, setResolvingNavigationFieldId] = useState<string | null>(null);
+  const [showAddItineraryModal, setShowAddItineraryModal] = useState(false);
+  const [addModalPrefill, setAddModalPrefill] = useState<{ title: string; placeId: string | null } | null>(
+    null,
+  );
 
   const cameraRef = useRef<ElementRef<typeof Camera>>(null);
   const sheetRef = useRef<BottomSheet>(null);
@@ -751,6 +764,7 @@ export function InteractiveMapScreen() {
       : storeTrips.filter((t) => t.destination.id === tripDestinationScopeId);
     return getEligibleTripForDestination(list, tripDestinationScopeId);
   }, [tripDestinationScopeId, tripsQuery.data, tripsQuery.isSuccess, storeTrips]);
+  const offlineScopePackQuery = useOfflinePackQuery(tripDestinationScopeId);
 
   const activeNearbyTrips = useMemo(
     () => storeTrips.filter((trip) => !isTripPast(trip.endDate)),
@@ -1108,8 +1122,32 @@ export function InteractiveMapScreen() {
     enabled: Boolean(selectedPlaceId && sheetMode === "detail"),
     staleTime: 60 * 1000,
   });
+  const offlinePlacePackQuery = useQuery({
+    queryKey: ["offline-place-pack", selectedPlaceId],
+    queryFn: async () => {
+      if (!selectedPlaceId) return null;
+      return findOfflinePackByPlaceId(selectedPlaceId);
+    },
+    enabled: Boolean(selectedPlaceId && sheetMode === "detail"),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
 
-  const placeDetail = placeDetailQuery.data?.place as PlaceDetail | undefined;
+  const offlinePlaceDetail = useMemo(
+    () =>
+      selectedPlaceId
+        ? ((getOfflinePlaceFromPack(
+            offlinePlacePackQuery.data,
+            selectedPlaceId,
+          ) as PlaceDetail | null) ?? null)
+        : null,
+    [offlinePlacePackQuery.data, selectedPlaceId],
+  );
+  const placeDetail =
+    (!isConnected ? offlinePlaceDetail : null) ??
+    (placeDetailQuery.data?.place as PlaceDetail | undefined) ??
+    offlinePlaceDetail ??
+    undefined;
   const detailHeroImageUrl = placeDetail?.imageUrl ?? selectedPlace?.imageUrl ?? null;
   const placeInItinerary = Boolean(selectedPlaceId && itineraryPlaceIds.has(selectedPlaceId));
   const selectedSavedPlaceFromSearch = useMemo(
@@ -1679,31 +1717,17 @@ export function InteractiveMapScreen() {
   const openAddToItinerary = useCallback(() => {
     if (!eligibleTrip || !selectedPlaceId) return;
     const title = placeDetail?.name ?? selectedPlace?.name ?? "Place";
-    router.push({
-      pathname: "/trip/[id]",
-      params: {
-        id: eligibleTrip.id,
-        openAdd: "1",
-        prefillTitle: title,
-        prefillPlaceId: selectedPlaceId,
-      },
-    });
-  }, [eligibleTrip, selectedPlaceId, placeDetail?.name, selectedPlace?.name, router]);
+    setAddModalPrefill({ title, placeId: selectedPlaceId });
+    setShowAddItineraryModal(true);
+  }, [eligibleTrip, selectedPlaceId, placeDetail?.name, selectedPlace?.name]);
 
   const addPlaceToItinerary = useCallback(
     (placeId: string, title: string) => {
       if (!eligibleTrip) return;
-      router.push({
-        pathname: "/trip/[id]",
-        params: {
-          id: eligibleTrip.id,
-          openAdd: "1",
-          prefillTitle: title,
-          prefillPlaceId: placeId,
-        },
-      });
+      setAddModalPrefill({ title, placeId });
+      setShowAddItineraryModal(true);
     },
-    [eligibleTrip, router],
+    [eligibleTrip],
   );
 
   const mapboxSuggestions = useMemo(
@@ -1995,7 +2019,10 @@ export function InteractiveMapScreen() {
     showPlaceList,
   ]);
 
-  const mapStyle = colorScheme === "dark" ? DARK_MAP_STYLE : LIGHT_MAP_STYLE;
+  const offlineMapStyle = !(isConnected && hasInternetReachability)
+    ? offlineScopePackQuery.data?.maps.baseMapRegion?.styleUrl
+    : null;
+  const mapStyle = offlineMapStyle ?? (colorScheme === "dark" ? DARK_MAP_STYLE : LIGHT_MAP_STYLE);
 
   if (!tokenOk) {
     return (
@@ -3146,6 +3173,38 @@ export function InteractiveMapScreen() {
           </BottomSheetScrollView>
         )}
       </BottomSheet>
+      {eligibleTrip ? (
+        <AddItineraryItemModal
+          visible={showAddItineraryModal}
+          tripId={eligibleTrip.id}
+          defaultDate={new Date(eligibleTrip.startDate)}
+          tripStartDate={new Date(eligibleTrip.startDate)}
+          tripEndDate={new Date(eligibleTrip.endDate)}
+          offlineDestinationId={eligibleTrip.destination.id}
+          initialTitle={addModalPrefill?.title}
+          initialPlaceId={addModalPrefill?.placeId ?? null}
+          onClose={() => {
+            setShowAddItineraryModal(false);
+            setAddModalPrefill(null);
+          }}
+          onSuccess={() => {
+            setShowAddItineraryModal(false);
+            const justAddedPlaceId = addModalPrefill?.placeId;
+            setAddModalPrefill(null);
+            void queryClient.invalidateQueries({ queryKey: ["itinerary", eligibleTrip.id] });
+            if (justAddedPlaceId) {
+              setSelectedPlaceId(justAddedPlaceId);
+            }
+          }}
+          onSuccessMessage={(title) => {
+            showAppToast({
+              variant: "success",
+              title: "Added to itinerary",
+              message: `${title} added to ${eligibleTrip.title}.`,
+            });
+          }}
+        />
+      ) : null}
       <KeyboardSheetModal
         visible={editingNavigationField != null}
         title={
