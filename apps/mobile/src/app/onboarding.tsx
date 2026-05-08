@@ -16,6 +16,14 @@ type Slide = {
   image: string;
 };
 
+const onboardingImages = {
+  explore: require("../../assets/images/onboarding/explore.jpg"),
+  plan: require("../../assets/images/onboarding/plan.jpg"),
+  offline: require("../../assets/images/onboarding/offline.jpg"),
+  ai: require("../../assets/images/onboarding/ai.jpg"),
+  social: require("../../assets/images/onboarding/social.jpg"),
+} as const;
+
 export default function OnboardingScreen() {
   const router = useRouter();
   const listRef = useRef<FlatList<Slide>>(null);
@@ -57,9 +65,7 @@ export default function OnboardingScreen() {
       <View className="flex-1">
         <View className="px-5 pb-2 pt-5">
           <View className="flex-row items-center justify-between">
-            <Text className="text-base font-bold uppercase tracking-wide text-primary">
-              Travel Companion
-            </Text>
+            <Text className="text-base font-bold uppercase tracking-wide text-primary">Roamie</Text>
             <Pressable onPress={() => void completeIntro("/(auth)/login")}>
               <Text className="text-sm font-medium text-muted-foreground">Skip</Text>
             </Pressable>
@@ -94,10 +100,11 @@ export default function OnboardingScreen() {
                   {item.subtitle}
                 </Text>
 
-                <View className="my-8 flex-1 items-center justify-center rounded-2xl bg-muted p-4">
+                <View className="my-8 flex-1 items-center justify-center rounded-2xl bg-muted p-4 overflow-hidden">
                   <Image
-                    source={{ uri: item.image }}
-                    contentFit="cover"
+                    source={onboardingImages[item.id as keyof typeof onboardingImages]}
+                    contentFit="contain"
+                    style={{ width: 640, height: 640 }}
                     className="h-56 w-full rounded-xl"
                   />
                 </View>

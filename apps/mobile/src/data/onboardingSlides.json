@@ -3,30 +3,30 @@
     "id": "explore",
     "title": "Explore new places",
     "subtitle": "Discover must-see spots, hidden gems, and local favorites in every destination",
-    "image": "https://images.unsplash.com/photo-1776221241820-6cbbb6e7cb43?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+    "image": "../../../assets/images/onboarding/explore.jpg"
   },
   {
     "id": "plan",
     "title": "Plan your trips",
     "subtitle": "Build day-by-day itineraries, keep tickets together, and stay on top of your schedule",
-    "image": "https://plus.unsplash.com/premium_photo-1661311950994-d263ea9681a1?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+    "image": "../../../assets/images/onboarding/plan.jpg"
   },
   {
     "id": "offline",
     "title": "Offline first",
     "subtitle": "Download city packs so your maps, plans, and recommendations work without internet",
-    "image": "https://images.unsplash.com/vector-1774963118096-0946494c970b?q=80&w=880&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+    "image": "../../../assets/images/onboarding/offline.jpg"
   },
   {
     "id": "ai",
     "title": "AI travel assistant",
     "subtitle": "Ask on-device AI for advice about your trip, even when you are completely offline",
-    "image": "https://plus.unsplash.com/premium_vector-1726325099567-649015e6bb43?q=80&w=880&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+    "image": "../../../assets/images/onboarding/ai.jpg"
   },
   {
     "id": "social",
     "title": "Connect with travelers",
     "subtitle": "Meet nearby travelers, share plans, and explore together when you choose to opt in",
-    "image": "https://images.unsplash.com/photo-1506869640319-fe1a24fd76dc?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+    "image": "../../../assets/images/onboarding/social.jpg"
   }
 ]

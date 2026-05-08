@@ -1,8 +1,8 @@
 diff --git a/src/ExpoMapboxNavigation.types.ts b/src/ExpoMapboxNavigation.types.ts
-index 1ab6ae9557ef5f430a5d689a50c57ce17a30656f..6ecbe1f906458739de045f4910476f8de799f96c 100644
+index 3e8b18b..1b271bd 100644
 --- a/src/ExpoMapboxNavigation.types.ts
 +++ b/src/ExpoMapboxNavigation.types.ts
-@@ -47,6 +47,9 @@ export type ExpoMapboxNavigationViewProps = {
+@@ -54,6 +54,9 @@ export type ExpoMapboxNavigationViewProps = {
    placeCustomRasterLayerAbove?: string;
    disableAlternativeRoutes?: boolean;
    followingZoom?: number;
@@ -12,15 +12,35 @@ index 1ab6ae9557ef5f430a5d689a50c57ce17a30656f..6ecbe1f906458739de045f4910476f8d
    onRouteProgressChanged?: (event: { nativeEvent: ProgressEvent }) => void;
    onCancelNavigation?: () => void;
    onWaypointArrival?: (event: {
+diff --git a/build/ExpoMapboxNavigation.types.d.ts b/build/ExpoMapboxNavigation.types.d.ts
+index 8abb17d..6e52b9f 100644
+--- a/build/ExpoMapboxNavigation.types.d.ts
++++ b/build/ExpoMapboxNavigation.types.d.ts
+@@ -64,6 +64,9 @@ export type ExpoMapboxNavigationViewProps = {
+     placeCustomRasterLayerAbove?: string;
+     disableAlternativeRoutes?: boolean;
+     followingZoom?: number;
++    tripProgressBarBackgroundColor?: string;
++    tripProgressBarTextColor?: string;
++    tripProgressBarSecondaryTextColor?: string;
+     onRouteProgressChanged?: (event: {
+         nativeEvent: ProgressEvent;
+     }) => void;
+@@ -87,4 +90,4 @@ export type ExpoMapboxNavigationViewProps = {
+     style?: StyleProp<ViewStyle>;
+ };
+ export {};
+-//# sourceMappingURL=ExpoMapboxNavigation.types.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=ExpoMapboxNavigation.types.d.ts.map
 diff --git a/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt b/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt
-index 8e5b189566237f06f6caef8ca2a7d74038322140..ba61405dc622f8685ced0606d12cf88fc5f66f7f 100644
+index 54702f8..e9000c4 100644
 --- a/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt
 +++ b/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt
-@@ -113,6 +113,21 @@ class ExpoMapboxNavigationModule : Module() {
-       Prop("followingZoom") { view: ExpoMapboxNavigationView, followingZoom: Double? ->
+@@ -114,6 +114,22 @@ class ExpoMapboxNavigationModule : Module() {
          view.setFollowingZoom(followingZoom)
        }
-+
+ 
 +      Prop("tripProgressBarBackgroundColor") {
 +              view: ExpoMapboxNavigationView,
 +              backgroundColor: String? ->
@@ -36,14 +56,15 @@ index 8e5b189566237f06f6caef8ca2a7d74038322140..ba61405dc622f8685ced0606d12cf88f
 +              textColor: String? ->
 +        view.setTripProgressBarSecondaryTextColor(textColor)
 +      }
- 
++
        AsyncFunction("recenterMap") { view: ExpoMapboxNavigationView -> view.recenterMap() }
      }
+   }
 diff --git a/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt b/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
-index 8ca78949db758d6e694a9584baee1eb38f443664..a29e6f64526d9ca45a074e559ab488a7099ece6d 100644
+index 4e667fa..79ddf82 100644
 --- a/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
 +++ b/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
-@@ -130,6 +130,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -124,6 +124,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      private var currentCustomRasterSourceUrl: String? = null
      private var currentPlaceCustomRasterLayerAbove: String? = null
      private var currentDisableAlternativeRoutes: Boolean? = null
@@ -65,7 +86,7 @@ index 8ca78949db758d6e694a9584baee1eb38f443664..a29e6f64526d9ca45a074e559ab488a7
      }
  
      private fun createTripProgressView(
-@@ -542,6 +548,22 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -545,6 +551,25 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
          }
      }
  
@@ -87,10 +108,11 @@ index 8ca78949db758d6e694a9584baee1eb38f443664..a29e6f64526d9ca45a074e559ab488a7
 +        tripProgressDistanceRemainingTextView.setTextColor(secondaryTextColor)
 +        tripProgressArrivalTimeTextView.setTextColor(secondaryTextColor)
 +    }
++
      private fun createSoundButton(
              id: Int,
              parent: ViewGroup,
-@@ -935,6 +957,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -959,6 +984,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
          viewportDataSource.evaluate()
      }
  
@@ -112,7 +134,7 @@ index 8ca78949db758d6e694a9584baee1eb38f443664..a29e6f64526d9ca45a074e559ab488a7
      fun recenterMap() {
          navigationCamera.requestNavigationCameraToFollowing()
      }
-@@ -1027,6 +1064,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -1027,6 +1067,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                          .timeRemainingFormatter(TimeRemainingFormatter(context, currentLocale))
                          .estimatedTimeToArrivalFormatter(EstimatedTimeToArrivalFormatter(context))
                          .build()
@@ -121,14 +143,13 @@ index 8ca78949db758d6e694a9584baee1eb38f443664..a29e6f64526d9ca45a074e559ab488a7
  
          if (currentMapMatchingRequestId != null) {
 diff --git a/ios/ExpoMapboxNavigationModule.swift b/ios/ExpoMapboxNavigationModule.swift
-index 7e0b2679973325f2d64334c16b5d3db8a013e1df..08a2d39244a3b56de4d038c9d2f6b95091065344 100644
+index 965414e..0fbce6b 100644
 --- a/ios/ExpoMapboxNavigationModule.swift
 +++ b/ios/ExpoMapboxNavigationModule.swift
-@@ -78,6 +78,18 @@ public class ExpoMapboxNavigationModule: Module {
-       Prop("followingZoom") { (view: ExpoMapboxNavigationView, followingZoom: Double?) in
+@@ -84,6 +84,18 @@ public class ExpoMapboxNavigationModule: Module {
          view.controller.setFollowingZoom(followingZoom: followingZoom)
        }
-+
+ 
 +      Prop("tripProgressBarBackgroundColor") { (view: ExpoMapboxNavigationView, color: String?) in
 +          view.controller.setTripProgressBarBackgroundColor(color)
 +      }
@@ -140,14 +161,15 @@ index 7e0b2679973325f2d64334c16b5d3db8a013e1df..08a2d39244a3b56de4d038c9d2f6b950
 +      Prop("tripProgressBarSecondaryTextColor") { (view: ExpoMapboxNavigationView, color: String?) in
 +          view.controller.setTripProgressBarSecondaryTextColor(color)
 +      }
- 
++
        AsyncFunction("recenterMap") { (view: ExpoMapboxNavigationView) in
          view.controller.recenterMap()
+       }
 diff --git a/ios/ExpoMapboxNavigationView.swift b/ios/ExpoMapboxNavigationView.swift
-index 43dd8bf1f5e2f8ca1dd113470bd857cf4b94aa62..529e9b3e602d587bb6d5f0a36afd6ff8f39494e3 100644
+index 8f841df..0f18bb4 100644
 --- a/ios/ExpoMapboxNavigationView.swift
 +++ b/ios/ExpoMapboxNavigationView.swift
-@@ -50,6 +50,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -58,6 +58,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
      var currentCustomRasterSourceUrl: String? = nil
      var currentPlaceCustomRasterLayerAbove: String? = nil
      var currentDisableAlternativeRoutes: Bool? = nil
@@ -165,11 +187,10 @@ index 43dd8bf1f5e2f8ca1dd113470bd857cf4b94aa62..529e9b3e602d587bb6d5f0a36afd6ff8
          navigationViewController.automaticallyAdjustsStyleForTimeOfDay = false
  
          let navigationMapView = navigationViewController.navigationMapView
-@@ -480,6 +484,40 @@ class ExpoMapboxNavigationViewController: UIViewController {
-         ])
+@@ -481,6 +485,45 @@ class ExpoMapboxNavigationViewController: UIViewController {
          didMove(toParent: self)
          mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
-+    }
+     }
 +
 +    func setTripProgressBarBackgroundColor(_ color: String?) {
 +        currentTripProgressBarBackgroundColor = color
@@ -208,9 +229,11 @@ index 43dd8bf1f5e2f8ca1dd113470bd857cf4b94aa62..529e9b3e602d587bb6d5f0a36afd6ff8
 +                subview.backgroundColor = .clear
 +            }
 +        }
-     }
++    }
  }
-@@ -500,3 +538,23 @@ extension UIView {
+ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
+     func navigationViewController(_ navigationViewController: NavigationViewController, didRerouteAlong route: Route) {
+@@ -507,3 +550,22 @@ extension UIView {
          return subviews + subviews.flatMap { $0.recursiveSubviews }
      }
  }
