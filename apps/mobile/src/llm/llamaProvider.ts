@@ -1,5 +1,5 @@
+import { type LlamaLanguageModel, llama } from "@react-native-ai/llama";
 import { streamText } from "ai";
-import { llama } from "@react-native-ai/llama";
 
 type LlamaMessage = {
   role: "system" | "user" | "assistant";
@@ -7,8 +7,9 @@ type LlamaMessage = {
 };
 
 let activeModelPath: string | null = null;
-let preparedModel: any | null = null;
-let preparePromise: Promise<any> | null = null;
+let preparedModel: LlamaLanguageModel | null = null;
+let preparePromise: Promise<LlamaLanguageModel> | null = null;
+let activeGenerationPromise: Promise<void> | null = null;
 
 function normalizeModelPath(modelPath: string) {
   if (!modelPath.startsWith("file://")) {
@@ -56,6 +57,40 @@ export async function getPreparedLlamaModel(modelPath: string) {
   }
 }
 
+async function resetPreparedModel(model: LlamaLanguageModel | null) {
+  if (!model) {
+    if (!preparedModel) {
+      activeModelPath = null;
+    }
+    return;
+  }
+
+  const shouldClearPreparedModel = preparedModel === model;
+
+  try {
+    await model.unload?.();
+  } catch {
+    // best effort
+  } finally {
+    if (shouldClearPreparedModel) {
+      preparedModel = null;
+      activeModelPath = null;
+    }
+  }
+}
+
+async function waitForActiveGeneration() {
+  if (!activeGenerationPromise) {
+    return;
+  }
+
+  try {
+    await activeGenerationPromise;
+  } catch {
+    // best effort
+  }
+}
+
 export async function unloadPreparedLlamaModel() {
   if (!preparedModel) {
     activeModelPath = null;
@@ -76,7 +111,11 @@ export async function streamLlamaText(input: {
   onToken?: (token: string, accumulatedText: string) => void;
   abortSignal?: AbortSignal;
 }) {
+  await waitForActiveGeneration();
+
   const model = await getPreparedLlamaModel(input.modelPath);
+  let shouldResetModel = false;
+
   const result = streamText({
     model,
     messages: input.messages,
@@ -84,10 +123,66 @@ export async function streamLlamaText(input: {
   });
 
   let accumulated = "";
-  for await (const delta of result.textStream) {
-    accumulated += delta;
-    input.onToken?.(delta, accumulated);
+  let aborted = Boolean(input.abortSignal?.aborted);
+  const iterator = result.textStream[Symbol.asyncIterator]();
+  const cancelStream = async () => {
+    try {
+      await iterator.return?.();
+    } catch {
+      // best effort
+    }
+  };
+  const handleAbort = () => {
+    aborted = true;
+    shouldResetModel = true;
+    void cancelStream();
+  };
+
+  if (input.abortSignal) {
+    if (input.abortSignal.aborted) {
+      handleAbort();
+    } else {
+      input.abortSignal.addEventListener("abort", handleAbort, { once: true });
+    }
   }
 
-  return accumulated.trim();
+  const generationPromise = (async () => {
+    while (true) {
+      const { done, value } = await iterator.next();
+      if (done) {
+        break;
+      }
+
+      const delta = value;
+      accumulated += delta;
+      input.onToken?.(delta, accumulated);
+    }
+  })();
+  const trackedGenerationPromise = generationPromise.then(
+    () => undefined,
+    () => undefined,
+  );
+  activeGenerationPromise = trackedGenerationPromise;
+
+  try {
+    await generationPromise;
+    if (aborted || input.abortSignal?.aborted) {
+      throw input.abortSignal?.reason ?? new Error("Generation stopped");
+    }
+    return accumulated.trim();
+  } catch (error) {
+    shouldResetModel = true;
+    throw error;
+  } finally {
+    if (input.abortSignal) {
+      input.abortSignal.removeEventListener("abort", handleAbort);
+    }
+    await trackedGenerationPromise;
+    if (activeGenerationPromise === trackedGenerationPromise) {
+      activeGenerationPromise = null;
+    }
+    if (shouldResetModel) {
+      await resetPreparedModel(model);
+    }
+  }
 }

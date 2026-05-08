@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -30,12 +31,12 @@ import { RichTextMessage } from "@/components/assistant/RichTextMessage";
 import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal";
 import { Button } from "@/components/shared/Button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import { addOfflineTripItem } from "@/features/offline/itinerary";
 import {
   type AssistantReference,
   buildAssistantGrounding,
   buildAssistantReferences,
 } from "@/features/assistant/grounding";
+import { addOfflineTripItem } from "@/features/offline/itinerary";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { runAssistantCompletion } from "@/llm/chatEngine";
@@ -264,11 +265,13 @@ function MessageBubble({
 export default function AssistantScreen() {
   const router = useRouter();
   const scrollRef = useRef<ScrollView | null>(null);
+  const shouldAutoScrollRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [confirmingMessageId, setConfirmingMessageId] = useState<string | null>(null);
   const [addingPlanMessageId, setAddingPlanMessageId] = useState<string | null>(null);
   const [selectedPlaceReference, setSelectedPlaceReference] = useState<AssistantReference | null>(
@@ -445,6 +448,8 @@ export default function AssistantScreen() {
     let plannerProgressIndex = 0;
 
     setInput("");
+    Keyboard.dismiss();
+    shouldAutoScrollRef.current = true;
     appendUserMessage(activeThread.id, nextText);
     const assistantMessageId = createLocalId("assistant-response");
     setTyping(true);
@@ -464,6 +469,10 @@ export default function AssistantScreen() {
         groundingContext = isConnected
           ? "Connectivity status: online. No extra grounded app data could be loaded for this turn."
           : "Connectivity status: offline. No live app data could be loaded for this turn.";
+      }
+
+      if (abortController.signal.aborted) {
+        throw abortController.signal.reason ?? new Error("Generation stopped");
       }
 
       if (
@@ -499,6 +508,10 @@ export default function AssistantScreen() {
         }, 900);
       }
 
+      if (abortController.signal.aborted) {
+        throw abortController.signal.reason ?? new Error("Generation stopped");
+      }
+
       const result = await runAssistantCompletion({
         modelPath: modelState.modelUri,
         userName: user?.name,
@@ -527,7 +540,9 @@ export default function AssistantScreen() {
           if (threadSnapshot.mode !== "plan") {
             upsertAssistantMessage(activeThread.id, assistantMessageId, accumulated);
           }
-          requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+          if (shouldAutoScrollRef.current) {
+            requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+          }
         },
         abortSignal: abortController.signal,
       });
@@ -543,7 +558,9 @@ export default function AssistantScreen() {
         summary: result.nextSummary,
       });
       setModelState({ status: "ready", error: null, progress: 1 });
-      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+      if (shouldAutoScrollRef.current) {
+        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+      }
     } catch (error) {
       if (plannerProgressTimer) {
         clearInterval(plannerProgressTimer);
@@ -578,6 +595,7 @@ export default function AssistantScreen() {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
       }
+      setStopping(false);
       setTyping(false);
       setSending(false);
     }
@@ -702,8 +720,27 @@ export default function AssistantScreen() {
     setSelectedPlaceReference(reference);
   }
 
-  function handleStopGeneration() {
-    abortControllerRef.current?.abort();
+  async function handleStopGeneration() {
+    const abortController = abortControllerRef.current;
+    if (!abortController || abortController.signal.aborted || stopping) {
+      return;
+    }
+
+    setStopping(true);
+    abortController.abort("Stopped by user");
+  }
+
+  function handleChatScroll(event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      contentSize: { height: number };
+      layoutMeasurement: { height: number };
+    };
+  }) {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    shouldAutoScrollRef.current = distanceFromBottom <= 80;
   }
 
   if (!hydrated) {
@@ -838,6 +875,9 @@ export default function AssistantScreen() {
                 className="flex-1 mt-4"
                 contentContainerClassName="pb-6 pt-1"
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                onScroll={handleChatScroll}
+                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
               >
                 {activeThread?.messages.length ? (
@@ -904,7 +944,7 @@ export default function AssistantScreen() {
                 ) : null}
               </ScrollView>
 
-              <View className="pt-3 pb-2 border-t border-border/80">
+              <View className="pt-3 border-t border-border/80">
                 <View className="rounded-[26px] border border-border bg-card px-3 py-3">
                   {activeThread ? (
                     <View className="flex-row items-center justify-between gap-3 mb-2">
@@ -966,10 +1006,18 @@ export default function AssistantScreen() {
 
                     {sending ? (
                       <Pressable
-                        onPress={handleStopGeneration}
-                        className="h-10 min-w-[68px] items-center justify-center rounded-full border border-border bg-muted/50 px-3"
+                        disabled={stopping}
+                        onPress={() => void handleStopGeneration()}
+                        className={cn(
+                          "h-10 min-w-[68px] items-center justify-center rounded-full border px-3",
+                          stopping
+                            ? "border-border bg-muted/30"
+                            : "border-border bg-muted/50",
+                        )}
                       >
-                        <Text className="text-sm font-semibold text-foreground">Stop</Text>
+                        <Text className="text-sm font-semibold text-foreground">
+                          {stopping ? "Stopping…" : "Stop"}
+                        </Text>
                       </Pressable>
                     ) : (
                       <Pressable
@@ -988,13 +1036,6 @@ export default function AssistantScreen() {
                     )}
                   </View>
                 </View>
-
-                {!isConnected ? (
-                  <Text className="mt-2 text-xs text-center text-muted-foreground">
-                    Offline mode is active. Chat stays available and planner confirmations will sync
-                    later.
-                  </Text>
-                ) : null}
 
                 {modelState.error ? (
                   <Text className="mt-2 text-xs text-center text-destructive">
