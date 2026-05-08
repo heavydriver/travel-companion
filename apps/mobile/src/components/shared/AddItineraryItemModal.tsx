@@ -11,7 +11,7 @@ import {
   addOptimisticTripItemToCache,
   restoreOptimisticTripItems,
 } from "@/features/offline/itinerary";
-import { formatDate, toDateOnly } from "@/lib/utils";
+import { formatDate, toDeviceDateIso } from "@/lib/utils";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { Button } from "./Button";
@@ -180,11 +180,10 @@ export function AddItineraryItemModal({
   });
 
   const handleAdd = handleSubmit((values) => {
-    const dateStr = toDateOnly(selectedDate);
     addMutation.mutate({
       title: values.title,
       notes: values.notes,
-      dateIso: new Date(dateStr).toISOString(),
+      dateIso: toDeviceDateIso(selectedDate),
       startTime: startTimeDate ? formatTime(startTimeDate) : null,
       endTime: endTimeDate ? formatTime(endTimeDate) : null,
       placeId: linkedPlaceId,

@@ -15,7 +15,28 @@ export function toISO(value: string | Date): string {
 
 /** Extract the YYYY-MM-DD portion from a Date or ISO string. */
 export function toDateOnly(value: string | Date): string {
-  return toISO(value).split("T")[0];
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  return value.split("T")[0];
+}
+
+function toLocalDateFromDateOnly(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+/** Convert a Date/ISO into a device-calendar Date object (timezone-safe for day-only use). */
+export function toDeviceCalendarDate(value: string | Date): Date {
+  return toLocalDateFromDateOnly(toDateOnly(value));
+}
+
+/** Keep calendar day stable when sending a date as ISO. */
+export function toDeviceDateIso(value: string | Date): string {
+  return `${toDateOnly(value)}T12:00:00.000Z`;
 }
 
 export function startOfLocalDay(value: string | Date): Date {
@@ -52,7 +73,8 @@ export function isTripPast(
 }
 
 export function formatDate(value: string | Date): string {
-  return new Date(value).toLocaleDateString("en-US", {
+  const date = toDeviceCalendarDate(value);
+  return date.toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -61,7 +83,9 @@ export function formatDate(value: string | Date): string {
 
 export function formatDateRange(start: string | Date, end: string | Date): string {
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  return `${new Date(start).toLocaleDateString("en-US", opts)} – ${new Date(end).toLocaleDateString("en-US", opts)}`;
+  const startDate = toDeviceCalendarDate(start);
+  const endDate = toDeviceCalendarDate(end);
+  return `${startDate.toLocaleDateString("en-US", opts)} – ${endDate.toLocaleDateString("en-US", opts)}`;
 }
 
 export function daysUntil(date: string | Date): number {

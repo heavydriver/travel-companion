@@ -47,7 +47,13 @@ import {
 import { downloadOfflinePack, getOfflinePackCounts } from "@/features/offline/pack";
 import type { OfflinePackData } from "@/features/offline/types";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
-import { formatDate, formatItineraryTimeRange, toDateOnly } from "@/lib/utils";
+import {
+  formatDate,
+  formatItineraryTimeRange,
+  toDateOnly,
+  toDeviceCalendarDate,
+  toDeviceDateIso,
+} from "@/lib/utils";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { useOfflineStore } from "@/store/offlineStore";
@@ -934,7 +940,7 @@ function EditItemModal({
 
   const [title, setTitle] = useState(item.title);
   const [notes, setNotes] = useState(item.notes ?? "");
-  const [selectedDate, setSelectedDate] = useState(new Date(item.date));
+  const [selectedDate, setSelectedDate] = useState(toDeviceCalendarDate(item.date));
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
@@ -946,7 +952,7 @@ function EditItemModal({
   useEffect(() => {
     setTitle(item.title);
     setNotes(item.notes ?? "");
-    setSelectedDate(new Date(item.date));
+    setSelectedDate(toDeviceCalendarDate(item.date));
     setStartTimeDate(parseItineraryTime(item.startTime));
     setEndTimeDate(parseItineraryTime(item.endTime));
   }, [item]);
@@ -965,7 +971,7 @@ function EditItemModal({
       if (useOfflineLocalOnly) {
         const updated = await updateOfflineTripItem(tripId, item.id, {
           title,
-          date: selectedDate.toISOString(),
+          date: toDeviceDateIso(selectedDate),
           startTime: startTimeDate ? fmtTime(startTimeDate) : null,
           endTime: endTimeDate ? fmtTime(endTimeDate) : null,
           notes: notes || null,
@@ -975,7 +981,7 @@ function EditItemModal({
       }
       const res = await client.api.v1["itinerary-items"]({ id: item.id }).patch({
         title,
-        date: selectedDate.toISOString(),
+        date: toDeviceDateIso(selectedDate),
         startTime: startTimeDate ? fmtTime(startTimeDate) : null,
         endTime: endTimeDate ? fmtTime(endTimeDate) : null,
         notes: notes || null,
@@ -989,7 +995,7 @@ function EditItemModal({
       }
       const { previous } = updateOptimisticTripItemInCache(tripId, item.id, {
         title,
-        date: selectedDate.toISOString(),
+        date: toDeviceDateIso(selectedDate),
         startTime: startTimeDate ? fmtTime(startTimeDate) : null,
         endTime: endTimeDate ? fmtTime(endTimeDate) : null,
         notes: notes || null,
