@@ -7,6 +7,7 @@ export const plannerItemSchema = z.object({
   endTime: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   placeQuery: z.string().optional().nullable(),
+  placeId: z.string().optional().nullable(),
 });
 
 export const plannerProposalSchema = z.object({
@@ -14,6 +15,7 @@ export const plannerProposalSchema = z.object({
   destinationName: z.string().min(1).max(120),
   country: z.string().optional().nullable(),
   countryCode: z.string().optional().nullable(),
+  destinationId: z.string().optional().nullable(),
   startDate: z.string().optional().nullable(),
   endDate: z.string().optional().nullable(),
   budget: z.number().optional().nullable(),
@@ -200,6 +202,12 @@ function normalizeProposalCandidate(value: unknown) {
         : typeof destination?.countryCode === "string"
           ? destination.countryCode.toUpperCase()
           : null,
+    destinationId:
+      typeof raw.destinationId === "string"
+        ? raw.destinationId
+        : typeof destination?.id === "string"
+          ? destination.id
+          : null,
     startDate: normalizeDateString(raw.startDate, "start"),
     endDate: normalizeDateString(raw.endDate, "end"),
     budget: normalizeBudget(raw.budget),
@@ -230,6 +238,7 @@ function normalizeProposalCandidate(value: unknown) {
               ? item.description
               : null,
         placeQuery: typeof item.placeQuery === "string" ? item.placeQuery : null,
+        placeId: typeof item.placeId === "string" ? item.placeId : null,
       })),
   };
 }
@@ -314,7 +323,7 @@ export function plannerProposalToItineraryPreview(
   return proposal.itineraryItems.map((item, index) => ({
     id: `planner-item:${index}`,
     tripId: "planner-preview",
-    placeId: null,
+    placeId: item.placeId ?? null,
     title: item.title,
     notes: item.notes ?? null,
     date: item.date,

@@ -27,6 +27,9 @@ type PlaceSummary = {
   isFeatured?: boolean;
   address?: string | null;
   city?: string | null;
+  priceLevel?: number | null;
+  websiteUrl?: string | null;
+  phoneNumber?: string | null;
 };
 
 export type AssistantReference = {
@@ -267,15 +270,23 @@ async function resolveDestinationFromMessage(
   };
 }
 
-async function fetchDestinationDetail(destinationId: string) {
-  const res = await client.api.v1.destinations({ destId: destinationId }).get();
-  if (res.error || !res.data?.destination) {
-    throw new Error("Could not load destination details");
+async function fetchDestinationPlaceList(destinationId: string) {
+  const res = await client.api.v1.destinations({ destId: destinationId }).places.get();
+  if (res.error || !res.data?.places) {
+    return [] as PlaceSummary[];
   }
-  return res.data as {
-    destination: DestinationSummary;
-    curatedPlaces: PlaceSummary[];
-    otherPlaces: PlaceSummary[];
+  return res.data.places as PlaceSummary[];
+}
+
+async function fetchPlaceDetail(placeId: string) {
+  const res = await client.api.v1.places({ id: placeId }).get();
+  if (res.error || !res.data?.place) {
+    return null;
+  }
+  return res.data.place as {
+    websiteUrl?: string | null;
+    phoneNumber?: string | null;
+    priceLevel?: number | null;
   };
 }
 
@@ -585,20 +596,32 @@ function buildPromptContext(input: {
 
   if (input.matchedDestination) {
     lines.push(
-      `Matched destination in app data: ${input.matchedDestination.name}, ${input.matchedDestination.country}${input.matchedDestination.countryCode ? ` (${input.matchedDestination.countryCode})` : ""}.`,
+      `Matched destination in app data: ${input.matchedDestination.name}, ${input.matchedDestination.country}${input.matchedDestination.countryCode ? ` (${input.matchedDestination.countryCode})` : ""}. destinationId=${input.matchedDestination.id}.`,
     );
     if (input.matchedDestination.description) {
       lines.push(`Destination summary: ${input.matchedDestination.description}`);
+    }
+    if (input.matchedDestination.currencyCode) {
+      lines.push(`Destination currency code: ${input.matchedDestination.currencyCode}.`);
+    }
+    if (input.matchedDestination.timezone) {
+      lines.push(`Destination timezone: ${input.matchedDestination.timezone}.`);
     }
   }
 
   if (input.relatedPlaces.length) {
     lines.push("Relevant places from app data:");
-    for (const place of input.relatedPlaces) {
+    for (const place of input.relatedPlaces.slice(0, 4)) {
       const bits = [
         place.name,
+        `placeId=${place.id}`,
+        `destinationId=${place.destinationId}`,
         place.category,
         typeof place.rating === "number" ? `rating ${place.rating.toFixed(1)}` : null,
+        typeof place.priceLevel === "number" ? `priceLevel ${place.priceLevel}` : null,
+        place.city ? `city ${place.city}` : null,
+        place.address ? `address ${place.address}` : null,
+        place.websiteUrl ? "hasWebsite" : null,
         place.description ?? null,
       ].filter(Boolean);
       lines.push(`- ${bits.join(" · ")}`);
@@ -608,7 +631,9 @@ function buildPromptContext(input: {
   if (input.relatedDestinations.length) {
     lines.push("Destination records available in the app:");
     for (const destination of input.relatedDestinations.slice(0, 6)) {
-      lines.push(`- ${destination.name}, ${destination.country}`);
+      lines.push(
+        `- ${destination.name}, ${destination.country} · destinationId=${destination.id}${destination.countryCode ? ` · countryCode=${destination.countryCode}` : ""}`,
+      );
     }
   }
 
@@ -628,6 +653,12 @@ function buildPromptContext(input: {
   );
   lines.push(
     "If user asks what to visit or what to do for matched destination, prefer grounded places first before generic suggestions.",
+  );
+  lines.push(
+    "Schema hints: trip uses {id,title,startDate,endDate,destination{id,name,countryCode}}. itinerary item uses {title,date,startTime,endTime,notes,placeId}.",
+  );
+  lines.push(
+    "In planner outputs, include destinationId/placeId when grounded IDs are available; otherwise use null.",
   );
 
   return lines.join("\n");
@@ -738,28 +769,18 @@ export async function buildAssistantGrounding(input: {
     input.activeTripDestination,
   );
 
-  let destinationContext:
-    | {
-        destination: DestinationSummary;
-        curatedPlaces: PlaceSummary[];
-        otherPlaces: PlaceSummary[];
-      }
-    | null = null;
-
+  let relatedPlaces: PlaceSummary[] = [];
   if (matchedDestination?.id) {
-    try {
-      destinationContext = await fetchDestinationDetail(matchedDestination.id);
-    } catch {
-      destinationContext = null;
-    }
+    const placeList = await fetchDestinationPlaceList(matchedDestination.id);
+    const shortlisted = selectRelevantPlaces(placeList, input.message).slice(0, 4);
+    const detailed = await Promise.all(
+      shortlisted.map(async (place) => {
+        const detail = await fetchPlaceDetail(place.id);
+        return detail ? { ...place, ...detail } : place;
+      }),
+    );
+    relatedPlaces = detailed;
   }
-
-  const relatedPlaces = destinationContext
-    ? selectRelevantPlaces(
-        [...destinationContext.curatedPlaces, ...destinationContext.otherPlaces],
-        input.message,
-      )
-    : [];
 
   const wantsWeather = normalize(input.message).includes("weather");
   const wantsCurrency =
@@ -768,39 +789,35 @@ export async function buildAssistantGrounding(input: {
     Boolean(parseCurrencyCodes(input.message).length);
 
   const [weatherSummary, currencySummary] = await Promise.all([
-    wantsWeather && destinationContext?.destination
-      ? fetchWeatherSummary(destinationContext.destination)
+    wantsWeather && matchedDestination
+      ? fetchWeatherSummary(matchedDestination)
       : Promise.resolve(null),
-    wantsCurrency && destinationContext?.destination
-      ? fetchCurrencySummary(destinationContext.destination, input.message)
+    wantsCurrency && matchedDestination
+      ? fetchCurrencySummary(matchedDestination, input.message)
       : Promise.resolve(null),
   ]);
 
   const grounding: AssistantGrounding = {
     connectivity,
-    matchedDestination: destinationContext?.destination ?? matchedDestination,
-    relatedDestinations:
-      destinationContext?.destination != null
-        ? [
-            destinationContext.destination,
-            ...relatedDestinations.filter((destination) => destination.id !== destinationContext?.destination.id),
-          ]
-        : relatedDestinations,
+    matchedDestination: matchedDestination,
+    relatedDestinations: matchedDestination
+      ? [
+          matchedDestination,
+          ...relatedDestinations.filter((destination) => destination.id !== matchedDestination.id),
+        ]
+      : relatedDestinations,
     relatedPlaces,
     weatherSummary,
     currencySummary,
     promptContext: buildPromptContext({
       connectivity,
-      matchedDestination: destinationContext?.destination ?? matchedDestination,
-      relatedDestinations:
-        destinationContext?.destination != null
-          ? [
-              destinationContext.destination,
-              ...relatedDestinations.filter(
-                (destination) => destination.id !== destinationContext?.destination.id,
-              ),
-            ]
-          : relatedDestinations,
+      matchedDestination: matchedDestination,
+      relatedDestinations: matchedDestination
+        ? [
+            matchedDestination,
+            ...relatedDestinations.filter((destination) => destination.id !== matchedDestination.id),
+          ]
+        : relatedDestinations,
       relatedPlaces,
       weatherSummary,
       currencySummary,
