@@ -17,7 +17,7 @@ import {
   ShapeSource,
   UserLocation,
 } from "@rnmapbox/maps";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { approximateNumber as approx } from "approximate-number";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
@@ -62,6 +62,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { client } from "@/api/client";
+import { AddItineraryItemModal } from "@/components/shared/AddItineraryItemModal";
 import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import { KeyboardSheetModal } from "@/components/shared/KeyboardSheetModal";
@@ -475,6 +476,7 @@ function resolveNavigationPointCoordinate(
 export function InteractiveMapScreen() {
   const isFocused = useIsFocused();
   const navigation = useNavigation();
+  const queryClient = useQueryClient();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const isConnected = useNetworkStore((s) => s.isConnected);
   const router = useRouter();
@@ -528,6 +530,10 @@ export function InteractiveMapScreen() {
     useState<NavigationFieldTarget | null>(null);
   const [navigationFieldQuery, setNavigationFieldQuery] = useState("");
   const [resolvingNavigationFieldId, setResolvingNavigationFieldId] = useState<string | null>(null);
+  const [showAddItineraryModal, setShowAddItineraryModal] = useState(false);
+  const [addModalPrefill, setAddModalPrefill] = useState<{ title: string; placeId: string | null } | null>(
+    null,
+  );
 
   const cameraRef = useRef<ElementRef<typeof Camera>>(null);
   const sheetRef = useRef<BottomSheet>(null);
@@ -1706,31 +1712,17 @@ export function InteractiveMapScreen() {
   const openAddToItinerary = useCallback(() => {
     if (!eligibleTrip || !selectedPlaceId) return;
     const title = placeDetail?.name ?? selectedPlace?.name ?? "Place";
-    router.push({
-      pathname: "/trip/[id]",
-      params: {
-        id: eligibleTrip.id,
-        openAdd: "1",
-        prefillTitle: title,
-        prefillPlaceId: selectedPlaceId,
-      },
-    });
-  }, [eligibleTrip, selectedPlaceId, placeDetail?.name, selectedPlace?.name, router]);
+    setAddModalPrefill({ title, placeId: selectedPlaceId });
+    setShowAddItineraryModal(true);
+  }, [eligibleTrip, selectedPlaceId, placeDetail?.name, selectedPlace?.name]);
 
   const addPlaceToItinerary = useCallback(
     (placeId: string, title: string) => {
       if (!eligibleTrip) return;
-      router.push({
-        pathname: "/trip/[id]",
-        params: {
-          id: eligibleTrip.id,
-          openAdd: "1",
-          prefillTitle: title,
-          prefillPlaceId: placeId,
-        },
-      });
+      setAddModalPrefill({ title, placeId });
+      setShowAddItineraryModal(true);
     },
-    [eligibleTrip, router],
+    [eligibleTrip],
   );
 
   const mapboxSuggestions = useMemo(
@@ -3173,6 +3165,38 @@ export function InteractiveMapScreen() {
           </BottomSheetScrollView>
         )}
       </BottomSheet>
+      {eligibleTrip ? (
+        <AddItineraryItemModal
+          visible={showAddItineraryModal}
+          tripId={eligibleTrip.id}
+          defaultDate={new Date(eligibleTrip.startDate)}
+          tripStartDate={new Date(eligibleTrip.startDate)}
+          tripEndDate={new Date(eligibleTrip.endDate)}
+          offlineDestinationId={eligibleTrip.destination.id}
+          initialTitle={addModalPrefill?.title}
+          initialPlaceId={addModalPrefill?.placeId ?? null}
+          onClose={() => {
+            setShowAddItineraryModal(false);
+            setAddModalPrefill(null);
+          }}
+          onSuccess={() => {
+            setShowAddItineraryModal(false);
+            const justAddedPlaceId = addModalPrefill?.placeId;
+            setAddModalPrefill(null);
+            void queryClient.invalidateQueries({ queryKey: ["itinerary", eligibleTrip.id] });
+            if (justAddedPlaceId) {
+              setSelectedPlaceId(justAddedPlaceId);
+            }
+          }}
+          onSuccessMessage={(title) => {
+            showAppToast({
+              variant: "success",
+              title: "Added to itinerary",
+              message: `${title} added to ${eligibleTrip.title}.`,
+            });
+          }}
+        />
+      ) : null}
       <KeyboardSheetModal
         visible={editingNavigationField != null}
         title={
