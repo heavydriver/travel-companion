@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/heavydriver/travel-companion/compare/api-v1.4.0...api-v1.4.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* dockerfile updated ([8425ba4](https://github.com/heavydriver/travel-companion/commit/8425ba49b35892a045fa0032c2b64ed0eddd1935))
+
 # [1.4.0](https://github.com/heavydriver/travel-companion/compare/api-v1.3.0...api-v1.4.0) (2026-05-08)
 
 
