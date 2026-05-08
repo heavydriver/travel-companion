@@ -10,23 +10,38 @@ const { languageService } = await import("./service");
 const runId = `language_test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const createdLanguageIds = new Set<string>();
 const createdPhraseIds = new Set<string>();
+const createdDestinationIds = new Set<string>();
 
 let firstDestinationId: string;
 let secondDestinationId: string;
 
+function dummyDestinationPayload(suffix: "a" | "b") {
+  return {
+    name: `Dummy destination ${suffix} (${runId})`,
+    slug: `lang-test-${suffix}-${runId}`,
+    country: "Testland",
+    countryCode: "TL",
+    latitude: 1.23,
+    longitude: 4.56,
+    timezone: "Etc/UTC",
+    currencyCode: "USD",
+  };
+}
+
 beforeAll(async () => {
-  const destinations = await prisma.destination.findMany({
+  const first = await prisma.destination.create({
+    data: dummyDestinationPayload("a"),
     select: { id: true },
-    take: 2,
-    orderBy: { createdAt: "asc" },
+  });
+  const second = await prisma.destination.create({
+    data: dummyDestinationPayload("b"),
+    select: { id: true },
   });
 
-  if (destinations.length < 2) {
-    throw new Error("Need at least two seeded destinations to run languageService tests");
-  }
-
-  firstDestinationId = destinations[0].id;
-  secondDestinationId = destinations[1].id;
+  firstDestinationId = first.id;
+  secondDestinationId = second.id;
+  createdDestinationIds.add(first.id);
+  createdDestinationIds.add(second.id);
 });
 
 afterEach(async () => {
@@ -46,6 +61,12 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  if (createdDestinationIds.size > 0) {
+    await prisma.destination.deleteMany({
+      where: { id: { in: [...createdDestinationIds] } },
+    });
+    createdDestinationIds.clear();
+  }
   await prisma.$disconnect();
 });
 
