@@ -38,7 +38,7 @@ import {
 } from "@/features/assistant/grounding";
 import { addOfflineTripItem } from "@/features/offline/itinerary";
 import { queryClient } from "@/lib/queryClient";
-import { cn } from "@/lib/utils";
+import { cn, isTripActiveToday, isTripPast, isTripUpcoming } from "@/lib/utils";
 import { runAssistantCompletion } from "@/llm/chatEngine";
 import { pauseModelDownload, resumeModelDownload, startModelDownload } from "@/llm/modelManager";
 import { extractPlannerProposal, type PlannerProposal } from "@/llm/plannerSchema";
@@ -309,6 +309,31 @@ export default function AssistantScreen() {
   const activeTripHasOfflinePack = useOfflineStore((state) =>
     activeTrip?.destination.id ? state.isDownloaded(activeTrip.destination.id) : false,
   );
+  const tripTimeline = useMemo(
+    () =>
+      [...trips]
+        .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+        .slice(0, 12)
+        .map((trip) => ({
+          id: trip.id,
+          title: trip.title,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          status: isTripActiveToday(trip.startDate, trip.endDate)
+            ? ("active" as const)
+            : isTripUpcoming(trip.startDate)
+              ? ("upcoming" as const)
+              : isTripPast(trip.endDate)
+                ? ("past" as const)
+                : ("upcoming" as const),
+          destination: {
+            id: trip.destination.id,
+            name: trip.destination.name,
+            countryCode: trip.destination.countryCode,
+          },
+        })),
+    [trips],
+  );
 
   const starterChips = useMemo(() => {
     const copy = [...STARTER_CHIPS];
@@ -444,8 +469,27 @@ export default function AssistantScreen() {
     abortControllerRef.current = abortController;
     let streamedText = "";
     let grounding = null as Awaited<ReturnType<typeof buildAssistantGrounding>> | null;
-    let plannerProgressTimer: ReturnType<typeof setInterval> | null = null;
+    let plannerProgressTimer: ReturnType<typeof setTimeout> | null = null;
     let plannerProgressIndex = 0;
+    const clearPlannerProgressTimer = () => {
+      if (plannerProgressTimer) {
+        clearTimeout(plannerProgressTimer);
+        plannerProgressTimer = null;
+      }
+    };
+    const schedulePlannerProgressUpdate = () => {
+      clearPlannerProgressTimer();
+      const delayMs = 10_000 + Math.floor(Math.random() * 10_001);
+      plannerProgressTimer = setTimeout(() => {
+        plannerProgressIndex = Math.floor(Math.random() * PLAN_THINKING_MESSAGES.length);
+        upsertAssistantMessage(
+          activeThread.id,
+          assistantMessageId,
+          buildPlannerProgressReply(plannerProgressIndex),
+        );
+        schedulePlannerProgressUpdate();
+      }, delayMs);
+    };
 
     setInput("");
     Keyboard.dismiss();
@@ -498,14 +542,7 @@ export default function AssistantScreen() {
           assistantMessageId,
           buildPlannerProgressReply(plannerProgressIndex),
         );
-        plannerProgressTimer = setInterval(() => {
-          plannerProgressIndex = Math.floor(Math.random() * PLAN_THINKING_MESSAGES.length);
-          upsertAssistantMessage(
-            activeThread.id,
-            assistantMessageId,
-            buildPlannerProgressReply(plannerProgressIndex),
-          );
-        }, 900);
+        schedulePlannerProgressUpdate();
       }
 
       if (abortController.signal.aborted) {
@@ -526,12 +563,14 @@ export default function AssistantScreen() {
         userMessage: nextText,
         activeTrip: activeTrip
           ? {
+              id: activeTrip.id,
               title: activeTrip.title,
               startDate: activeTrip.startDate,
               endDate: activeTrip.endDate,
               destination: activeTrip.destination,
             }
           : null,
+        tripTimeline,
         groundingContext,
         itineraryItems,
         onToken: (_, accumulated) => {
@@ -547,10 +586,7 @@ export default function AssistantScreen() {
         abortSignal: abortController.signal,
       });
 
-      if (plannerProgressTimer) {
-        clearInterval(plannerProgressTimer);
-        plannerProgressTimer = null;
-      }
+      clearPlannerProgressTimer();
 
       upsertAssistantMessage(activeThread.id, assistantMessageId, result.text, {
         proposal: result.proposal ?? null,
@@ -562,10 +598,7 @@ export default function AssistantScreen() {
         requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
       }
     } catch (error) {
-      if (plannerProgressTimer) {
-        clearInterval(plannerProgressTimer);
-        plannerProgressTimer = null;
-      }
+      clearPlannerProgressTimer();
       if (abortController.signal.aborted) {
         if (streamedText.trim() && threadSnapshot.mode !== "plan") {
           upsertAssistantMessage(activeThread.id, assistantMessageId, streamedText.trim());
@@ -589,9 +622,7 @@ export default function AssistantScreen() {
         });
       }
     } finally {
-      if (plannerProgressTimer) {
-        clearInterval(plannerProgressTimer);
-      }
+      clearPlannerProgressTimer();
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
       }
@@ -665,13 +696,14 @@ export default function AssistantScreen() {
             startTime: item.startTime ?? null,
             endTime: item.endTime ?? null,
             notes: item.notes ?? null,
-            placeId: null,
+            placeId: item.placeId ?? null,
             isDone: false,
           });
         } else {
           const res = await client.api.v1.trips({ tripId: activeTrip.id })["itinerary-items"].post({
             title: item.title,
             date: item.date,
+            placeId: item.placeId ?? undefined,
             startTime: item.startTime ?? undefined,
             endTime: item.endTime ?? undefined,
             notes: item.notes ?? undefined,

@@ -29,7 +29,7 @@ describe("promptBuilder", () => {
     expect(prompt).toContain("Traveler name: Varun");
     expect(prompt).toContain("Tokyo Adventure");
     expect(prompt).toContain("Shibuya Sky");
-    expect(prompt).toContain("Respond in Markdown for general travel queries.");
+    expect(prompt).toContain("Respond in Markdown.");
     expect(prompt).toContain(
       `If the user asks for something off-topic, reply exactly with: "I'm your travel companion`,
     );
@@ -47,6 +47,8 @@ describe("promptBuilder", () => {
 
     expect(prompt).toContain("Return JSON only.");
     expect(prompt).toContain("followUpQuestions");
+    expect(prompt).toContain("destinationId");
+    expect(prompt).toContain("placeId");
     expect(prompt).not.toContain("<planner_json>");
   });
 

@@ -13,10 +13,12 @@ type ChatThreadShape = {
 };
 
 type ActiveTrip = {
+  id?: string;
   title: string;
   startDate: string;
   endDate: string;
   destination: {
+    id?: string;
     name: string;
     countryCode: string;
   };
@@ -33,6 +35,18 @@ export async function runAssistantCompletion(input: {
   thread: ChatThreadShape;
   userMessage: string;
   activeTrip?: ActiveTrip | null;
+  tripTimeline?: Array<{
+    id: string;
+    title: string;
+    startDate: string;
+    endDate: string;
+    status: "active" | "upcoming" | "past";
+    destination: {
+      id?: string;
+      name: string;
+      countryCode: string;
+    };
+  }>;
   itineraryItems?: ItineraryItem[];
   groundingContext?: string | null;
   onToken?: (token: string, accumulatedText: string) => void;
@@ -43,6 +57,7 @@ export async function runAssistantCompletion(input: {
     userName: input.userName,
     threadSummary: input.thread.summary,
     activeTrip: input.activeTrip,
+    tripTimeline: input.tripTimeline,
     itineraryItems: input.itineraryItems,
     groundingContext: input.groundingContext,
   });

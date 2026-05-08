@@ -11,6 +11,10 @@ import type { Trip } from "@/store/tripStore";
 let activeSyncPromise: Promise<void> | null = null;
 
 async function resolveDestinationId(operation: PendingPlannerOperation) {
+  if (operation.proposal.destinationId) {
+    return operation.proposal.destinationId;
+  }
+
   if (operation.destinationId) {
     return operation.destinationId;
   }
@@ -54,6 +58,7 @@ async function createItineraryItems(tripId: string, proposal: PlannerProposal) {
     const response = await client.api.v1.trips({ tripId })["itinerary-items"].post({
       title: item.title,
       date: item.date,
+      placeId: item.placeId ?? undefined,
       startTime: item.startTime ?? undefined,
       endTime: item.endTime ?? undefined,
       notes: item.notes ?? undefined,
