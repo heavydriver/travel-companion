@@ -11,7 +11,13 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 ARG PNPM_VERSION=10.28.2
-RUN curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-x64" -o /usr/local/bin/pnpm \
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+    "amd64") PNPM_ARCH="x64" ;; \
+    "arm64") PNPM_ARCH="arm64" ;; \
+    *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+  esac \
+  && curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-${PNPM_ARCH}" -o /usr/local/bin/pnpm \
   && chmod +x /usr/local/bin/pnpm
 WORKDIR /app
 
