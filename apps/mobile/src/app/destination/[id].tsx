@@ -304,6 +304,7 @@ export default function DestinationDetailsScreen() {
   const [timeMode, setTimeMode] = useState<"local" | "gmt">("local");
   const offlinePackQuery = useOfflinePackQuery(id);
   const offlinePack = offlinePackQuery.data;
+  const preferOfflinePack = !isConnected && Boolean(offlinePack);
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(tick);
@@ -327,17 +328,23 @@ export default function DestinationDetailsScreen() {
   const [shuffledOtherPlaces, setShuffledOtherPlaces] = useState<PlacePreview[]>([]);
 
   const curatedPlacesSource = useMemo(() => {
+    if (preferOfflinePack) {
+      return (offlinePack?.curatedPlaces ?? []) as PlacePreview[];
+    }
     if (destinationQuery.data?.curatedPlaces) {
       return destinationQuery.data.curatedPlaces as PlacePreview[];
     }
     return (offlinePack?.curatedPlaces ?? []) as PlacePreview[];
-  }, [destinationQuery.data?.curatedPlaces, offlinePack?.curatedPlaces]);
+  }, [preferOfflinePack, destinationQuery.data?.curatedPlaces, offlinePack?.curatedPlaces]);
   const otherPlacesSource = useMemo(() => {
+    if (preferOfflinePack) {
+      return (offlinePack?.otherPlaces ?? []) as PlacePreview[];
+    }
     if (destinationQuery.data?.otherPlaces) {
       return destinationQuery.data.otherPlaces as PlacePreview[];
     }
     return (offlinePack?.otherPlaces ?? []) as PlacePreview[];
-  }, [destinationQuery.data?.otherPlaces, offlinePack?.otherPlaces]);
+  }, [preferOfflinePack, destinationQuery.data?.otherPlaces, offlinePack?.otherPlaces]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: dataUpdatedAt triggers reshuffle after refetch when TanStack keeps same place array refs
   useEffect(() => {
@@ -345,9 +352,11 @@ export default function DestinationDetailsScreen() {
     setShuffledOtherPlaces(shufflePlaces(otherPlacesSource));
   }, [destinationQuery.dataUpdatedAt, curatedPlacesSource, otherPlacesSource]);
 
-  const destForQueries =
-    (destinationQuery.data?.destination as DestinationDetail | undefined) ??
-    (offlinePack?.destination as DestinationDetail | undefined);
+  const destForQueries = preferOfflinePack
+    ? ((offlinePack?.destination as DestinationDetail | undefined) ??
+      (destinationQuery.data?.destination as DestinationDetail | undefined))
+    : ((destinationQuery.data?.destination as DestinationDetail | undefined) ??
+      (offlinePack?.destination as DestinationDetail | undefined));
 
   const tripsForDestinationQuery = useQuery({
     queryKey: ["trips", "destination", id],
@@ -420,9 +429,11 @@ export default function DestinationDetailsScreen() {
     );
   }
 
-  const destination =
-    (destinationQuery.data?.destination as DestinationDetail | undefined) ??
-    (offlinePack?.destination as DestinationDetail | undefined);
+  const destination = preferOfflinePack
+    ? ((offlinePack?.destination as DestinationDetail | undefined) ??
+      (destinationQuery.data?.destination as DestinationDetail | undefined))
+    : ((destinationQuery.data?.destination as DestinationDetail | undefined) ??
+      (offlinePack?.destination as DestinationDetail | undefined));
 
   if (!destination) {
     return (

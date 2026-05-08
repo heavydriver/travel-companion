@@ -66,6 +66,7 @@ import { showAppToast } from "@/components/shared/AppToast";
 import { Button } from "@/components/shared/Button";
 import { KeyboardSheetModal } from "@/components/shared/KeyboardSheetModal";
 import { PlaceCard } from "@/components/shared/PlaceCard";
+import { findOfflinePackByPlaceId, getOfflinePlaceFromPack } from "@/features/offline/pack";
 import { useDebounce } from "@/hooks/useDebounce";
 import { THEME } from "@/lib/theme";
 import { formatDistanceFromKm } from "@/lib/units";
@@ -79,6 +80,7 @@ import {
   useMapNavigationStore,
 } from "@/store/mapNavigationStore";
 import { type MapSessionPlace, useMapSessionStore } from "@/store/mapSessionStore";
+import { useNetworkStore } from "@/store/networkStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
 import { getEligibleTripForDestination, type Trip, useTripStore } from "@/store/tripStore";
 import { pinColorForCategory } from "./categoryPinColor";
@@ -474,6 +476,7 @@ export function InteractiveMapScreen() {
   const isFocused = useIsFocused();
   const navigation = useNavigation();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const isConnected = useNetworkStore((s) => s.isConnected);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -1108,8 +1111,32 @@ export function InteractiveMapScreen() {
     enabled: Boolean(selectedPlaceId && sheetMode === "detail"),
     staleTime: 60 * 1000,
   });
+  const offlinePlacePackQuery = useQuery({
+    queryKey: ["offline-place-pack", selectedPlaceId],
+    queryFn: async () => {
+      if (!selectedPlaceId) return null;
+      return findOfflinePackByPlaceId(selectedPlaceId);
+    },
+    enabled: Boolean(selectedPlaceId && sheetMode === "detail"),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
 
-  const placeDetail = placeDetailQuery.data?.place as PlaceDetail | undefined;
+  const offlinePlaceDetail = useMemo(
+    () =>
+      selectedPlaceId
+        ? ((getOfflinePlaceFromPack(
+            offlinePlacePackQuery.data,
+            selectedPlaceId,
+          ) as PlaceDetail | null) ?? null)
+        : null,
+    [offlinePlacePackQuery.data, selectedPlaceId],
+  );
+  const placeDetail =
+    (!isConnected ? offlinePlaceDetail : null) ??
+    (placeDetailQuery.data?.place as PlaceDetail | undefined) ??
+    offlinePlaceDetail ??
+    undefined;
   const detailHeroImageUrl = placeDetail?.imageUrl ?? selectedPlace?.imageUrl ?? null;
   const placeInItinerary = Boolean(selectedPlaceId && itineraryPlaceIds.has(selectedPlaceId));
   const selectedSavedPlaceFromSearch = useMemo(

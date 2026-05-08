@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { QueryClient } from "@tanstack/react-query";
+import { fileStorage } from "@/lib/storage";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,11 +17,11 @@ export const queryClient = new QueryClient({
 });
 
 export const queryCachePersister = createAsyncStoragePersister({
-  storage: AsyncStorage,
+  storage: fileStorage,
   key: "travel_companion_query_cache",
 });
 
-/** Clears in-memory queries and drops persisted React Query data from AsyncStorage. */
+/** Clears in-memory queries and drops persisted React Query data from local storage. */
 export function clearQueryCache() {
   queryClient.clear();
   void queryCachePersister.removeClient();

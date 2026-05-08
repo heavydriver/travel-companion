@@ -105,11 +105,9 @@ export default function CurrencyConverterScreen() {
     staleTime: 24 * 60 * 60 * 1000,
   });
 
-  const currencies = (
-    (isConnected ? supportedQuery.data?.currencies : undefined) ??
-    offlineCurrency?.supported ??
-    []
-  ) as SupportedCurrency[];
+  const currencies = (offlineCurrency?.supported ??
+    supportedQuery.data?.currencies ??
+    []) as SupportedCurrency[];
   const baseSupported = currencies.some((c) => c.code === baseCode);
 
   const ratesQuery = useQuery({
@@ -128,9 +126,10 @@ export default function CurrencyConverterScreen() {
           : {},
     [isConnected, offlineCurrency, offlinePackQuery.data, ratesBody, baseCode],
   );
-  const rateDateRaw = isConnected && ratesBody
-    ? extractRatesDate(ratesBody)
-    : offlineCurrency?.fetchedAt.slice(0, 10) ?? null;
+  const rateDateRaw =
+    isConnected && ratesBody
+      ? extractRatesDate(ratesBody)
+      : (offlineCurrency?.fetchedAt.slice(0, 10) ?? null);
 
   const rate = rates[quoteCode] ?? 0;
 
@@ -201,10 +200,13 @@ export default function CurrencyConverterScreen() {
           <View className="h-10 w-10" />
         </View>
 
-        {supportedQuery.isLoading && isConnected && !offlineCurrency ? (
+        {(supportedQuery.isLoading && isConnected && !offlineCurrency) ||
+        (!isConnected && offlinePackQuery.isLoading) ? (
           <View className="items-center py-12">
             <ActivityIndicator size="large" />
-            <Text className="mt-3 text-sm text-muted-foreground">Loading currencies…</Text>
+            <Text className="mt-3 text-sm text-muted-foreground">
+              {isConnected ? "Loading currencies…" : "Loading offline currency data…"}
+            </Text>
           </View>
         ) : supportedQuery.isError && !offlineCurrency ? (
           <View className="rounded-2xl border border-border bg-card px-4 py-4">

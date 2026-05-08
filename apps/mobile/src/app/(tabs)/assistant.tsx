@@ -330,8 +330,15 @@ export default function AssistantScreen() {
     const cached = queryClient.getQueryData<{
       items: Array<{ title: string; date: string }>;
     }>(["itinerary", activeTrip.id]);
-    return activeTripHasOfflinePack ? activeTripOfflineItems ?? cached?.items ?? [] : cached?.items ?? [];
-  }, [activeTrip?.id, activeThread?.messages.length, activeTripHasOfflinePack, activeTripOfflineItems]);
+    return activeTripHasOfflinePack
+      ? (activeTripOfflineItems ?? cached?.items ?? [])
+      : (cached?.items ?? []);
+  }, [
+    activeTrip?.id,
+    activeThread?.messages.length,
+    activeTripHasOfflinePack,
+    activeTripOfflineItems,
+  ]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -657,7 +664,9 @@ export default function AssistantScreen() {
         }
       }
 
-      await queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip.id] });
+      if (!activeTripHasOfflinePack) {
+        await queryClient.invalidateQueries({ queryKey: ["itinerary", activeTrip.id] });
+      }
       Toast.show({
         type: "success",
         text1: "Itinerary updated",

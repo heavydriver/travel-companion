@@ -17,7 +17,7 @@ import {
   Trash2,
 } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -38,13 +38,17 @@ import { Screen } from "@/components/shared/Screen";
 import { Progress } from "@/components/ui/progress";
 import {
   deleteOfflineTripItem,
+  deleteOptimisticTripItemFromCache,
+  restoreOptimisticTripItems,
   seedOfflineTripItinerary,
   updateOfflineTripItem,
+  updateOptimisticTripItemInCache,
 } from "@/features/offline/itinerary";
 import { downloadOfflinePack, getOfflinePackCounts } from "@/features/offline/pack";
 import type { OfflinePackData } from "@/features/offline/types";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { formatDate, formatItineraryTimeRange, toDateOnly } from "@/lib/utils";
+import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { analytics } from "@/utils/analytics";
@@ -117,6 +121,7 @@ export default function TripDetailScreen() {
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
   const foreground = useUnstableNativeVariable("--foreground");
   const iconColor = foreground ? `hsl(${foreground})` : undefined;
+  const isOnline = useNetworkStore((s) => s.isConnected && s.isInternetReachable === true);
 
   const { guardAction } = useOfflineGuard();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -179,11 +184,22 @@ export default function TripDetailScreen() {
     enabled: !!id,
   });
 
-  const offlineTripItems = useOfflineItineraryStore((state) => (id ? state.tripItems[id] : undefined));
+  const offlineTripItemsByTrip = useOfflineItineraryStore((state) => state.tripItems);
+  const offlineTripItems = id ? offlineTripItemsByTrip[id] : undefined;
 
   const toggleDone = useMutation({
+    networkMode: "always",
     mutationFn: async ({ itemId, isDone }: { itemId: string; isDone: boolean }) => {
-      if (id && trip?.destination?.id && useOfflineStore.getState().isDownloaded(trip.destination.id)) {
+      const shouldUseLocalMutation = Boolean(
+        id &&
+          trip?.destination?.id &&
+          (isPackDownloaded ||
+            !(
+              useNetworkStore.getState().isConnected &&
+              useNetworkStore.getState().isInternetReachable === true
+            )),
+      );
+      if (shouldUseLocalMutation) {
         const updated = await updateOfflineTripItem(id, itemId, { isDone });
         if (!updated) throw new Error("Failed to update");
         return updated;
@@ -194,12 +210,52 @@ export default function TripDetailScreen() {
       if (res.error) throw new Error("Failed to update");
       return res.data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["itinerary", id] }),
+    onMutate: async ({ itemId, isDone }) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        )
+      ) {
+        return { previousItems: null as ItineraryItem[] | null };
+      }
+      const { previous } = updateOptimisticTripItemInCache(id, itemId, { isDone });
+      return { previousItems: previous as ItineraryItem[] };
+    },
+    onError: (_error, _vars, context) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        ) ||
+        !context?.previousItems
+      ) {
+        return;
+      }
+      restoreOptimisticTripItems(id, context.previousItems);
+    },
+    onSuccess: () => {
+      refreshRemoteItinerary();
+    },
   });
 
   const deleteItem = useMutation({
+    networkMode: "always",
     mutationFn: async (itemId: string) => {
-      if (id && trip?.destination?.id && useOfflineStore.getState().isDownloaded(trip.destination.id)) {
+      const shouldUseLocalMutation = Boolean(
+        id &&
+          trip?.destination?.id &&
+          (isPackDownloaded ||
+            !(
+              useNetworkStore.getState().isConnected &&
+              useNetworkStore.getState().isInternetReachable === true
+            )),
+      );
+      if (shouldUseLocalMutation) {
         await deleteOfflineTripItem(id, itemId);
         return { success: true };
       }
@@ -207,7 +263,37 @@ export default function TripDetailScreen() {
       if (res.error) throw new Error("Failed to delete");
       return res.data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["itinerary", id] }),
+    onMutate: async (itemId) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        )
+      ) {
+        return { previousItems: null as ItineraryItem[] | null };
+      }
+      const { previous } = deleteOptimisticTripItemFromCache(id, itemId);
+      return { previousItems: previous as ItineraryItem[] };
+    },
+    onError: (_error, _itemId, context) => {
+      if (
+        !id ||
+        isPackDownloaded ||
+        !(
+          useNetworkStore.getState().isConnected &&
+          useNetworkStore.getState().isInternetReachable === true
+        ) ||
+        !context?.previousItems
+      ) {
+        return;
+      }
+      restoreOptimisticTripItems(id, context.previousItems);
+    },
+    onSuccess: () => {
+      refreshRemoteItinerary();
+    },
   });
 
   const deleteTrip = useMutation({
@@ -229,6 +315,38 @@ export default function TripDetailScreen() {
   const downloading = useOfflineStore((s) => s.downloading);
   const savePack = useOfflineStore((s) => s.savePack);
   const setDownloading = useOfflineStore((s) => s.setDownloading);
+  const refreshRemoteItinerary = useCallback(() => {
+    if (
+      isPackDownloaded ||
+      !(
+        useNetworkStore.getState().isConnected &&
+        useNetworkStore.getState().isInternetReachable === true
+      )
+    ) {
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: ["itinerary", id] });
+  }, [id, isPackDownloaded, queryClient]);
+  const guardItineraryAction = useCallback(
+    (action: () => void) => {
+      if (isPackDownloaded || !isOnline) {
+        action();
+        return;
+      }
+      guardAction(action);
+    },
+    [guardAction, isOnline, isPackDownloaded],
+  );
+  const openItem = useCallback(
+    (item: ItineraryItem) => {
+      if (item.placeId) {
+        router.push(`/place/${item.placeId}` as never);
+        return;
+      }
+      guardItineraryAction(() => setEditingItem(item));
+    },
+    [guardItineraryAction, router],
+  );
 
   const downloadPack = useMutation({
     mutationFn: async () => {
@@ -439,7 +557,8 @@ export default function TripDetailScreen() {
                     {downloading === destId ? "Downloading..." : "Download Offline Pack"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    Save destination details, places, phrases, weather, currency, maps, itinerary, and images
+                    Save destination details, places, phrases, weather, currency, maps, itinerary,
+                    and images
                   </Text>
                 </View>
                 {downloading === destId && <ActivityIndicator size="small" />}
@@ -453,7 +572,7 @@ export default function TripDetailScreen() {
           <Text className="text-lg font-bold text-foreground">Itinerary</Text>
           <Pressable
             onPress={() =>
-              guardAction(() => {
+              guardItineraryAction(() => {
                 setAddDate(trip ? new Date(trip.startDate) : new Date());
                 setShowAddModal(true);
               })
@@ -498,12 +617,12 @@ export default function TripDetailScreen() {
               {dayItems.map((item) => (
                 <Pressable
                   key={item.id}
-                  onPress={() => guardAction(() => setEditingItem(item))}
+                  onPress={() => openItem(item)}
                   className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 active:opacity-90"
                 >
                   <Pressable
                     onPress={() =>
-                      guardAction(() =>
+                      guardItineraryAction(() =>
                         toggleDone.mutate({
                           itemId: item.id,
                           isDone: !item.isDone,
@@ -542,13 +661,21 @@ export default function TripDetailScreen() {
                     })()}
                   </View>
                   <Pressable
+                    onPress={() => guardItineraryAction(() => setEditingItem(item))}
+                    className="active:opacity-80"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${item.title}`}
+                  >
+                    <Edit3 size={18} color={mutedColor} />
+                  </Pressable>
+                  <Pressable
                     onPress={() =>
                       Alert.alert("Delete Item", `Remove "${item.title}"?`, [
                         { text: "Cancel", style: "cancel" },
                         {
                           text: "Delete",
                           style: "destructive",
-                          onPress: () => guardAction(() => deleteItem.mutate(item.id)),
+                          onPress: () => guardItineraryAction(() => deleteItem.mutate(item.id)),
                         },
                       ])
                     }
@@ -579,7 +706,7 @@ export default function TripDetailScreen() {
         onSuccess={() => {
           setShowAddModal(false);
           setAddModalPrefill(null);
-          queryClient.invalidateQueries({ queryKey: ["itinerary", id] });
+          refreshRemoteItinerary();
         }}
       />
 
@@ -603,14 +730,14 @@ export default function TripDetailScreen() {
         <EditItemModal
           visible={!!editingItem}
           tripId={id!}
-          useOfflineLocalOnly={Boolean(trip?.destination.id && isPackDownloaded)}
+          useOfflineLocalOnly={Boolean(trip?.destination.id && (isPackDownloaded || !isOnline))}
           item={editingItem}
           tripStartDate={trip ? new Date(trip.startDate) : undefined}
           tripEndDate={trip ? new Date(trip.endDate) : undefined}
           onClose={() => setEditingItem(null)}
           onSuccess={() => {
             setEditingItem(null);
-            queryClient.invalidateQueries({ queryKey: ["itinerary", id] });
+            refreshRemoteItinerary();
           }}
         />
       )}
@@ -654,6 +781,7 @@ function EditTripModal({
   }, [visible, currentTitle, currentStartDate, currentEndDate]);
 
   const editMutation = useMutation({
+    networkMode: "always",
     mutationFn: async () => {
       const res = await client.api.v1.trips({ tripId }).patch({
         title,
@@ -800,6 +928,9 @@ function EditItemModal({
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
   const { height: screenHeight } = useWindowDimensions();
+  const isOnline = useNetworkStore(
+    (state) => state.isConnected && state.isInternetReachable === true,
+  );
 
   const [title, setTitle] = useState(item.title);
   const [notes, setNotes] = useState(item.notes ?? "");
@@ -852,8 +983,36 @@ function EditItemModal({
       if (res.error) throw new Error("Failed to update item");
       return res.data;
     },
+    onMutate: async () => {
+      if (useOfflineLocalOnly) {
+        return { previousItems: null as ItineraryItem[] | null };
+      }
+      const { previous } = updateOptimisticTripItemInCache(tripId, item.id, {
+        title,
+        date: selectedDate.toISOString(),
+        startTime: startTimeDate ? fmtTime(startTimeDate) : null,
+        endTime: endTimeDate ? fmtTime(endTimeDate) : null,
+        notes: notes || null,
+      });
+      return { previousItems: previous as ItineraryItem[] };
+    },
+    onError: (_error, _vars, context) => {
+      if (useOfflineLocalOnly || !context?.previousItems) {
+        return;
+      }
+      restoreOptimisticTripItems(tripId, context.previousItems);
+    },
     onSuccess,
   });
+
+  const handleSave = () => {
+    const shouldCloseOptimistically = !useOfflineLocalOnly && !isOnline;
+    editMutation.mutate();
+    if (!shouldCloseOptimistically) {
+      return;
+    }
+    onSuccess();
+  };
 
   return (
     <KeyboardSheetModal
@@ -865,7 +1024,7 @@ function EditItemModal({
       footer={
         <Button
           label="Save Changes"
-          onPress={() => editMutation.mutate()}
+          onPress={handleSave}
           loading={editMutation.isPending}
           disabled={!title.trim() || invalidTimeRange}
         />

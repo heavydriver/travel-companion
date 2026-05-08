@@ -15,10 +15,14 @@ function syncQueryCache(tripId: string, items: OfflineTripItineraryItem[]) {
   queryClient.setQueryData(["itinerary", tripId], { items: sortItems(items) });
 }
 
-export async function seedOfflineTripItinerary(
-  tripId: string,
-  items: OfflineTripItineraryItem[],
-) {
+function getQueryItems(tripId: string) {
+  const cached = queryClient.getQueryData(["itinerary", tripId]) as
+    | { items?: OfflineTripItineraryItem[] }
+    | undefined;
+  return sortItems((cached?.items ?? []) as OfflineTripItineraryItem[]);
+}
+
+export async function seedOfflineTripItinerary(tripId: string, items: OfflineTripItineraryItem[]) {
   await useOfflineItineraryStore.getState().seedTripItems(tripId, items);
   const seeded = useOfflineItineraryStore.getState().getTripItems(tripId) ?? items;
   syncQueryCache(tripId, seeded);
@@ -42,13 +46,31 @@ export async function addOfflineTripItem(
   const current = useOfflineItineraryStore.getState().getTripItems(tripId) ?? [];
   const nextItem: OfflineTripItineraryItem = {
     ...input,
-    id: input.id ?? `offline-item:${tripId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    id:
+      input.id ?? `offline-item:${tripId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
     order: input.order ?? current.length,
   };
   const next = sortItems([...current, nextItem]).map((item, index) => ({ ...item, order: index }));
   await useOfflineItineraryStore.getState().replaceTripItems(tripId, next);
   syncQueryCache(tripId, next);
   return nextItem;
+}
+
+export function addOptimisticTripItemToCache(
+  tripId: string,
+  input: Omit<OfflineTripItineraryItem, "id" | "order"> & { id?: string; order?: number },
+) {
+  const previous = getQueryItems(tripId);
+  const nextItem: OfflineTripItineraryItem = {
+    ...input,
+    id:
+      input.id ??
+      `optimistic-item:${tripId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    order: input.order ?? previous.length,
+  };
+  const next = sortItems([...previous, nextItem]).map((item, index) => ({ ...item, order: index }));
+  syncQueryCache(tripId, next);
+  return { previous, item: nextItem };
 }
 
 export async function updateOfflineTripItem(
@@ -67,6 +89,21 @@ export async function updateOfflineTripItem(
   return next.find((item) => item.id === itemId) ?? null;
 }
 
+export function updateOptimisticTripItemInCache(
+  tripId: string,
+  itemId: string,
+  patch: Partial<OfflineTripItineraryItem>,
+) {
+  const previous = getQueryItems(tripId);
+  const next = sortItems(
+    previous.map((item, index) =>
+      item.id === itemId ? { ...item, ...patch, order: patch.order ?? item.order ?? index } : item,
+    ),
+  ).map((item, index) => ({ ...item, order: index }));
+  syncQueryCache(tripId, next);
+  return { previous, item: next.find((item) => item.id === itemId) ?? null };
+}
+
 export async function deleteOfflineTripItem(tripId: string, itemId: string) {
   const current = useOfflineItineraryStore.getState().getTripItems(tripId) ?? [];
   const next = current
@@ -75,6 +112,19 @@ export async function deleteOfflineTripItem(tripId: string, itemId: string) {
   await useOfflineItineraryStore.getState().replaceTripItems(tripId, next);
   syncQueryCache(tripId, next);
   return next;
+}
+
+export function deleteOptimisticTripItemFromCache(tripId: string, itemId: string) {
+  const previous = getQueryItems(tripId);
+  const next = previous
+    .filter((item) => item.id !== itemId)
+    .map((item, index) => ({ ...item, order: index }));
+  syncQueryCache(tripId, next);
+  return { previous };
+}
+
+export function restoreOptimisticTripItems(tripId: string, items: OfflineTripItineraryItem[]) {
+  syncQueryCache(tripId, items);
 }
 
 export function hasOfflineTripPlace(tripId: string, placeId: string) {

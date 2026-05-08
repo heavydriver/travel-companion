@@ -88,21 +88,30 @@ async function flushQueuedActions() {
   }
 
   flushQueuePromise = (async () => {
-    if (!posthogClient || !analyticsOnline) return;
+    const client = posthogClient;
+    if (!client || !analyticsOnline) return;
 
     await ensureQueueLoaded();
-    await posthogClient.ready();
+    await client.ready();
 
-    while (posthogClient && analyticsOnline && queuedActions.length > 0) {
+    if (posthogClient !== client || !analyticsOnline) {
+      return;
+    }
+
+    while (analyticsOnline && queuedActions.length > 0) {
+      if (posthogClient !== client) {
+        return;
+      }
+
       const batch = [...queuedActions];
       queuedActions = [];
       await persistQueue();
 
       try {
         for (const action of batch) {
-          replayAction(posthogClient, action);
+          replayAction(client, action);
         }
-        await posthogClient.flush();
+        await client.flush();
       } catch {
         queuedActions = [...batch, ...queuedActions].slice(-MAX_QUEUED_ACTIONS);
         await persistQueue();

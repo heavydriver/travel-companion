@@ -1,9 +1,4 @@
-import {
-  useMutation,
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Calendar, CheckCircle2, Circle, ExternalLink, MapPin } from "lucide-react-native";
 import { useUnstableNativeVariable } from "nativewind";
@@ -13,7 +8,12 @@ import { client } from "@/api/client";
 import { Button } from "@/components/shared/Button";
 import { Screen } from "@/components/shared/Screen";
 import { Progress } from "@/components/ui/progress";
-import { seedOfflineTripItinerary, updateOfflineTripItem } from "@/features/offline/itinerary";
+import {
+  restoreOptimisticTripItems,
+  seedOfflineTripItinerary,
+  updateOfflineTripItem,
+  updateOptimisticTripItemInCache,
+} from "@/features/offline/itinerary";
 import {
   formatDate,
   formatDateRange,
@@ -22,6 +22,7 @@ import {
   toDateOnly,
 } from "@/lib/utils";
 import { useMapSessionStore } from "@/store/mapSessionStore";
+import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { type Trip, useTripStore } from "@/store/tripStore";
@@ -84,9 +85,7 @@ function TripSummaryCard({
                 {trip.destination.name} · {trip.destination.countryCode}
               </Text>
             </View>
-            <Text className="text-lg font-bold text-foreground">
-              {trip.title}
-            </Text>
+            <Text className="text-lg font-bold text-foreground">{trip.title}</Text>
             <View className="flex-row items-center gap-2">
               <Calendar size={13} color={mutedColor} />
               <Text className="text-sm text-muted-foreground">
@@ -101,17 +100,15 @@ function TripSummaryCard({
 
         <View className="gap-2">
           <View className="flex-row items-center justify-between">
-            <Text className="text-sm font-medium text-foreground">
-              Progress
-            </Text>
+            <Text className="text-sm font-medium text-foreground">Progress</Text>
             <Text className="text-sm text-muted-foreground">
               {loading ? "Loading..." : `${doneCount}/${totalCount} completed`}
             </Text>
           </View>
           <Progress
-              value={Math.max(0, Math.min(100, progress * 100))}
-              className="h-2.5 bg-muted"
-              indicatorClassName="bg-green-500"
+            value={Math.max(0, Math.min(100, progress * 100))}
+            className="h-2.5 bg-muted"
+            indicatorClassName="bg-green-500"
           />
         </View>
       </View>
@@ -126,14 +123,15 @@ export default function ItineraryTabScreen() {
   const setActiveTripId = useTripStore((s) => s.setActiveTripId);
   const setMapSession = useMapSessionStore((s) => s.setSession);
   const activeTrips = getActiveTrips(trips);
-  const singleActiveTrip =
-    activeTrips.length === 1 ? activeTrips[0] : undefined;
-  const offlineTripItems = useOfflineItineraryStore((state) =>
-    singleActiveTrip?.id ? state.tripItems[singleActiveTrip.id] : undefined,
-  );
+  const singleActiveTrip = activeTrips.length === 1 ? activeTrips[0] : undefined;
+  const offlineTripItemsByTrip = useOfflineItineraryStore((state) => state.tripItems);
+  const offlineTripItems = singleActiveTrip?.id
+    ? offlineTripItemsByTrip[singleActiveTrip.id]
+    : undefined;
   const activeTripHasOfflinePack = useOfflineStore((state) =>
     singleActiveTrip?.destination.id ? state.isDownloaded(singleActiveTrip.destination.id) : false,
   );
+  const isOnline = useNetworkStore((state) => state.isConnected && state.isInternetReachable === true);
   const mutedFg = useUnstableNativeVariable("--muted-foreground");
   const mutedColor = mutedFg ? `hsl(${mutedFg})` : "#9CA3AF";
 
@@ -153,24 +151,23 @@ export default function ItineraryTabScreen() {
       if (res.error) throw new Error("Failed to load itinerary");
       return res.data;
     },
-    enabled: !!singleActiveTrip?.id,
+    enabled: !!singleActiveTrip?.id && isOnline,
   });
 
   const activeTripItemQueries = useQueries({
     queries: activeTrips.map((trip) => ({
       queryKey: ["itinerary", trip.id],
       queryFn: async () => {
-        const res = await client.api.v1
-          .trips({ tripId: trip.id })
-          ["itinerary-items"].get();
+        const res = await client.api.v1.trips({ tripId: trip.id })["itinerary-items"].get();
         if (res.error) throw new Error("Failed to load itinerary");
         return res.data;
       },
-      enabled: activeTrips.length > 1,
+      enabled: activeTrips.length > 1 && isOnline,
     })),
   });
 
   const toggleDone = useMutation({
+    networkMode: "always",
     mutationFn: async ({
       tripId,
       itemId,
@@ -186,14 +183,50 @@ export default function ItineraryTabScreen() {
         if (!updated) throw new Error("Failed to update");
         return { tripId };
       }
+      if (!(useNetworkStore.getState().isConnected && useNetworkStore.getState().isInternetReachable === true)) {
+        const updated = await updateOfflineTripItem(tripId, itemId, { isDone });
+        if (!updated) throw new Error("Failed to update");
+        return { tripId };
+      }
       const res = await client.api.v1["itinerary-items"]({ id: itemId }).patch({
         isDone,
       });
       if (res.error) throw new Error("Failed to update");
       return { tripId };
     },
+    onMutate: async ({ tripId, itemId, isDone }) => {
+      const trip = activeTrips.find((entry) => entry.id === tripId);
+      if (
+        !trip?.destination.id ||
+        useOfflineStore.getState().isDownloaded(trip.destination.id) ||
+        !(useNetworkStore.getState().isConnected && useNetworkStore.getState().isInternetReachable === true)
+      ) {
+        return { previousItems: null as ItineraryItem[] | null };
+      }
+      const { previous } = updateOptimisticTripItemInCache(tripId, itemId, { isDone });
+      return { previousItems: previous as ItineraryItem[] };
+    },
+    onError: (_error, vars, context) => {
+      const trip = activeTrips.find((entry) => entry.id === vars.tripId);
+      if (
+        !trip?.destination.id ||
+        useOfflineStore.getState().isDownloaded(trip.destination.id) ||
+        !(useNetworkStore.getState().isConnected && useNetworkStore.getState().isInternetReachable === true) ||
+        !context?.previousItems
+      ) {
+        return;
+      }
+      restoreOptimisticTripItems(vars.tripId, context.previousItems);
+    },
     onSuccess: ({ tripId }) => {
-      queryClient.invalidateQueries({ queryKey: ["itinerary", tripId] });
+      const trip = activeTrips.find((entry) => entry.id === tripId);
+      if (
+        (trip?.destination.id && useOfflineStore.getState().isDownloaded(trip.destination.id)) ||
+        !(useNetworkStore.getState().isConnected && useNetworkStore.getState().isInternetReachable === true)
+      ) {
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["itinerary", tripId] });
     },
   });
 
@@ -262,9 +295,7 @@ export default function ItineraryTabScreen() {
       <Screen>
         <View className="items-center justify-center flex-1 gap-3">
           <Calendar size={40} color={mutedColor} />
-          <Text className="text-lg font-semibold text-foreground">
-            No trips yet
-          </Text>
+          <Text className="text-lg font-semibold text-foreground">No trips yet</Text>
           <Text className="text-sm text-center text-muted-foreground">
             Create trip from Home tab to see itinerary here
           </Text>
@@ -278,9 +309,7 @@ export default function ItineraryTabScreen() {
       <Screen>
         <View className="items-center justify-center flex-1 gap-3">
           <MapPin size={40} color={mutedColor} />
-          <Text className="text-lg font-semibold text-foreground">
-            No active trip
-          </Text>
+          <Text className="text-lg font-semibold text-foreground">No active trip</Text>
           <Text className="text-sm text-center text-muted-foreground">
             Itinerary tab only shows trips happening now
           </Text>
@@ -294,9 +323,7 @@ export default function ItineraryTabScreen() {
       <Screen scrollable contentClassName="pb-6">
         <View className="gap-5">
           <View className="gap-1">
-            <Text className="text-2xl font-bold text-foreground">
-              Active Trips
-            </Text>
+            <Text className="text-2xl font-bold text-foreground">Active Trips</Text>
             <Text className="text-sm text-muted-foreground">
               Multiple trips active. Pick one itinerary.
             </Text>
@@ -304,9 +331,7 @@ export default function ItineraryTabScreen() {
 
           {activeTrips.map((trip, index) => {
             const items = ((
-              activeTripItemQueries[index]?.data as
-                | { items?: ItineraryItem[] }
-                | undefined
+              activeTripItemQueries[index]?.data as { items?: ItineraryItem[] } | undefined
             )?.items ?? []) as ItineraryItem[];
             const doneCount = items.filter((item) => item.isDone).length;
             const progress = items.length > 0 ? doneCount / items.length : 0;
@@ -363,9 +388,7 @@ export default function ItineraryTabScreen() {
               <ExternalLink size={16} color={mutedColor} />
             </Pressable>
           </View>
-          <Text className="text-2xl font-bold text-foreground">
-            {activeTrip.title}
-          </Text>
+          <Text className="text-2xl font-bold text-foreground">{activeTrip.title}</Text>
           <Text className="mt-1 text-sm text-muted-foreground">
             {formatDateRange(activeTrip.startDate, activeTrip.endDate)}
           </Text>
@@ -374,9 +397,7 @@ export default function ItineraryTabScreen() {
         {items.length > 0 && (
           <View className="gap-2">
             <View className="flex-row items-center justify-between">
-              <Text className="text-sm font-medium text-foreground">
-                Progress
-              </Text>
+              <Text className="text-sm font-medium text-foreground">Progress</Text>
               <Text className="text-sm text-muted-foreground">
                 {doneCount}/{items.length} completed
               </Text>
@@ -395,7 +416,7 @@ export default function ItineraryTabScreen() {
           onPress={() => router.push(`/trip/${activeTrip.id}` as never)}
         />
 
-        {itemsQuery.isLoading && (
+        {isOnline && itemsQuery.isLoading && (
           <View className="items-center py-8">
             <ActivityIndicator />
           </View>
@@ -404,9 +425,7 @@ export default function ItineraryTabScreen() {
         {!itemsQuery.isLoading && items.length === 0 && (
           <View className="items-center py-8 border rounded-2xl border-border bg-card">
             <Calendar size={32} color={mutedColor} />
-            <Text className="mt-2 text-base font-medium text-foreground">
-              No items yet
-            </Text>
+            <Text className="mt-2 text-base font-medium text-foreground">No items yet</Text>
             <Text className="mt-1 text-sm text-center text-muted-foreground">
               Open full itinerary to add activities
             </Text>
@@ -416,8 +435,7 @@ export default function ItineraryTabScreen() {
         {grouped.map(([date, dayItems]) => (
           <View key={date} className="gap-2">
             <Text className="text-sm font-semibold text-muted-foreground">
-              {formatDate(date)} · {dayItems.length}{" "}
-              {dayItems.length === 1 ? "item" : "items"}
+              {formatDate(date)} · {dayItems.length} {dayItems.length === 1 ? "item" : "items"}
             </Text>
             {dayItems.map((item) => (
               <Pressable

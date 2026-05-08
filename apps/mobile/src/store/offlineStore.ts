@@ -1,7 +1,12 @@
 import { create } from "zustand";
-import { storage } from "@/lib/storage";
+import { queryClient } from "@/lib/queryClient";
+import { fileStorage, storage } from "@/lib/storage";
 
 const OFFLINE_PACKS_KEY = "travel_companion_offline_packs";
+
+function getOfflinePackStorageKey(destinationId: string) {
+  return `offline_pack_${destinationId}`;
+}
 
 export type OfflinePack = {
   destinationId: string;
@@ -48,22 +53,37 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   savePack: async (pack, data) => {
     const current = get().packs.filter((p) => p.destinationId !== pack.destinationId);
     const updated = [...current, pack];
-    await storage.setItem(OFFLINE_PACKS_KEY, JSON.stringify(updated));
-    await storage.setItem(`offline_pack_${pack.destinationId}`, JSON.stringify(data));
     set({ packs: updated, downloading: null });
+    queryClient.setQueryData(["offline-pack-local", pack.destinationId], data);
+    void storage.setItem(OFFLINE_PACKS_KEY, JSON.stringify(updated));
+    void fileStorage.setItem(getOfflinePackStorageKey(pack.destinationId), JSON.stringify(data));
   },
 
   removePack: async (destinationId) => {
     const updated = get().packs.filter((p) => p.destinationId !== destinationId);
-    await storage.setItem(OFFLINE_PACKS_KEY, JSON.stringify(updated));
-    await storage.removeItem(`offline_pack_${destinationId}`);
     set({ packs: updated });
+    queryClient.setQueryData(["offline-pack-local", destinationId], null);
+    void storage.setItem(OFFLINE_PACKS_KEY, JSON.stringify(updated));
+    void fileStorage.removeItem(getOfflinePackStorageKey(destinationId));
+    void storage.removeItem(getOfflinePackStorageKey(destinationId));
   },
 
   getPackData: async (destinationId) => {
     try {
-      const raw = await storage.getItem(`offline_pack_${destinationId}`);
-      return raw ? JSON.parse(raw) : null;
+      const storageKey = getOfflinePackStorageKey(destinationId);
+      const raw = await fileStorage.getItem(storageKey);
+      if (raw) {
+        return JSON.parse(raw);
+      }
+
+      const legacyRaw = await storage.getItem(storageKey);
+      if (!legacyRaw) {
+        return null;
+      }
+
+      void fileStorage.setItem(storageKey, legacyRaw);
+      void storage.removeItem(storageKey);
+      return JSON.parse(legacyRaw);
     } catch {
       return null;
     }

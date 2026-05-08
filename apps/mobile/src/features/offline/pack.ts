@@ -22,7 +22,9 @@ type DestinationDetailResponse = {
 type SupportedCurrency = { code: string; name: string; country: string };
 
 function dedupeById<T extends { id: string }>(items: T[]) {
-  return items.filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index);
+  return items.filter(
+    (item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index,
+  );
 }
 
 function ensureUppercaseRates(referenceBase: string, body: Record<string, unknown>) {
@@ -121,7 +123,9 @@ async function fetchPlaceDetails(placeIds: string[]) {
     }),
   );
 
-  return Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, OfflinePackPlaceDetail]>);
+  return Object.fromEntries(
+    entries.filter(Boolean) as Array<readonly [string, OfflinePackPlaceDetail]>,
+  );
 }
 
 async function fetchWeatherSnapshot(destination: OfflinePackDestination) {
@@ -145,7 +149,9 @@ async function fetchWeatherSnapshot(destination: OfflinePackDestination) {
   };
 }
 
-async function fetchCurrencySnapshot(destinationCurrency: string): Promise<OfflinePackCurrency | null> {
+async function fetchCurrencySnapshot(
+  destinationCurrency: string,
+): Promise<OfflinePackCurrency | null> {
   const [supportedRes, ratesRes] = await Promise.all([
     client.api.v1.currency.supported.get(),
     client.api.v1.currency.rates({ base: destinationCurrency }).get(),
@@ -219,10 +225,14 @@ export async function downloadOfflinePack(destinationId: string) {
   );
 
   const places = dedupeById(
-    [...destinationDetail.curatedPlaces, ...destinationDetail.otherPlaces].map(normalizePlaceSummary),
+    [...destinationDetail.curatedPlaces, ...destinationDetail.otherPlaces].map(
+      normalizePlaceSummary,
+    ),
   );
   const placeDetails = await fetchPlaceDetails(places.map((place) => place.id));
-  const placesWithDetails = places.map((place) => normalizePlaceSummary(placeDetails[place.id] ?? place));
+  const placesWithDetails = places.map((place) =>
+    normalizePlaceSummary(placeDetails[place.id] ?? place),
+  );
 
   const [phrasesByLanguageEntries, weather, currency, images] = await Promise.all([
     Promise.all(
@@ -240,14 +250,20 @@ export async function downloadOfflinePack(destinationId: string) {
   ]);
 
   const phraseLanguages = destinationLanguages.filter(
-    (language) => (phrasesByLanguageEntries.find(([languageId]) => languageId === language.id)?.[1].length ?? 0) > 0,
+    (language) =>
+      (phrasesByLanguageEntries.find(([languageId]) => languageId === language.id)?.[1].length ??
+        0) > 0,
   );
   const phrasesByLanguage = Object.fromEntries(phrasesByLanguageEntries);
-  const mapPlaces = placesWithDetails.map((place) => placeDetailToMapPlace(placeDetails[place.id] ?? {
-    ...place,
-    websiteUrl: null,
-    phoneNumber: null,
-  }));
+  const mapPlaces = placesWithDetails.map((place) =>
+    placeDetailToMapPlace(
+      placeDetails[place.id] ?? {
+        ...place,
+        websiteUrl: null,
+        phoneNumber: null,
+      },
+    ),
+  );
 
   const downloadedAt = new Date().toISOString();
   const pack: OfflinePackData = {
@@ -278,10 +294,13 @@ export function useOfflinePackQuery(destinationId?: string | null) {
     queryKey: ["offline-pack-local", destinationId],
     queryFn: async () => {
       if (!destinationId) return null;
-      return (await useOfflineStore.getState().getPackData(destinationId)) as OfflinePackData | null;
+      return (await useOfflineStore
+        .getState()
+        .getPackData(destinationId)) as OfflinePackData | null;
     },
     enabled: Boolean(destinationId),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 
@@ -355,7 +374,17 @@ export function sliceOfflineWeatherData(
 
 export function buildOfflineMapSession(
   pack: OfflinePackData,
-  options?: Partial<Pick<MapSession, "focusLatitude" | "focusLongitude" | "focusZoomLevel" | "focusPlaceId" | "returnHref" | "startWithCuratedPlacesOnly">>,
+  options?: Partial<
+    Pick<
+      MapSession,
+      | "focusLatitude"
+      | "focusLongitude"
+      | "focusZoomLevel"
+      | "focusPlaceId"
+      | "returnHref"
+      | "startWithCuratedPlacesOnly"
+    >
+  >,
 ): MapSession {
   return {
     destinationId: pack.destination.id,

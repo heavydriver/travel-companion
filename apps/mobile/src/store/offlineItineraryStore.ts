@@ -54,8 +54,8 @@ export const useOfflineItineraryStore = create<OfflineItineraryState>((set, get)
       ...get().tripItems,
       [tripId]: normalizeTripItems(items),
     };
-    await persistTripItems(next);
     set({ tripItems: next });
+    void persistTripItems(next);
   },
 
   replaceTripItems: async (tripId, items) => {
@@ -63,8 +63,8 @@ export const useOfflineItineraryStore = create<OfflineItineraryState>((set, get)
       ...get().tripItems,
       [tripId]: normalizeTripItems(items),
     };
-    await persistTripItems(next);
     set({ tripItems: next });
+    void persistTripItems(next);
   },
 
   upsertTripItem: async (tripId, item) => {
@@ -74,8 +74,8 @@ export const useOfflineItineraryStore = create<OfflineItineraryState>((set, get)
       ...get().tripItems,
       [tripId]: normalizeTripItems([...filtered, item]),
     };
-    await persistTripItems(next);
     set({ tripItems: next });
+    void persistTripItems(next);
   },
 
   removeTripItem: async (tripId, itemId) => {
@@ -84,7 +84,7 @@ export const useOfflineItineraryStore = create<OfflineItineraryState>((set, get)
       ...get().tripItems,
       [tripId]: current.filter((item) => item.id !== itemId),
     };
-    await persistTripItems(next);
     set({ tripItems: next });
+    void persistTripItems(next);
   },
 }));

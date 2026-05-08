@@ -8,26 +8,25 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
+import { PostHog, PostHogProvider } from "posthog-react-native";
 import { useEffect, useMemo } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-import { PostHog, PostHogProvider } from "posthog-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { client, EdenProvider } from "@/api/client";
 import { appToastConfig } from "@/components/shared/AppToast";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
-import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { DestinationFavoritesProvider } from "@/features/destination/favorites";
 import { useInAppSocialMessageSignals } from "@/hooks/useInAppSocialMessageSignals";
 import { usePushRegistration } from "@/hooks/usePushRegistration";
 import { queryCachePersister, queryClient } from "@/lib/queryClient";
 import { NAV_THEME } from "@/lib/theme";
+import { useAuthStore } from "@/store/authStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { useOfflineItineraryStore } from "@/store/offlineItineraryStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { usePreferencesStore } from "@/store/preferencesStore";
-import { useAuthStore } from "@/store/authStore";
 import { analytics, setAnalyticsClient, setAnalyticsOnlineState } from "@/utils/analytics";
 
 const originalConsoleWarn = console.warn;
@@ -172,7 +171,21 @@ function RootLayoutInner() {
   const appContent = (
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister: queryCachePersister, maxAge: 1000 * 60 * 60 * 24 }}
+      persistOptions={{
+        persister: queryCachePersister,
+        maxAge: 1000 * 60 * 60 * 24,
+        buster: "mobile-cache-v2",
+        dehydrateOptions: {
+          shouldDehydrateQuery: (query) => {
+            const scope = query.queryKey[0];
+            return (
+              query.state.status === "success" &&
+              scope !== "offline-pack-local" &&
+              scope !== "itinerary"
+            );
+          },
+        },
+      }}
     >
       <EdenProvider client={client} queryClient={queryClient}>
         <DestinationFavoritesProvider>
@@ -181,7 +194,6 @@ function RootLayoutInner() {
               <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
                 <AnalyticsBinder posthog={posthogClient} isAnalyticsOnline={isAnalyticsOnline} />
                 <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-                <OfflineBanner />
                 <Stack screenOptions={{ headerShown: false }} />
                 <PortalHost />
                 <RootToast />
