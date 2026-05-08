@@ -9,6 +9,9 @@ dist
 .env
 .agents
 .DS_Store
+.pnpm-store
+.gradle-user-home
+.firecrawl
 
 packages/db/generated
 

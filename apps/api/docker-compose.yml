@@ -1,7 +1,11 @@
 services:
   api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
     image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}/travel-companion-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    stop_grace_period: 20s
     env_file:
       - ./.env
     environment:
@@ -13,8 +17,6 @@ services:
       - "3000"
     networks:
       - backend_net
-    deploy:
-      replicas: 3
 
   caddy:
     image: caddy:alpine

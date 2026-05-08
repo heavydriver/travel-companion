@@ -2,7 +2,7 @@
 
 This deployment uses:
 
-- `apps/api/Dockerfile` for building the Bun API image.
+- `apps/api/Dockerfile` for building the API bundle and running it with Bun in production.
 - `apps/api/docker-compose.yml` and `apps/api/Caddyfile` on the VPS.
 - `.github/workflows/api-docker-deploy.yml` for CI/CD.
 
@@ -13,6 +13,20 @@ This deployment uses:
 - CI tag format (semantic version): `<major>.<minor>.<patch>`
   - Example: `1.3.2`
 - CI also publishes `latest` on each successful `main` deployment.
+
+## Build context requirement
+
+- `apps/api/Dockerfile` must be built with the repository root as the Docker build context.
+- Reason: the image build needs repo-root workspace files and shared packages:
+  - `patches/`
+  - `pnpm-lock.yaml`
+  - `pnpm-workspace.yaml`
+  - `packages/db`
+  - `packages/types`
+- Valid examples:
+  - From repo root: `docker build -f apps/api/Dockerfile -t travel-companion-backend .`
+  - From `apps/api`: `docker build -f Dockerfile -t travel-companion-backend ../..`
+- `apps/api/docker-compose.yml` is configured with `build.context: ../..` for this reason.
 
 ## Required GitHub secrets
 
@@ -60,6 +74,13 @@ In your VPS deploy directory (`VPS_DEPLOY_PATH`), keep:
   - `docker compose pull api`
   - `docker compose up -d --remove-orphans`
 
+## Scaling
+
+- `apps/api/docker-compose.yml` is written for plain Docker Compose, not Docker Swarm.
+- Because of that, Compose ignores `deploy.replicas`, so scaling should be done from the command line:
+  - `docker compose up -d --scale api=3`
+- If you want 3 API containers on the VPS, use that scaled command in place of the plain `docker compose up -d --remove-orphans`.
+
 ## Notes
 
 - No `.env` files are copied into the Docker image.
@@ -68,5 +89,8 @@ In your VPS deploy directory (`VPS_DEPLOY_PATH`), keep:
 - Health endpoints for Better Stack uptime monitors:
   - `GET /api/v1/health/live`
   - `GET /api/v1/health/ready`
-- `apps/api/Dockerfile` now keeps `node_modules` in runtime image so `pg` stays external and OpenTelemetry can instrument PostgreSQL in production.
+- `apps/api/Dockerfile` bundles the API to `dist/index.js` and runs it with Bun instead of `bun build --compile`.
+- The runtime image still includes `node_modules` for external runtime dependencies so `pg` stays external and OpenTelemetry can instrument PostgreSQL in production.
+- The runtime dependency layer is generated from `apps/api/package.json`, so `pg` and `sharp` stay version-aligned with the app package automatically.
 - CI/Docker install uses `pnpm install --config.node-linker=isolated ...` because Bun on this API package needs package-local links for OpenTelemetry modules.
+- The Compose file sets `stop_grace_period: 20s` so the API has time to stop cleanly and flush telemetry on shutdown.
