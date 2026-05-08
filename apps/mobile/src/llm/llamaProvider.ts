@@ -10,6 +10,28 @@ let activeModelPath: string | null = null;
 let preparedModel: LlamaLanguageModel | null = null;
 let preparePromise: Promise<LlamaLanguageModel> | null = null;
 let activeGenerationPromise: Promise<void> | null = null;
+let idleUnloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+const IDLE_UNLOAD_MS = 5 * 60 * 1000;
+
+function clearIdleUnloadTimer() {
+  if (!idleUnloadTimer) {
+    return;
+  }
+  clearTimeout(idleUnloadTimer);
+  idleUnloadTimer = null;
+}
+
+function scheduleIdleUnload() {
+  clearIdleUnloadTimer();
+  idleUnloadTimer = setTimeout(() => {
+    if (activeGenerationPromise || preparePromise) {
+      scheduleIdleUnload();
+      return;
+    }
+    void unloadPreparedLlamaModel();
+  }, IDLE_UNLOAD_MS);
+}
 
 function normalizeModelPath(modelPath: string) {
   if (!modelPath.startsWith("file://")) {
@@ -24,6 +46,7 @@ function normalizeModelPath(modelPath: string) {
 }
 
 export async function getPreparedLlamaModel(modelPath: string) {
+  clearIdleUnloadTimer();
   const normalizedModelPath = normalizeModelPath(modelPath);
 
   if (preparedModel && activeModelPath === normalizedModelPath) {
@@ -92,6 +115,7 @@ async function waitForActiveGeneration() {
 }
 
 export async function unloadPreparedLlamaModel() {
+  clearIdleUnloadTimer();
   if (!preparedModel) {
     activeModelPath = null;
     return;
@@ -111,6 +135,7 @@ export async function streamLlamaText(input: {
   onToken?: (token: string, accumulatedText: string) => void;
   abortSignal?: AbortSignal;
 }) {
+  clearIdleUnloadTimer();
   await waitForActiveGeneration();
 
   const model = await getPreparedLlamaModel(input.modelPath);
@@ -183,6 +208,8 @@ export async function streamLlamaText(input: {
     }
     if (shouldResetModel) {
       await resetPreparedModel(model);
+    } else if (preparedModel && activeModelPath === normalizeModelPath(input.modelPath)) {
+      scheduleIdleUnload();
     }
   }
 }
