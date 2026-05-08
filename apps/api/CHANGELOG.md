@@ -1,3 +1,17 @@
+# [1.4.0](https://github.com/heavydriver/travel-companion/compare/api-v1.3.0...api-v1.4.0) (2026-05-08)
+
+
+### Bug Fixes
+
+* language service test ([4370bd2](https://github.com/heavydriver/travel-companion/commit/4370bd24308380ce0bdb39fe1c53f342c5b0adfe))
+* updated test cases for social module ([1084c17](https://github.com/heavydriver/travel-companion/commit/1084c17b58ef8228d1f2d4a8736267d4b0322ea9))
+
+
+### Features
+
+* trip countdown hero, inline itinerary toggle, API caching, error boundary ([#36](https://github.com/heavydriver/travel-companion/issues/36)) ([026f09b](https://github.com/heavydriver/travel-companion/commit/026f09b6ceb0181afa789d6d6886391e56b5e51a))
+* trip share/export, notification preferences, backend tests for weather/currency/social ([#34](https://github.com/heavydriver/travel-companion/issues/34)) ([c0cb426](https://github.com/heavydriver/travel-companion/commit/c0cb4264920fc74b2f2b0522c5de3bd9fed76dd6))
+
 # [1.3.0](https://github.com/heavydriver/travel-companion/compare/api-v1.2.1...api-v1.3.0) (2026-04-20)
 
 
