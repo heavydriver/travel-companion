@@ -1,9 +1,11 @@
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import { useEffect, useRef } from "react";
+import NetInfo from "@react-native-community/netinfo";
 import { Platform } from "react-native";
 import { client } from "@/api/client";
 import { useAuthStore } from "@/store/authStore";
+import { useNetworkStore } from "@/store/networkStore";
 
 type NotificationsNs = typeof import("expo-notifications");
 
@@ -28,11 +30,17 @@ async function ensureAndroidChannel(Notifications: NotificationsNs) {
 export function usePushRegistration() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const isConnected = useNetworkStore((s) => s.isConnected);
+  const isInternetReachable = useNetworkStore((s) => s.isInternetReachable);
   const registeredRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken) {
       registeredRef.current = null;
+      return;
+    }
+
+    if (!isConnected || isInternetReachable === false) {
       return;
     }
 
@@ -62,6 +70,9 @@ export function usePushRegistration() {
       if (!Device.isDevice) return;
 
       try {
+        const networkState = await NetInfo.fetch();
+        if (!networkState.isConnected || networkState.isInternetReachable === false) return;
+
         await ensureAndroidChannel(Notifications);
 
         const perm = await Notifications.getPermissionsAsync();
@@ -76,10 +87,20 @@ export function usePushRegistration() {
             ?.projectId;
         if (!projectId) return;
 
+        const refreshedNetworkState = await NetInfo.fetch();
+        if (!refreshedNetworkState.isConnected || refreshedNetworkState.isInternetReachable === false) {
+          return;
+        }
+
         const tokenRes = await Notifications.getExpoPushTokenAsync({ projectId });
         const expoToken = tokenRes.data;
         if (!expoToken || cancelled) return;
         if (registeredRef.current === expoToken) return;
+
+        const finalNetworkState = await NetInfo.fetch();
+        if (!finalNetworkState.isConnected || finalNetworkState.isInternetReachable === false) {
+          return;
+        }
 
         const res = await client.api.v1.users["me"]["push-token"].post({ expoToken });
         if (!res.error) {
@@ -93,5 +114,5 @@ export function usePushRegistration() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, accessToken]);
+  }, [isAuthenticated, accessToken, isConnected, isInternetReachable]);
 }

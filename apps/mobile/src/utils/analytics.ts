@@ -1,49 +1,193 @@
-import type PostHog from "posthog-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { PostHog } from "posthog-react-native";
 
 type RegistrationMethod = "email" | "google" | "apple";
+type AnalyticsProperties = Record<string, string | number | boolean | null | undefined>;
+type AnalyticsAction =
+  | { type: "identify"; userId: string }
+  | { type: "reset" }
+  | { type: "capture"; event: string; properties?: AnalyticsProperties }
+  | { type: "screen"; screenName: string };
 
 let posthogClient: PostHog | null = null;
+let analyticsOnline = false;
+let queuedActions: AnalyticsAction[] = [];
+let loadQueuePromise: Promise<void> | null = null;
+let flushQueuePromise: Promise<void> | null = null;
+
+const ANALYTICS_QUEUE_STORAGE_KEY = "travel-companion.analytics.queue";
+const MAX_QUEUED_ACTIONS = 200;
+
+async function ensureQueueLoaded() {
+  if (loadQueuePromise) {
+    return loadQueuePromise;
+  }
+
+  loadQueuePromise = (async () => {
+    try {
+      const rawValue = await AsyncStorage.getItem(ANALYTICS_QUEUE_STORAGE_KEY);
+      if (!rawValue) return;
+
+      const parsed = JSON.parse(rawValue);
+      if (Array.isArray(parsed)) {
+        queuedActions = parsed.slice(-MAX_QUEUED_ACTIONS) as AnalyticsAction[];
+      }
+    } catch {
+      queuedActions = [];
+    }
+  })();
+
+  return loadQueuePromise;
+}
+
+async function persistQueue() {
+  if (queuedActions.length === 0) {
+    await AsyncStorage.removeItem(ANALYTICS_QUEUE_STORAGE_KEY);
+    return;
+  }
+
+  await AsyncStorage.setItem(
+    ANALYTICS_QUEUE_STORAGE_KEY,
+    JSON.stringify(queuedActions.slice(-MAX_QUEUED_ACTIONS)),
+  );
+}
+
+async function enqueueAction(action: AnalyticsAction) {
+  await ensureQueueLoaded();
+  queuedActions.push(action);
+  if (queuedActions.length > MAX_QUEUED_ACTIONS) {
+    queuedActions = queuedActions.slice(-MAX_QUEUED_ACTIONS);
+  }
+  await persistQueue();
+}
+
+function replayAction(client: PostHog, action: AnalyticsAction) {
+  switch (action.type) {
+    case "identify":
+      client.identify(action.userId);
+      return;
+    case "reset":
+      client.reset();
+      return;
+    case "capture":
+      client.capture(action.event, action.properties);
+      return;
+    case "screen":
+      client.screen(action.screenName);
+      return;
+  }
+}
+
+function canFlushAnalytics() {
+  return Boolean(posthogClient && analyticsOnline);
+}
+
+async function flushQueuedActions() {
+  if (flushQueuePromise) {
+    return flushQueuePromise;
+  }
+
+  flushQueuePromise = (async () => {
+    if (!posthogClient || !analyticsOnline) return;
+
+    await ensureQueueLoaded();
+    await posthogClient.ready();
+
+    while (posthogClient && analyticsOnline && queuedActions.length > 0) {
+      const batch = [...queuedActions];
+      queuedActions = [];
+      await persistQueue();
+
+      try {
+        for (const action of batch) {
+          replayAction(posthogClient, action);
+        }
+        await posthogClient.flush();
+      } catch {
+        queuedActions = [...batch, ...queuedActions].slice(-MAX_QUEUED_ACTIONS);
+        await persistQueue();
+        return;
+      }
+    }
+  })().finally(() => {
+    flushQueuePromise = null;
+
+    if (canFlushAnalytics() && queuedActions.length > 0) {
+      void flushQueuedActions();
+    }
+  });
+
+  return flushQueuePromise;
+}
+
+function queueAction(action: AnalyticsAction) {
+  void enqueueAction(action).then(() => {
+    if (canFlushAnalytics()) {
+      void flushQueuedActions();
+    }
+  });
+}
 
 export function setAnalyticsClient(client: PostHog | null) {
   posthogClient = client;
+
+  if (canFlushAnalytics()) {
+    void flushQueuedActions();
+  }
+}
+
+export function setAnalyticsOnlineState(isOnline: boolean) {
+  analyticsOnline = isOnline;
+
+  if (canFlushAnalytics()) {
+    void flushQueuedActions();
+  }
 }
 
 export const analytics = {
   identifyUser(userId: string) {
-    posthogClient?.identify(userId);
+    queueAction({ type: "identify", userId });
   },
   resetUser() {
-    posthogClient?.reset();
+    queueAction({ type: "reset" });
   },
   register(method: RegistrationMethod) {
-    posthogClient?.capture("user_registered", { method });
+    queueAction({ type: "capture", event: "user_registered", properties: { method } });
   },
   tripCreated(destinationId: string) {
-    posthogClient?.capture("trip_created", { destinationId });
+    queueAction({ type: "capture", event: "trip_created", properties: { destinationId } });
   },
   tripDeleted() {
-    posthogClient?.capture("trip_deleted");
+    queueAction({ type: "capture", event: "trip_deleted" });
   },
   itemAdded(hasPlace: boolean) {
-    posthogClient?.capture("itinerary_item_added", { hasPlace });
+    queueAction({ type: "capture", event: "itinerary_item_added", properties: { hasPlace } });
   },
   packDownloaded(destinationId: string) {
-    posthogClient?.capture("offline_pack_downloaded", { destinationId });
+    queueAction({
+      type: "capture",
+      event: "offline_pack_downloaded",
+      properties: { destinationId },
+    });
   },
   modelDownloaded() {
-    posthogClient?.capture("llm_model_downloaded");
+    queueAction({ type: "capture", event: "llm_model_downloaded" });
   },
   chatMessageSent(hasTripContext: boolean) {
-    posthogClient?.capture("chat_message_sent", { hasTripContext });
+    queueAction({
+      type: "capture",
+      event: "chat_message_sent",
+      properties: { hasTripContext },
+    });
   },
   connectionSent() {
-    posthogClient?.capture("connection_request_sent");
+    queueAction({ type: "capture", event: "connection_request_sent" });
   },
   connectionAccepted() {
-    posthogClient?.capture("connection_accepted");
+    queueAction({ type: "capture", event: "connection_accepted" });
   },
   screenView(screenName: string) {
-    posthogClient?.screen(screenName);
+    queueAction({ type: "screen", screenName });
   },
   isFeatureEnabled(flagKey: string) {
     return posthogClient?.isFeatureEnabled(flagKey) ?? false;
