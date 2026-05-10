@@ -1,115 +1,94 @@
-# Travel Companion
+# Roamie
 
-Travel Companion is a mobile application that centralizes everything a traveler needs into a single, lightweight, offline-first app: itinerary planning, interactive offline maps, curated local recommendations, a local language cheat sheet, and an on-device AI travel assistant. Travelers no longer need to juggle multiple disconnected services or worry about poor connectivity abroad.
+<p align="center">
+  <strong>Your trip, one app, even when the signal disappears.</strong>
+</p>
 
-## Prerequisite
+<p align="center">
+  <a href="https://app.travel-comp.xyz"><strong>Download Roamie</strong></a>
+</p>
 
-- Install Node.js <https://nodejs.org/en/download>
-- Install pnpm <https://pnpm.io/installation>
-- Install bun <https://bun.com/docs/installation#overview>
-- Install Expo Go (SDK 55) <https://expo.dev/go>
-- Install Biome extension
-  - VS Code: <https://marketplace.visualstudio.com/items?itemName=biomejs.biome>
-  - Cursor, etc: <https://open-vsx.org/extension/biomejs/biome>
-- Install Prisma extension
-- Setup Biome
-  - Create a .vscode or .cursor folder in the root directory
-  - In that folder create a file called `settings.json`
-  - Add the following lines to `settings.json`
+Roamie is an offline-first travel companion built to keep everything important in one place: your itinerary, destination picks, maps, language help, and AI travel support. Instead of juggling five different apps while traveling, you open one app and keep moving.
 
-    ```json
-    {
-      "editor.defaultFormatter": "biomejs.biome",
-      "editor.formatOnSave": true,
-      "editor.codeActionsOnSave": {
-          "source.fixAll.biome": "explicit",
-          "source.organizeImports.biome": "explicit"
-      }
-    }
-    ```
+## Why Roamie
 
-## Project Setup
+- Plan trips and manage day-by-day itineraries in a clean mobile experience.
+- Explore curated destinations, must-visit places, and practical travel details.
+- Use interactive maps and navigation when you are exploring a new city.
+- Keep core travel info available offline after downloading a destination pack.
+- Ask an on-device AI assistant for ideas, planning help, and quick answers.
+- Connect with nearby travelers through the built-in social layer.
 
-- Open a new terminal
-- Enter the following commands:
-  - `git clone https://github.com/heavydriver/travel-companion.git`
-  - `cd travel-companion`
-  - `pnpm i`
-- Create a `.env`files in project root and the `apps/api` folder
-  - Copy the variables from `.env.example` and fill the values
+## Glimpses Of The App
 
-## React Native Async Storage Setup
+<table>
+  <tr>
+    <td align="center">
+      <img src="./screenshots/home.png" width="220" alt="Roamie home screen" />
+      <br />
+      <sub>Trip dashboard</sub>
+    </td>
+    <td align="center">
+      <img src="./screenshots/trip.png" width="220" alt="Roamie itinerary screen" />
+      <br />
+      <sub>Itinerary planning</sub>
+    </td>
+    <td align="center">
+      <img src="./screenshots/destination.png" width="220" alt="Roamie destination screen" />
+      <br />
+      <sub>Destination discovery</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./screenshots/map.png" width="220" alt="Roamie map screen" />
+      <br />
+      <sub>Interactive city maps</sub>
+    </td>
+    <td align="center">
+      <img src="./screenshots/navigation.png" width="220" alt="Roamie navigation screen" />
+      <br />
+      <sub>Turn-by-turn guidance</sub>
+    </td>
+    <td align="center">
+      <img src="./screenshots/ai.png" width="220" alt="Roamie assistant screen" />
+      <br />
+      <sub>On-device AI assistant</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3">
+      <img src="./screenshots/social.png" width="220" alt="Roamie social screen" />
+      <br />
+      <sub>Social travel network</sub>
+    </td>
+  </tr>
+</table>
 
-- Open a new terminal in the travel-companion folder
-- Enter the following commands:
-  - `cd apps/mobile`
-  - `pnpx expo prebuild`
-- If using android emulator:
-  - Open `mobile/android/build.gradle`
-  - Add this to it:
+## Tech Stack
 
-  ```groovy
-  allprojects {
-    repositories {
-        // ... others like google(), mavenCentral()
+- Mobile: React Native, Expo, TypeScript, Expo Router, NativeWind
+- State and data: Zustand, TanStack Query, AsyncStorage
+- Maps and travel UX: Mapbox, offline packs, in-app navigation
+- AI: Gemma 2 running on-device with `llama.rn`
+- Backend: ElysiaJS on Bun, PostgreSQL, Prisma
+- Monorepo: Turborepo with pnpm workspaces
 
-        maven {
-            url = uri(project(":react-native-async-storage_async-storage").file("local_repo"))
-            // or uri("path/to/node_modules/@react-native-async-storage/async-storage/android/local_repo")
-        }
-    }
-  }
-  ```
+## Project Info
 
-- If using iOS
-  - `cd ios`
-  - `pod install`
+- Team: Team 11
+- Members: Varun Mange, Allen Paul, Darius Rafeh, Kapil Yadav
+- University: The University of Texas at Dallas
+- Supervisor: Professor Sridhar Alagar
+- Project Coordinator: Adarsh Gella
 
-## Project Organization
+## Local Development
 
-- `./apps/api` - contains backend code
-- `./apps/mobile` - contains react native code
-- `./packages` - contains packages that are used by both api and mobile
-- `./packages/db/generated/prisma` - contains models/types from schema
-- `./packages/db/generated/prismabox` - contains Typebox (ElysiaJS) types
+```bash
+pnpm install
+pnpm dev
+```
 
-## Running the Project
+For environment setup and platform-specific steps, see [setup.md](./setup.md).
 
-### Start both backend and frontend
-
-- Open a new terminal in the travel-companion (project root) folder
-- Enter the following command:
-  - `pnpm run dev`
-
-### Start backend
-
-- Open a new terminal in the travel-companion folder
-- Enter the following commands:
-  - `cd apps/api`
-  - `pnpm run dev`
-
-### Start mobile app
-
-- Open a new terminal in the travel-companion folder
-- Enter the following commands:
-  - `cd apps/mobile`
-  - `pnpm run start`
-- Use Expo Go to scan the qr code and test the app for general app work
-  - Alternatively, can run emulator on your computer
-  - press `a` for android or `i` for iOS
-- Google Sign-In requires a development build and will not work in Expo Go
-  - add `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` to `apps/mobile/.env`
-  - make sure `apps/api/.env` uses the same value for `GOOGLE_CLIENT_ID`
-  - rebuild native Android after config changes with `npx expo run:android`
-
-## Git Commands
-
-- Create a new branch - `git checkout -b <branch-name>` (the branch name should clearly indicate the purpose of the branch (e.g., bugfix, new feature, documentation update), remove the angle brackets <, >)
-
-- Make changes to your code, add your changes with `git add .` (adds all new/modified files to staging area)
-
-- Commit your code - `git commit -m "some message"`
-
-- Push your code to GitHub - `git push origin <branch-name>`
-
-- Occasionally do `git pull origin main` to sync with the main branch (always `commit` your changes before running a `git pull`)
+Download the app at [app.travel-comp.xyz](https://app.travel-comp.xyz).
